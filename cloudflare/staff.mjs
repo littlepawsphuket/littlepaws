@@ -64,14 +64,43 @@ async function checkout(db, stayId, user) {
   return json({status: "not_checked_in"}, 409);
 }
 
+async function privateFile(request, env, receiptMatch) {
+  if (!["GET", "HEAD"].includes(request.method)) return json({error: "method_not_allowed"}, 405);
+  const headers = new Headers(JSON_HEADERS);
+  let key = "payment/payment-qr.jpg";
+  headers.set("Content-Type", "image/jpeg");
+  if (receiptMatch) {
+    const id = Number(receiptMatch[1]);
+    if (!Number.isSafeInteger(id) || id < 1) return json({error: "not_found"}, 404);
+    const row = await env.DB.prepare("SELECT receipt FROM transactions WHERE id=?").bind(id).first();
+    const name = row?.receipt;
+    if (!name || name === "." || name === ".." || /[/\\\u0000-\u001f\u007f]/.test(name)) {
+      return json({error: "not_found"}, 404);
+    }
+    key = `receipts/${name}`;
+    headers.set("Content-Type", "application/octet-stream");
+    headers.set("Content-Disposition", `attachment; filename="receipt-${id}"`);
+    const extension = /\.(pdf|png|jpe?g|webp)$/i.exec(name)?.[0];
+    if (extension) headers.set("Content-Disposition", `attachment; filename="receipt-${id}${extension}"`);
+  }
+  if (!env.MEDIA) return json({error: "temporarily_unavailable"}, 503);
+  const head = request.method === "HEAD";
+  const object = head ? await env.MEDIA.head(key) : await env.MEDIA.get(key);
+  if (!object) return json({error: "not_found"}, 404);
+  return new Response(head ? null : object.body, {headers});
+}
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const match = /^\/api\/stays\/(\d+)\/(payments|check-out)$/.exec(url.pathname);
-    if (!match && !["/", "/api/account", "/api/stays/outstanding", "/api/stays/current"].includes(url.pathname)) return json({error: "not_found"}, 404);
+    const receiptMatch = /^\/api\/receipts\/(\d+)$/.exec(url.pathname);
+    const isFile = receiptMatch || url.pathname === "/api/payment-qr.jpg";
+    if (!match && !isFile && !["/", "/api/account", "/api/stays/outstanding", "/api/stays/current"].includes(url.pathname)) return json({error: "not_found"}, 404);
     try {
       const user = await authorizedUser(env, ctx);
       if (!user) return json({error: "access_required"}, 403);
+      if (isFile) return await privateFile(request, env, receiptMatch);
       if (!match) {
         if (request.method !== "GET") return json({error: "method_not_allowed"}, 405);
         if (url.pathname === "/") return outstandingPage();

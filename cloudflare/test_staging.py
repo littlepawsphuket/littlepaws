@@ -31,6 +31,7 @@ with TemporaryDirectory() as folder:
                        [(1,1,b'fixture-photo'),(2,2,b'private-photo'),(3,3,b'other-photo')])
         db.execute("""INSERT INTO transactions(id,occurred_on,kind,category,description,amount,stay_id,receipt)
                       VALUES(1,'2026-01-02','income','boarding','Fixture',500,1,'fixture.pdf')""")
+    qr = b'fixture-qr-original'
     snapshot = root / 'snapshot.sqlite3'
     with sqlite3.connect(DB) as source, sqlite3.connect(snapshot) as dest:
         source.backup(dest)
@@ -38,6 +39,7 @@ with TemporaryDirectory() as folder:
     with ZipFile(archive, 'w') as bundle:
         bundle.write(snapshot, 'little_paws.sqlite3')
         bundle.writestr('receipts/fixture.pdf', b'%PDF-1.0\nfixture')
+        bundle.writestr('payment-qr.jpg', qr)
     destination = root / 'migration'
     export(archive, destination)
     d1 = root / 'd1.sqlite3'
@@ -48,4 +50,5 @@ with TemporaryDirectory() as folder:
         assert db.execute("SELECT stay_id,amount,receipt FROM transactions").fetchone() == (1,500,'fixture.pdf')
         assert db.execute("SELECT object_key FROM care_photos WHERE id=1").fetchone() == ('care/1.jpg',)
     assert (destination / 'objects/receipts/fixture.pdf').read_bytes() == b'%PDF-1.0\nfixture'
+    assert (destination / 'objects/payment/payment-qr.jpg').read_bytes() == qr
     subprocess.run(['node', 'cloudflare/test_timeline.mjs', str(d1), str(destination/'objects')], check=True)

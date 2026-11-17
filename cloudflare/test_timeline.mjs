@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import {readFile} from "node:fs/promises";
+import {readFile, stat} from "node:fs/promises";
 import {join} from "node:path";
 import {DatabaseSync} from "node:sqlite";
 import worker from "./timeline.mjs";
@@ -34,7 +34,11 @@ const env = {
     },
   },
   MEDIA: {
-    get: async (key) => ({body: await readFile(join(media,key))}),
+    async get(key) {
+      try { return {body: await readFile(join(media, key))}; }
+      catch (error) { if (error.code !== "ENOENT") throw error; return null; }
+    },
+    head: (key) => stat(join(media, key)),
   },
 };
 const path = (letter) => `/updates/${letter.repeat(43)}`;
@@ -115,6 +119,25 @@ assert.equal((await staffCall("/api/account", {}, {access:{...context.access, au
 const account = await (await staffCall("/api/account", {}, context)).json();
 assert.equal(account.isAdmin, true);
 assert.ok(!("email" in account));
+const qrPath = "/api/payment-qr.jpg";
+const receiptPath = "/api/receipts/1";
+for (const filePath of [qrPath, receiptPath]) {
+  assert.equal((await staffCall(filePath)).status, 403);
+  assert.equal((await get(filePath)).status, 404);
+}
+const qr = await staffCall(qrPath, {}, context);
+assert.equal(qr.headers.get("Content-Type"), "image/jpeg");
+assert.equal(qr.headers.get("Cache-Control"), "private, no-store");
+assert.equal(await qr.text(), "fixture-qr-original");
+assert.equal(await (await staffCall(qrPath, {method: "HEAD"}, context)).text(), "");
+const receipt = await staffCall(receiptPath, {}, context);
+assert.match(receipt.headers.get("Content-Disposition"), /^attachment; filename="receipt-1.pdf"$/);
+assert.equal(await receipt.text(), "%PDF-1.0\nfixture");
+assert.equal((await staffCall("/api/receipts/999999", {}, context)).status, 404);
+await assert.doesNotReject(async () => {
+  const missing = {...staffEnv, MEDIA: {...staffEnv.MEDIA, get: async () => null}};
+  assert.equal((await staff.fetch(new Request("https://staff.example.test" + receiptPath), missing, context)).status, 404);
+});
 const outstanding = await (await staffCall("/api/stays/outstanding", {}, context)).json();
 assert.equal(outstanding.stays[0].due_cents, 100000);
 assert.equal(outstanding.nextBefore, null);

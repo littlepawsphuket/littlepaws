@@ -1026,6 +1026,7 @@ with tempfile.TemporaryDirectory() as temp:
     archive = post('/backup/archive.zip')
     assert archive.status_code == 200, archive.location
     with ZipFile(io.BytesIO(archive.data)) as bundle:
+        assert bundle.read('payment-qr.jpg') == (Path(temp)/'payment-qr.jpg').read_bytes()
         assert bundle.read('receipts/backup-fixture.pdf') == b'%PDF-fixture'
     verify = post('/backup/verify', archive=(io.BytesIO(archive.data),'backup.zip'))
     assert verify.status_code == 302

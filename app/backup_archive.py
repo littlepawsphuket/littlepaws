@@ -5,6 +5,7 @@ from pathlib import Path
 from zipfile import ZipFile
 
 DATABASE_NAME = 'little_paws.sqlite3'
+PAYMENT_QR_NAME = 'payment-qr.jpg'
 ARCHIVE_LIMIT = 512 * 1024 * 1024
 
 
@@ -23,7 +24,7 @@ def validate_archive(source, directory):
         receipts = set()
         for entry in entries:
             name = entry.filename
-            if name != DATABASE_NAME:
+            if name not in (DATABASE_NAME, PAYMENT_QR_NAME):
                 prefix, separator, filename = name.partition('/')
                 if (prefix != 'receipts' or not separator or not filename or
                         filename in ('.', '..') or '/' in filename or '\\' in filename):

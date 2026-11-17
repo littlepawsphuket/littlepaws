@@ -8,7 +8,7 @@ from contextlib import closing
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from app.backup_archive import DATABASE_NAME, validate_archive
+from app.backup_archive import DATABASE_NAME, PAYMENT_QR_NAME, validate_archive
 
 PHOTO_TABLES = {
     'dog_photos': ('dog_id', 'dogs'),
@@ -101,6 +101,9 @@ def export(archive, destination):
                 db.execute(f'ALTER TABLE {table} DROP COLUMN photo')
             for receipt in sorted((restore / 'receipts').glob('*')):
                 write_object(bundle, f'receipts/{receipt.name}', receipt.read_bytes(), manifest)
+            qr = restore / PAYMENT_QR_NAME
+            if qr.is_file():
+                write_object(bundle, f'payment/{PAYMENT_QR_NAME}', qr.read_bytes(), manifest)
             write_sql(db, bundle / 'data.sql')
         (bundle / 'objects.json').write_text(json.dumps(manifest, indent=2) + '\n', encoding='utf-8')
         bundle.rename(destination)

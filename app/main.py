@@ -12,7 +12,7 @@ from werkzeug.utils import secure_filename
 from app.auth import PUBLIC_CARE_ENDPOINTS, admin_attempts, init_users, matching_password, register_auth
 from app.photo_orientation import upright_jpeg
 from app.operations import booking_warnings, now_local
-from app.backup_archive import ARCHIVE_LIMIT, DATABASE_NAME, receipt_names, validate_archive
+from app.backup_archive import ARCHIVE_LIMIT, DATABASE_NAME, PAYMENT_QR_NAME, receipt_names, validate_archive
 from app.coupons import coupon_discount, coupon_today, find_coupon
 from app.settings import RATE_UNITS, SERVICES, THEMES, configured_rates, get_setting, set_setting
 from app.brand import SLOGAN_TEXT, SLOGAN_TITLE
@@ -1152,11 +1152,7 @@ def stay_summary(sid):
     period = {key: request.args.get(key) or stay[column]
               for key, column in (('start', 'checkin'), ('end', 'checkout'))}
     period['q'] = reference_search()
-    payment_qr_url = None
-    if (DATA / 'payment-qr.jpg').is_file():
-        payment_qr_url = url_for('payment_qr')
-    elif (Path(app.static_folder) / 'payment-qr.jpg').is_file():
-        payment_qr_url = url_for('static', filename='payment-qr.jpg')
+    payment_qr_url = url_for('payment_qr') if payment_qr_path().is_file() else None
     return render_template('stay_summary.html', stay=stay, dogs=dogs, status=status, consent=consent, period=period, receipt_key=secrets.token_hex(16),
                            payment_qr_url=payment_qr_url,
                            payment_deletions=payment_deletions, refundable=refundable, refunds=refunds, care_history=care_history, care_options=care_options,
@@ -1164,9 +1160,14 @@ def stay_summary(sid):
                            updated_terms=updated_term_sections(consent, language()))
 
 
+def payment_qr_path():
+    path = DATA / PAYMENT_QR_NAME
+    return path if path.is_file() else Path(app.static_folder) / PAYMENT_QR_NAME
+
+
 @app.get('/payment-qr.jpg')
 def payment_qr():
-    path = DATA / 'payment-qr.jpg'
+    path = payment_qr_path()
     if not path.is_file():
         abort(404)
     response = send_file(path, mimetype='image/jpeg')
@@ -2531,12 +2532,16 @@ def backup_archive():
                 receipts = receipt_names(dest)
             if any(Path(name).name != name or not (UPLOADS/name).is_file() for name in receipts):
                 raise ValueError('Missing receipts')
-            if snapshot.stat().st_size + sum((UPLOADS/name).stat().st_size for name in receipts) > ARCHIVE_LIMIT:
+            qr = payment_qr_path()
+            files = [(snapshot, DATABASE_NAME)]
+            files.extend((UPLOADS / name, f'receipts/{name}') for name in sorted(receipts))
+            if qr.is_file():
+                files.append((qr, PAYMENT_QR_NAME))
+            if sum(path.stat().st_size for path, _ in files) > ARCHIVE_LIMIT:
                 raise ValueError('Archive exceeds size limit')
             with ZipFile(output, 'w', ZIP_DEFLATED) as archive:
-                archive.write(snapshot,DATABASE_NAME)
-                for name in sorted(receipts):
-                    archive.write(UPLOADS/name,f'receipts/{name}')
+                for path, name in files:
+                    archive.write(path, name)
             set_setting(guard,'last_backup',stamp.isoformat(timespec='seconds'))
         output.seek(0)
         return send_file(output,mimetype='application/zip',as_attachment=True,

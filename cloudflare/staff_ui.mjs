@@ -11,6 +11,10 @@ function main() {
   const results = document.getElementById("stays");
   const message = document.getElementById("message");
   const more = document.getElementById("more");
+  const qr = document.getElementById("payment-qr");
+  fetch(qr.href, {method:"HEAD"}).then((response) => {
+    qr.hidden = !response.ok || !response.headers.get("Content-Type")?.startsWith("image/jpeg");
+  }).catch(() => {});
   let cursor = null;
   let requestNumber = 0;
   let selected = "outstanding";
@@ -142,6 +146,7 @@ export function outstandingPage() {
       <button type="button" data-mode="outstanding" aria-pressed="true">ยอดค้างชำระ</button>
       <button type="button" data-mode="current" aria-pressed="false">กำลังเข้าพัก</button>
     </div>
+    <p><a id="payment-qr" href="/api/payment-qr.jpg" target="_blank" rel="noopener" hidden>เปิด QR สำหรับชำระเงิน</a></p>
     <p id="message" role="status"></p><div id="stays"></div>
     <button id="more" type="button" hidden>โหลดเพิ่มเติม</button></main>
     <script nonce="${nonce}">(${main.toString()})()</script></html>`, {

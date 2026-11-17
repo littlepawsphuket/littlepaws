@@ -22,6 +22,8 @@ python -m cloudflare.export_data /path/to/fixture.zip /path/to/new-private-direc
 
 The bundle contains `data.sql`, `objects.json` (key, size and SHA-256), and the `objects/` tree. It includes all exported records, including account hashes and tokens, so handle the entire bundle as private data. The script validates the archive, checks database references, moves photo bytes to object files in the bundle, preserves row IDs and replaces each photo BLOB with its R2 object key. It does not contact Cloudflare.
 
+Receipt attachments retain their original bytes under `receipts/` in R2 with references in D1. When the backup contains a payment QR, the bundle includes the original file at `payment/payment-qr.jpg`. For older backups, use the original JPEG from the Mac installation for that same key. Keep the bucket private. The staff Worker checks Access before serving either file. Missing attachments return 404 and a missing QR hides the link in the staff preview. Configure any deployment tokens and application secrets outside Git using Cloudflare Secrets.
+
 ## Cloudflare configuration
 
 1. Create a dedicated staging D1 database and private R2 bucket if the Cloudflare account supports them. Do not enable public R2 access.
@@ -40,7 +42,7 @@ D1 transactions use batches. Port staff write operations individually so checks 
 
 `staff.mjs` is a separate Worker for authenticated staff. It lists current stays, supports check-out, and records payments for outstanding stays with the D1 balance check and duplicate protection in `stay_payments.mjs`. This preview does not replace the full Mac staff application.
 
-The sample `wrangler.staff.toml` disables public and preview URLs. To set up a private staging instance, use a separate hostname protected by Cloudflare Access, point `DB` to the staging database, apply `staff_access.sql`, and set `ACCESS_AUDIENCE` to that app's audience. Provision the authorized email-to-existing-user mapping in `staff_access_identities` using lowercase email addresses. Never infer staff identities from customer emails. Requests without trusted Access context, a matching audience, and an active mapped account are denied. Keep the staff Worker separate from the customer link Worker.
+The sample `wrangler.staff.toml` disables public and preview URLs. To set up a private staging instance, use a separate hostname protected by Cloudflare Access, point `DB` to the staging database and `MEDIA` to the staging private bucket, apply `staff_access.sql`, and set `ACCESS_AUDIENCE` to that app's audience. Provision the authorized email-to-existing-user mapping in `staff_access_identities` using lowercase email addresses. Never infer staff identities from customer emails. Requests without trusted Access context, a matching audience, and an active mapped account are denied. Keep the staff Worker separate from the customer link Worker.
 
 For local development only, Wrangler's `[access.dev]` and `[access.dev.identity]` blocks can simulate the audience and a fixture staff identity. Use a synthetic D1 import and remove those test settings from deployment configuration.
 
