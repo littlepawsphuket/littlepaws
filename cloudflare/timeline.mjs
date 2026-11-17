@@ -138,12 +138,17 @@ async function timelinePdf(env, token, url) {
   });
 }
 
+export function validCarePhotoKey(key, id) {
+  return typeof key === "string" && (key === `care/${id}.jpg` ||
+    /^care\/uploads\/[a-f0-9-]{36}\.jpg$/.test(key));
+}
+
 async function photo(env, token, id) {
   const row = await env.DB.prepare(`SELECT p.object_key ${activeLink}
     JOIN care_events e ON e.stay_id=l.stay_id AND e.dog_id=l.dog_id
     JOIN care_photos p ON p.event_id=e.id
     WHERE ${activeCondition} AND e.customer_visible=1 AND p.id=?`).bind(token, id).first();
-  if (!row?.object_key || !/^care\/\d+\.jpg$/.test(row.object_key)) return missing();
+  if (!validCarePhotoKey(row?.object_key,id)) return missing();
   const object = await env.MEDIA.get(row.object_key);
   return object ? respond(object.body, 200, {"Content-Type": "image/jpeg"}) : missing();
 }

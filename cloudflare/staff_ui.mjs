@@ -473,7 +473,7 @@ function main(intakeGroups,couponScreen) {
     return Math.floor(months / 12) + " ปี " + (months % 12) + " เดือน";
   }
 
-  async function resizedDogPhoto(file) {
+  async function resizedPhoto(file) {
     if (file.size > 7 * 1024 * 1024) throw Error("กรุณาเลือกรูปไม่เกิน 7 MB");
     const url = URL.createObjectURL(file);
     try {
@@ -521,7 +521,7 @@ function main(intakeGroups,couponScreen) {
         buttons.forEach((item) => { item.disabled = true; });
         status.textContent = "กำลังย่อและบันทึกรูป…";
         try {
-          const photo = await resizedDogPhoto(file);
+          const photo = await resizedPhoto(file);
           const response = await fetch("/api/customers/" + customerId + "/dogs/" + dog.id + "/photo", {
             method:"PUT", headers:{"Content-Type":"image/jpeg"}, body:photo,
           });
@@ -1425,6 +1425,7 @@ function main(intakeGroups,couponScreen) {
         body:JSON.stringify(body)});
       if (!response.ok) throw Error(response.status === 409
         ? "รายการหรือสถานะเปลี่ยนแล้ว กรุณาโหลดข้อมูลใหม่" : "บันทึกไม่ได้ กรุณาตรวจวัน เวลา และรายละเอียด");
+      return response.json();
     }
     function openEditor(options,event) {
       const form = node("form");
@@ -1447,6 +1448,30 @@ function main(intakeGroups,couponScreen) {
         label.append(input);
         form.append(label);
       }
+      const attachments = node("fieldset");
+      attachments.className = "intake-details";
+      attachments.append(node("legend","รูปกิจกรรม · สูงสุด 4 รูป"));
+      const removals = new Map();
+      for (const photo of event?.photos || []) {
+        const item = node("div");
+        const image = Object.assign(node("img"),{src:endpoint+"/photos/"+photo.id,
+          alt:"รูปกิจกรรมเดิม",loading:"lazy",className:"care-timeline-photo"});
+        const check = Object.assign(node("input"),{type:"checkbox"});
+        const remove = node("label","นำรูปนี้ออก");
+        remove.prepend(check);
+        item.append(image,remove);
+        attachments.append(item);
+        removals.set(check,photo);
+      }
+      const gallery = Object.assign(node("input"),{type:"file",accept:"image/*",multiple:true});
+      const camera = Object.assign(node("input"),{type:"file",accept:"image/*"});
+      camera.setAttribute("capture","environment");
+      for (const [caption,input] of [["เลือกรูปจากเครื่อง",gallery],["📷 ถ่ายรูป",camera]]) {
+        const wrapper = node("label",caption);
+        wrapper.append(input);
+        attachments.append(wrapper);
+      }
+      form.append(attachments);
       const submit = node("button","บันทึกกิจกรรม");
       const cancel = Object.assign(node("button","ปิดฟอร์ม"),{type:"button"});
       cancel.onclick = () => editor.replaceChildren();
@@ -1456,13 +1481,38 @@ function main(intakeGroups,couponScreen) {
       editor.replaceChildren(node("h4",event ? "แก้ไขกิจกรรม" : "เพิ่มกิจกรรม"),form);
       activity.focus();
       const createKey = key();
+      let savedEvent;
+      let photoWork;
+      async function savePhotos() {
+        const url = endpoint+"/events/"+savedEvent.eventId+"/photos";
+        for (const photo of photoWork.remove) {
+          const response = await fetch(url+"/"+photo.id,{method:"DELETE",headers:{"Content-Type":"application/json"},
+            body:JSON.stringify({key:photo.key,revision:savedEvent.revision})});
+          if (!response.ok) throw Error();
+        }
+        for (const photo of photoWork.add) {
+          const response = await fetch(url,{method:"POST",headers:{"Content-Type":"image/jpeg",
+            "X-Event-Revision":savedEvent.revision,"X-Upload-Key":photo.key},body:photo.image});
+          if (!response.ok) throw Error();
+        }
+      }
       form.onsubmit = async (action) => {
         action.preventDefault();
         submit.disabled = true;
         try {
-          await submitCare({action:event ? "edit-event" : "add-event",eventId:event?.id,
-            revision:event?.revision,activity:activity.value,note:note.value,day:date.value,time:time.value,
-            visible:visible.checked,key:createKey});
+          if (!savedEvent) {
+            const files = [...gallery.files,...camera.files];
+            const removed = [...removals].filter(([control]) => control.checked).map(([,photo]) => photo);
+            if (files.length + removals.size - removed.length > 4) throw Error("แนบได้สูงสุด 4 รูปต่อกิจกรรม");
+            const add = [];
+            for (const file of files) add.push({image:await resizedPhoto(file),key:key()});
+            photoWork = {add,remove:removed};
+            savedEvent = await submitCare({action:event ? "edit-event" : "add-event",eventId:event?.id,
+              revision:event?.revision,activity:activity.value,note:note.value,day:date.value,time:time.value,
+              visible:visible.checked,key:createKey});
+            for (const field of form.querySelectorAll("input,textarea,select")) field.disabled = true;
+          }
+          await savePhotos();
           if (form.isConnected && !controller.signal.aborted) {
             editor.replaceChildren();
             if (day.value !== "" && day.value !== date.value) {
@@ -1475,7 +1525,8 @@ function main(intakeGroups,couponScreen) {
             status.textContent = "บันทึกกิจกรรมแล้ว";
           }
         } catch (error) {
-          outcome.textContent = error.message;
+          outcome.textContent = savedEvent ? "บันทึกกิจกรรมแล้ว แต่รูปบางรูปยังไม่สำเร็จ ลองส่งรูปอีกครั้ง" : error.message;
+          if (savedEvent) submit.textContent = "ลองส่งรูปอีกครั้ง";
         } finally { submit.disabled = false; }
       };
     }
@@ -1516,8 +1567,8 @@ function main(intakeGroups,couponScreen) {
           if (!selectedDay) card.append(node("p",bookingDate.format(new Date(event.recorded_at.slice(0,10)))));
           if (!showingPublic) card.append(node("p",event.customer_visible ? "ลูกค้าเห็นกิจกรรมนี้" : "สำหรับพนักงาน"));
           if (event.note) card.append(node("p",event.note));
-          for (const id of event.photo_ids) card.append(Object.assign(node("img"),{
-            src:endpoint+"/photos/"+id,alt:"รูปกิจกรรม",loading:"lazy",className:"care-timeline-photo",
+          for (const photo of event.photos) card.append(Object.assign(node("img"),{
+            src:endpoint+"/photos/"+photo.id,alt:"รูปกิจกรรม",loading:"lazy",className:"care-timeline-photo",
           }));
           if (!showingPublic && data.status === "checked_in") {
             const edit = Object.assign(node("button","แก้ไขกิจกรรม"),{type:"button"});

@@ -26,6 +26,11 @@ function jpegDimensions(bytes) {
   return null;
 }
 
+export function validJpeg(bytes) {
+  const dimensions = jpegDimensions(bytes);
+  return dimensions !== null && dimensions.every((value) => value >= 1 && value <= photoEdge);
+}
+
 export async function dogPhoto(db, media, customerId, dogId) {
   const row = await db.prepare(`SELECT p.object_key FROM dog_photos p JOIN dogs d ON d.id=p.dog_id
     JOIN customers c ON c.id=d.customer_id
@@ -34,8 +39,7 @@ export async function dogPhoto(db, media, customerId, dogId) {
 }
 
 export async function saveDogPhoto(db, media, customerId, dogId, bytes, actor) {
-  const dimensions = jpegDimensions(bytes);
-  if (!dimensions || dimensions.some((value) => value < 1 || value > photoEdge)) return "invalid";
+  if (!validJpeg(bytes)) return "invalid";
   const args = [customerId,dogId,actor.id,actor.email];
   const validTarget = `${activeDog} AND ${authorizedStaff}`;
   if (!await db.prepare(`SELECT d.id ${validTarget}`).bind(...args).first()) return "not_found";

@@ -1,6 +1,7 @@
 import { receiveStayPayment, stayBalance, authorizedStaff } from "./stay_payments.mjs";
 import { validDay, pendingBookings, bookingCalendar, bookingDetails, receiveBookingDeposit, deleteBookingDeposit } from "./bookings.mjs";
 import { listCoupons, couponDetails, saveCoupon, archiveCoupon } from "./coupon_admin.mjs";
+import { addCarePhoto, removeCarePhoto } from "./care_media.mjs";
 import { staffTimeline, staffCarePhoto, manageTimelineLink, writeCareEvent, timelineOrigin } from "./care_staff.mjs";
 import { dashboardFinance } from "./dashboard_finance.mjs";
 import { staySummary } from "./stay_summary.mjs";
@@ -117,6 +118,7 @@ export default {
     const depositMatch = /^\/api\/bookings\/(\d+)\/deposits(?:\/(\d+))?$/.exec(url.pathname);
     const dogMatch = /^\/api\/customers\/(\d+)\/dogs(?:\/(\d+))?$/.exec(url.pathname);
     const customerMatch = /^\/api\/customers\/(\d+)(?:\/dogs\/(\d+)\/photo)?$/.exec(url.pathname);
+    const careMediaMatch = /^\/api\/stays\/(\d+)\/dogs\/(\d+)\/timeline\/events\/(\d+)\/photos(?:\/(\d+))?$/.exec(url.pathname);
     const timelineMatch = /^\/api\/stays\/(\d+)\/dogs\/(\d+)\/timeline(?:\/photos\/(\d+))?$/.exec(url.pathname);
     const staySummaryMatch = /^\/api\/stays\/(\d+)$/.exec(url.pathname);
     const couponMatch = /^\/api\/coupons(?:\/(\d+))?$/.exec(url.pathname);
@@ -127,11 +129,35 @@ export default {
     const bookingMatch = /^\/api\/bookings\/(\d+)$/.exec(url.pathname);
     const receiptMatch = /^\/api\/receipts\/(\d+)$/.exec(url.pathname);
     const isFile = receiptMatch || url.pathname === "/api/payment-qr.jpg";
-    if (!match && !depositMatch && !dogMatch && !customerMatch && !bookingMatch && !checkInMatch && !couponMatch && !directCheckIn && !directPreview && !couponPreview && !staySummaryMatch && !timelineMatch && !isFile && !["/", "/api/account", "/api/dashboard/finance", "/api/customers", "/api/bookings", "/api/bookings/rates", "/api/bookings/calendar", "/api/bookings/pending", "/api/stays/outstanding", "/api/stays/current"].includes(url.pathname)) return json({error: "not_found"}, 404);
+    if (!match && !depositMatch && !dogMatch && !customerMatch && !bookingMatch && !checkInMatch && !couponMatch && !directCheckIn && !directPreview && !couponPreview && !staySummaryMatch && !timelineMatch && !careMediaMatch && !isFile && !["/", "/api/account", "/api/dashboard/finance", "/api/customers", "/api/bookings", "/api/bookings/rates", "/api/bookings/calendar", "/api/bookings/pending", "/api/stays/outstanding", "/api/stays/current"].includes(url.pathname)) return json({error: "not_found"}, 404);
     try {
       const user = await authorizedUser(env, ctx);
       if (!user) return json({error: "access_required"}, 403);
       if (isFile) return await privateFile(request, env, receiptMatch);
+      if (careMediaMatch) {
+        const [stayId,dogId,eventId,photoId] = careMediaMatch.slice(1).map((value) => value === undefined ? null : Number(value));
+        if (![stayId,dogId,eventId,photoId ?? 1].every((id) => Number.isSafeInteger(id) && id > 0)) return json({error:"not_found"},404);
+        if (request.method !== (photoId === null ? "POST" : "DELETE")) return json({error:"method_not_allowed"},405);
+        if (request.headers.get("Origin") !== url.origin) return json({error:"invalid_origin"},403);
+        if (!env.MEDIA) return json({error:"temporarily_unavailable"},503);
+        const scope = {stayId,dogId,eventId,photoId};
+        let status;
+        if (photoId === null) {
+          if (request.headers.get("Content-Type") !== "image/jpeg") return json({error:"invalid_content_type"},415);
+          const bytes = await boundedBody(request,photoLimit);
+          if (!bytes) return json({error:"invalid_size"},413);
+          status = await addCarePhoto(env.DB,env.MEDIA,scope,user,bytes,
+            request.headers.get("X-Event-Revision"),request.headers.get("X-Upload-Key"));
+        } else {
+          if (request.headers.get("Content-Type")?.split(";",1)[0].trim().toLowerCase() !== "application/json") {
+            return json({error:"invalid_content_type"},415);
+          }
+          const form = await smallJson(request);
+          if (!form) return json({status:"invalid"},400);
+          status = await removeCarePhoto(env.DB,env.MEDIA,scope,user,form);
+        }
+        return json({status},{saved:200,invalid:400,conflict:409}[status]);
+      }
       if (timelineMatch) {
         const [stayId,dogId,photoId] = timelineMatch.slice(1).map((value) => value === undefined ? null : Number(value));
         if (![stayId,dogId,photoId ?? 1].every((value) => Number.isSafeInteger(value) && value > 0)) {
@@ -163,10 +189,11 @@ export default {
         const form = await smallJson(request);
         if (!form) return json({error:"invalid"},400);
         if (form.action === "create" && !origin) return json({status:"origin_missing"},503);
-        const status = ["add-event","edit-event","remove-event"].includes(form.action)
+        const result = ["add-event","edit-event","remove-event"].includes(form.action)
           ? await writeCareEvent(env.DB,env.MEDIA,stayId,dogId,form,user)
           : await manageTimelineLink(env.DB,stayId,dogId,form,user);
-        return json({status},{saved:200,invalid:400,conflict:409}[status]);
+        const payload = typeof result === "string" ? {status:result} : result;
+        return json(payload,{saved:200,invalid:400,conflict:409}[payload.status]);
       }
       if (couponMatch) {
         if (!user.is_admin) return json({error:"admin_required"},403);

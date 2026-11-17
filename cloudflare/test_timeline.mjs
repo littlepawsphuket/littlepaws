@@ -118,6 +118,7 @@ sqlite.exec(await readFile(new URL("./booking_writes.sql", import.meta.url), "ut
 sqlite.exec(await readFile(new URL("./direct_checkin.sql", import.meta.url), "utf8"));
 sqlite.exec(await readFile(new URL("./coupon_admin.sql", import.meta.url), "utf8"));
 sqlite.exec(await readFile(new URL("./care_writes.sql", import.meta.url), "utf8"));
+sqlite.exec(await readFile(new URL("./care_photo_writes.sql", import.meta.url), "utf8"));
 sqlite.exec("INSERT INTO staff_access_identities (email,user_id) VALUES ('admin@example.test',1)");
 const actor = {id:1,email:"admin@example.test"};
 const now = new Date("2026-11-17T06:30:00Z");
@@ -212,6 +213,26 @@ const eventList = await (await staffCall(staffCarePath+"?day=2026-01-02",{},cont
 const [createdEvent] = eventList.events.filter((event) => event.note === eventBody.note);
 assert.equal(eventList.events.filter((event) => event.note === eventBody.note).length,1);
 assert.doesNotMatch(await (await get(newLinkPath+"?day=all")).text(),/Private activity fixture/);
+const eventJpeg = new Uint8Array(await readFile(join(media,"dogs/2.jpg")));
+const photoWrite = (revision,uploadKey,body=eventJpeg) => ({
+  method:"POST",headers:{Origin:"https://staff.example.test","Content-Type":"image/jpeg",
+    "X-Event-Revision":revision,"X-Upload-Key":uploadKey},body,
+});
+const eventPhotosPath = staffCarePath+"/events/"+createdEvent.id+"/photos";
+const photoUploadKey = "a".repeat(32);
+assert.equal((await staffCall(eventPhotosPath,photoWrite(createdEvent.revision,photoUploadKey))).status,403);
+assert.equal((await staffCall(eventPhotosPath,photoWrite(createdEvent.revision,photoUploadKey,new Uint8Array(2)),context)).status,400);
+assert.equal((await staffCall(eventPhotosPath.replace("/dogs/1/","/dogs/2/"),photoWrite(createdEvent.revision,photoUploadKey),context)).status,409);
+const duplicateUploads = await Promise.all([0,1].map(() =>
+  staffCall(eventPhotosPath,photoWrite(createdEvent.revision,photoUploadKey),context)));
+assert.deepEqual(duplicateUploads.map((response) => response.status),[200,200]);
+const rowWithPhoto = (await (await staffCall(staffCarePath+"?day=2026-01-02",{},context)).json())
+  .events.find((event) => event.id === createdEvent.id);
+assert.equal(rowWithPhoto.photos.length,1);
+const [fixtureUpload] = rowWithPhoto.photos;
+assert.match(fixtureUpload.key,/^care\/uploads\/[a-f0-9-]{36}\.jpg$/);
+assert.equal((await staffCall(staffCarePath+"/photos/"+fixtureUpload.id,{},context)).status,200);
+assert.equal((await get(newLinkPath+"/photos/"+fixtureUpload.id)).status,404);
 const editEvent = {...eventBody,eventId:createdEvent.id,revision:createdEvent.revision,activity:"play",
   note:"Published activity fixture",day:"2026-01-01",visible:true};
 assert.equal((await staffCall("/api/stays/1/dogs/2/timeline",timelineEdit("edit-event",editEvent),context)).status,409);
@@ -219,7 +240,26 @@ assert.equal((await staffCall(staffCarePath,timelineEdit("edit-event",editEvent)
 assert.equal((await staffCall(staffCarePath,timelineEdit("edit-event",editEvent),context)).status,409);
 assert.match(await (await get(newLinkPath+"?day=2026-01-01")).text(),/Published activity fixture/);
 const editedEvent = (await (await staffCall(staffCarePath+"?day=2026-01-01",{},context)).json()).events[0];
+const publicFixture = await get(newLinkPath+"/photos/"+fixtureUpload.id);
+assert.equal(publicFixture.status,200);
+assert.deepEqual(new Uint8Array(await publicFixture.arrayBuffer()),eventJpeg);
+const concurrentUploads = await Promise.all(["b","c","d","e"].map((char) =>
+  staffCall(eventPhotosPath,photoWrite(editedEvent.revision,char.repeat(32)),context)));
+assert.deepEqual(concurrentUploads.map((response) => response.status).sort(),[200,200,200,409]);
+const deletePhotoPath = eventPhotosPath+"/"+fixtureUpload.id;
+const photoDelete = (revision) => ({
+  method:"DELETE",headers:{Origin:"https://staff.example.test","Content-Type":"application/json"},
+  body:JSON.stringify({key:fixtureUpload.key,revision}),
+});
+assert.equal((await staffCall(deletePhotoPath,photoDelete(createdEvent.revision),context)).status,409);
+assert.equal((await staffCall(deletePhotoPath,photoDelete(editedEvent.revision),context)).status,200);
+assert.equal((await staffCall(deletePhotoPath,photoDelete(editedEvent.revision),context)).status,200);
+assert.equal((await get(newLinkPath+"/photos/"+fixtureUpload.id)).status,404);
+assert.ok(removedMedia.has(fixtureUpload.key));
+const remainingPhotos = (await (await staffCall(staffCarePath+"?day=2026-01-01",{},context)).json()).events[0].photos;
+assert.equal(remainingPhotos.length,3);
 assert.equal((await staffCall(staffCarePath,timelineEdit("remove-event",{eventId:editedEvent.id,revision:editedEvent.revision}),context)).status,200);
+assert.ok(remainingPhotos.every((photo) => removedMedia.has(photo.key)));
 assert.doesNotMatch(await (await get(newLinkPath+"?day=all")).text(),/Published activity fixture/);
 assert.equal((await staffCall(staffCarePath,timelineEdit("publish-day",{day:"2026-01-02"}),context)).status,200);
 assert.equal((await get(newLinkPath+"/photos/2")).status,200);

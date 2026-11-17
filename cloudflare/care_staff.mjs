@@ -1,5 +1,5 @@
 import {authorizedStaff} from "./stay_payments.mjs";
-import {shareActive,shareExpiryHours} from "./timeline.mjs";
+import {shareActive,shareExpiryHours,validCarePhotoKey} from "./timeline.mjs";
 import {validDay} from "./bookings.mjs";
 
 const scope = `FROM stays s JOIN stay_dogs sd ON sd.stay_id=s.id
@@ -28,7 +28,7 @@ export async function staffTimeline(db, stayId, dogId, day, before, origin, visi
     db.prepare(`SELECT DISTINCT substr(recorded_at,1,10) AS day FROM care_events
       WHERE stay_id=? AND dog_id=? AND (?=0 OR customer_visible=1) ORDER BY day DESC`).bind(stayId,dogId,visibleOnly),
     db.prepare(`SELECT e.id,e.activity_label,e.kind,e.recorded_at,e.note,e.customer_visible,e.cloud_revision AS revision,
-        (SELECT group_concat(p.id) FROM care_photos p WHERE p.event_id=e.id) AS photo_ids
+        (SELECT json_group_array(json_array(p.id,p.object_key)) FROM care_photos p WHERE p.event_id=e.id) AS photos
       FROM care_events e WHERE e.stay_id=? AND e.dog_id=?
         AND (?=0 OR e.customer_visible=1) AND (? IS NULL OR substr(e.recorded_at,1,10)=?)
         AND (? IS NULL OR e.recorded_at<? OR (e.recorded_at=? AND e.id<?))
@@ -39,7 +39,7 @@ export async function staffTimeline(db, stayId, dogId, day, before, origin, visi
   const row = record.results[0];
   if (!row) return null;
   const items = events.results.slice(0,25).map((event) => ({
-    ...event, photo_ids:event.photo_ids ? event.photo_ids.split(",").map(Number) : [],
+    ...event, photos:JSON.parse(event.photos).map(([id,key]) => ({id,key})),
   }));
   const last = items.at(-1);
   return {
@@ -56,7 +56,7 @@ export async function staffCarePhoto(db,media,stayId,dogId,id) {
     JOIN care_events e ON e.id=p.event_id
     JOIN stay_dogs sd ON sd.stay_id=e.stay_id AND sd.dog_id=e.dog_id
     WHERE e.stay_id=? AND e.dog_id=? AND p.id=?`).bind(stayId,dogId,id).first();
-  if (row?.object_key !== `care/${id}.jpg`) return null;
+  if (!validCarePhotoKey(row?.object_key,id)) return null;
   return media.get(row.object_key);
 }
 
@@ -124,7 +124,7 @@ export async function writeCareEvent(db,media,stayId,dogId,form,actor) {
     ]);
     if (remove.meta.changes !== 1) return "conflict";
     if (media) for (const photo of photos.results) {
-      if (photo.object_key === `care/${photo.id}.jpg`) {
+      if (validCarePhotoKey(photo.object_key,photo.id)) {
         try { await media.delete(photo.object_key); } catch {}
       }
     }
@@ -153,16 +153,17 @@ export async function writeCareEvent(db,media,stayId,dogId,form,actor) {
   if (action === "add-event") {
     if (typeof key !== "string" || !/^[a-f0-9]{32}$/.test(key)) return "invalid";
     const scopedKey = stayId+":"+dogId+":"+actor.id+":"+key;
-    const [write,lookup] = await db.batch([
+    const [,lookup] = await db.batch([
       db.prepare(`INSERT INTO care_events(kind,recorded_at,note,activity_label,customer_visible,cloud_revision,stay_id,dog_id,cloud_create_key)
         SELECT ?,?,?,?,?,?,?,?,? WHERE ${activeDog} AND ${authorizedStaff}
         ON CONFLICT(cloud_create_key) DO NOTHING`).bind(...fields,stayId,dogId,scopedKey,stayId,dogId,...auth),
-      db.prepare(`SELECT id FROM care_events WHERE cloud_create_key=? AND ${authorizedStaff}`).bind(scopedKey,...auth),
+      db.prepare(`SELECT id,cloud_revision FROM care_events WHERE cloud_create_key=? AND ${authorizedStaff}`).bind(scopedKey,...auth),
     ]);
-    return write.meta.changes === 1 || lookup.results.length ? "saved" : "conflict";
+    const event = lookup.results[0];
+    return event ? {status:"saved",eventId:event.id,revision:event.cloud_revision} : "conflict";
   }
   const {meta} = await db.prepare(`UPDATE care_events SET kind=?,recorded_at=?,note=?,activity_label=?,customer_visible=?,cloud_revision=?
     WHERE id=? AND stay_id=? AND dog_id=? AND cloud_revision IS ? AND ${activeDog} AND ${authorizedStaff}`)
     .bind(...fields,id,stayId,dogId,form.revision,stayId,dogId,...auth).run();
-  return meta.changes === 1 ? "saved" : "conflict";
+  return meta.changes === 1 ? {status:"saved",eventId:id,revision} : "conflict";
 }
