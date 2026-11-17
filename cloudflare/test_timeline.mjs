@@ -95,6 +95,7 @@ sqlite.exec(await readFile(new URL("./customer_writes.sql", import.meta.url), "u
 sqlite.exec(await readFile(new URL("./dog_writes.sql", import.meta.url), "utf8"));
 sqlite.exec(await readFile(new URL("./booking_writes.sql", import.meta.url), "utf8"));
 sqlite.exec(await readFile(new URL("./direct_checkin.sql", import.meta.url), "utf8"));
+sqlite.exec(await readFile(new URL("./coupon_admin.sql", import.meta.url), "utf8"));
 sqlite.exec("INSERT INTO staff_access_identities (email,user_id) VALUES ('admin@example.test',1)");
 const actor = {id:1,email:"admin@example.test"};
 const now = new Date("2026-11-17T06:30:00Z");
@@ -501,6 +502,48 @@ const couponRace = await Promise.all(["2025-10-22","2025-11-22"].map((date,index
 assert.deepEqual(couponRace.map((result) => result.status).sort(),[201,409]);
 assert.equal((await couponRace.find((result) => result.status === 409).json()).status,"coupon_unavailable");
 assert.equal(sqlite.prepare("SELECT count(*) AS count FROM coupon_uses").get().count,2);
+const couponAdmin = "/api/coupons";
+const newCoupon = {kind:"percent",value:1250,minimumCents:10000,expiresOn:"2099-12-31",maxUses:4,key:"a".repeat(32)};
+assert.equal((await get(couponAdmin)).status,404);
+assert.equal((await staffCall(couponAdmin,{},context)).status,200);
+assert.equal((await staffCall(couponAdmin,customerWrite("POST",newCoupon,"https://other.example.test"),context)).status,403);
+sqlite.exec("UPDATE app_users SET is_admin=0 WHERE id=1");
+assert.equal((await staffCall(couponAdmin,{},context)).status,403);
+assert.equal((await staffCall(couponAdmin,customerWrite("POST",newCoupon),context)).status,403);
+const nonAdminPage = await (await staffCall("/",{},context)).text();
+assert.doesNotMatch(nonAdminPage,/data-mode="coupons"/);
+sqlite.exec("UPDATE app_users SET is_admin=1 WHERE id=1");
+assert.equal((await staffCall(couponAdmin,customerWrite("POST",{...newCoupon,value:10001}),context)).status,400);
+assert.equal((await staffCall(couponAdmin,customerWrite("POST",{...newCoupon,expiresOn:"2020-12-31"}),context)).status,400);
+const couponCreation = await Promise.all([0,1].map(() =>
+  staffCall(couponAdmin,customerWrite("POST",newCoupon),context)));
+assert.deepEqual(couponCreation.map((result) => result.status).sort(),[200,201]);
+const [addedCoupon,duplicateCoupon] = await Promise.all(couponCreation.map((result) => result.json()));
+assert.equal(addedCoupon.id,duplicateCoupon.id);
+const couponDetailPath = couponAdmin + "/" + addedCoupon.id;
+const couponDetail = await (await staffCall(couponDetailPath,{},context)).json();
+assert.match(couponDetail.code,/^[0-9]{6}$/);
+assert.equal(couponDetail.minimum_cents,10000);
+assert.equal(couponDetail.qr.length,21);
+assert.ok(couponDetail.qr.every((row) => /^[01]{21}$/.test(row)));
+const activeCoupons = await (await staffCall(couponAdmin+"?status=active",{},context)).json();
+assert.ok(activeCoupons.coupons.some((coupon) => coupon.id === addedCoupon.id));
+assert.match(activeCoupons.defaultExpiry,/^\d{4}-\d{2}-\d{2}$/);
+for (const id of [1,2]) {
+  sqlite.prepare("INSERT INTO coupon_uses(stay_id,coupon_id,discount_cents) VALUES(?,?,?)").run(id,addedCoupon.id,200);
+}
+const usedCoupons = await (await staffCall(couponAdmin+"?status=used",{},context)).json();
+assert.equal(usedCoupons.coupons.find((coupon) => coupon.id === addedCoupon.id).used,2);
+const expiredCoupons = await (await staffCall(couponAdmin+"?status=expired",{},context)).json();
+assert.ok(expiredCoupons.coupons.some((coupon) => coupon.code === "000004"));
+assert.equal((await staffCall(couponDetailPath,customerWrite("PUT",{...newCoupon,maxUses:1}),context)).status,409);
+assert.equal((await staffCall(couponDetailPath,customerWrite("PUT",{...newCoupon,kind:"fixed",value:2500,maxUses:3}),context)).status,200);
+const editedCoupon = await (await staffCall(couponDetailPath,{},context)).json();
+assert.equal(editedCoupon.code,couponDetail.code);
+assert.equal(editedCoupon.kind,"fixed");
+assert.equal((await staffCall(couponDetailPath,customerWrite("DELETE"),context)).status,200);
+assert.equal((await staffCall(couponDetailPath,{},context)).status,404);
+assert.equal(sqlite.prepare("SELECT count(*) AS count FROM coupon_uses WHERE coupon_id=?").get(addedCoupon.id).count,2);
 const dogsPath = customerPath + "/dogs";
 const dogForm = {name:"New dog",size:"medium",note:"",breed:"Corgi",gender:"female",neutered:"yes",
   weight:"10.5",vaccinated:"yes",rabies:"yes",flea_tick:"",medical_history:"",required_care:"",medications:"",

@@ -1,3 +1,4 @@
+import {couponScreen} from "./coupon_ui.mjs";
 import {intakeGroups} from "./stay_terms.mjs";
 
 const css = `
@@ -5,6 +6,8 @@ const css = `
   main{margin:auto;max-width:52rem;padding:1rem}h1{margin:.2rem 0 1rem}
   article{background:#fff;border:1px solid #c8ded4;border-radius:1rem;margin:.6rem 0;padding:1rem}
   dialog{width:min(34rem,calc(100% - 4rem));max-height:80vh;padding:1rem;border:1px solid #a7cbb9;border-radius:1rem;color:inherit}
+  .coupon-preview{display:block;width:min(100%,30rem);height:auto;border-radius:1rem;margin:1rem auto .5rem}
+  .coupon-code{font-size:1.6rem;letter-spacing:.18em}
   .calendar-toolbar{display:flex;flex-wrap:wrap;gap:.45rem;align-items:center;margin:1rem 0}
   .calendar-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:.3rem}
   .calendar-grid[data-view="day"]{grid-template-columns:minmax(0,1fr)}
@@ -32,7 +35,7 @@ const css = `
   button{background:#155747;color:#fff;cursor:pointer}button:disabled{opacity:.65} [hidden]{display:none}
 `;
 
-function main(intakeGroups) {
+function main(intakeGroups,couponScreen) {
   const results = document.getElementById("stays");
   const message = document.getElementById("message");
   const more = document.getElementById("more");
@@ -137,6 +140,16 @@ function main(intakeGroups) {
     }
     more.disabled = true;
     try {
+      if (selected === "coupons") {
+        const response = await fetch("/api/coupons?" + couponAdmin.query(cursor));
+        if (!response.ok) throw Error();
+        const data = await response.json();
+        if (requestId !== requestNumber) return;
+        cursor = data.nextBefore;
+        couponAdmin.render(data);
+        more.hidden = cursor === null;
+        return;
+      }
       if (selected === "calendar") {
         more.hidden = true;
         const range = calendarRange();
@@ -1495,10 +1508,13 @@ function main(intakeGroups) {
     return form;
   }
 
+  const couponAdmin = couponScreen({node,key,baht,results,message,thaiDate:bookingDate,
+    reload:() => { message.textContent = ""; return load(true); },isActive:() => selected === "coupons"});
   for (const mode of modes) {
     mode.addEventListener("click", () => {
       if (selected === mode.dataset.mode) return;
       selected = mode.dataset.mode;
+      couponAdmin.visible(selected === "coupons");
       addBooking.hidden = selected !== "bookings" && selected !== "calendar";
       calendarToolbar.hidden = selected !== "calendar";
       addCustomer.hidden = selected !== "customers";
@@ -1522,7 +1538,7 @@ function main(intakeGroups) {
   load();
 }
 
-export function outstandingPage() {
+export function outstandingPage(isAdmin = false) {
   const nonce = crypto.randomUUID().replaceAll("-", "");
   return new Response(`<!doctype html><html lang="th"><meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -1534,6 +1550,7 @@ export function outstandingPage() {
       <button type="button" data-mode="customers" aria-pressed="false">ลูกค้า</button>
       <button type="button" data-mode="calendar" aria-pressed="false">ปฏิทินการจอง</button>
       <button type="button" data-mode="bookings" aria-pressed="false">การจองที่รอเช็กอิน</button>
+      ${isAdmin ? '<button type="button" data-mode="coupons" aria-pressed="false">คูปอง</button>' : ''}
     </div>
     <form id="booking-search" hidden>
       <label><span id="directory-search-label">เลขจอง ชื่อลูกค้า หรือชื่อสุนัข</span><input type="search" maxlength="100" id="booking-query"></label>
@@ -1550,6 +1567,11 @@ export function outstandingPage() {
         <option value="week">รายสัปดาห์</option><option value="day">รายวัน</option></select></label>
       <strong id="calendar-title" aria-live="polite"></strong>
     </div>
+    <div id="coupon-toolbar" class="calendar-toolbar" hidden>
+      <label>สถานะคูปอง<select id="coupon-group"><option value="active">ใช้งานอยู่</option>
+        <option value="used">ใช้แล้ว</option><option value="expired">หมดอายุ</option></select></label>
+      <button id="coupon-add" type="button" disabled>สร้างคูปอง</button>
+    </div>
     <p id="message" role="status"></p><div id="stays"></div>
     <button id="more" type="button" hidden>โหลดเพิ่มเติม</button></main>
     <dialog id="booking-detail" aria-labelledby="booking-title">
@@ -1562,7 +1584,11 @@ export function outstandingPage() {
       <p id="customer-status" role="status"></p>
       <div id="customer-content" aria-live="polite"></div>
     </dialog>
-    <script nonce="${nonce}">(${main.toString()})(${JSON.stringify(intakeGroups)})</script></html>`, {
+    <dialog id="coupon-dialog" aria-labelledby="coupon-title">
+      <h2 id="coupon-title">จัดการคูปอง</h2><button type="button" id="coupon-close" autofocus>ปิด</button>
+      <p id="coupon-status" role="status"></p><div id="coupon-content"></div>
+    </dialog>
+    <script nonce="${nonce}">(${main.toString()})(${JSON.stringify(intakeGroups)},${couponScreen.toString()})</script></html>`, {
     headers: {
       "Content-Type":"text/html; charset=utf-8", "Cache-Control":"private, no-store",
       "X-Content-Type-Options":"nosniff",

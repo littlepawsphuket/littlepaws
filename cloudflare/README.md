@@ -4,6 +4,8 @@ This Worker is a read-only migration milestone. It serves shared customer timeli
 
 ## Test locally
 
+Run `npm ci --prefix cloudflare` from the project root to install the locked QR dependency before testing or building.
+
 From the project root, use Python 3.12 with the existing requirements and Node 24.
 
 ```sh
@@ -42,7 +44,7 @@ D1 transactions use batches. Port staff write operations individually so checks 
 
 `staff.mjs` is a separate Worker for authenticated staff. It can add, edit, and archive customer records and add, edit and archive dog profiles. It displays dog photos and stay history. Staff can select or capture a dog photo. The browser resizes the photo to JPEG with a 1024 px maximum edge, and the Worker accepts at most 512 KiB. Photo replacements use versioned private R2 objects and update the D1 reference before removing the prior object. The browser must be able to decode the selected format. Archiving hides the customer and dogs from the directory while retaining linked data. It also lists current stays and pending bookings with their details and payment history, and can create, edit and remove pending bookings. Booking writes warn about shop holidays, overlapping stays or bookings for the same dog, and capacity. A confirmation is valid for the checked occupancy and holiday snapshot. The calendar supports month, week and day views with shop holidays, can check in a priced booking with a signed Thai or English consent, records the optional packed items and physical exam, displays the resulting stay summary and accepts remaining payments from it, supports check-out, records and removes booking deposits, and records payments for outstanding stays with the D1 balance check and duplicate protection in `stay_payments.mjs`. This preview does not replace the full Mac staff application.
 
-The sample `wrangler.staff.toml` disables public and preview URLs. To set up a private staging instance, use a separate hostname protected by Cloudflare Access, point `DB` to the staging database and `MEDIA` to the staging private bucket, apply `staff_access.sql` and `booking_deposits.sql` after the data import, then apply the one-time migrations `customer_writes.sql` `dog_writes.sql` `booking_writes.sql` and `direct_checkin.sql`, and set `ACCESS_AUDIENCE` to that app's audience. Provision the authorized email-to-existing-user mapping in `staff_access_identities` using lowercase email addresses. Never infer staff identities from customer emails. Requests without trusted Access context, a matching audience, and an active mapped account are denied. Keep the staff Worker separate from the customer link Worker.
+The sample `wrangler.staff.toml` disables public and preview URLs. To set up a private staging instance, use a separate hostname protected by Cloudflare Access, point `DB` to the staging database and `MEDIA` to the staging private bucket, apply `staff_access.sql` and `booking_deposits.sql` after the data import, then apply the one-time migrations `customer_writes.sql` `dog_writes.sql` `booking_writes.sql` `direct_checkin.sql` and `coupon_admin.sql`, and set `ACCESS_AUDIENCE` to that app's audience. Provision the authorized email-to-existing-user mapping in `staff_access_identities` using lowercase email addresses. Never infer staff identities from customer emails. Requests without trusted Access context, a matching audience, and an active mapped account are denied. Keep the staff Worker separate from the customer link Worker.
 
 For local development only, Wrangler's `[access.dev]` and `[access.dev.identity]` blocks can simulate the audience and a fixture staff identity. Use a synthetic D1 import and remove those test settings from deployment configuration.
 
@@ -55,3 +57,6 @@ To regenerate the check-in terms artifact after editing the Mac application term
 
 
 Walk-in check-in reuses the booking form's rate and dog selection, then collects intake, consent and payment directly into a stay. The preview has no writes. Both check-in flows can quote and redeem an existing percentage or fixed coupon. Redemption checks the live limit in the same transaction as the stay and calculates percentage discounts from the full price before deposits. The final save checks ownership, pricing and current scheduling warnings, and deduplicates retries without creating a placeholder booking.
+
+
+Administrators can create, edit and archive coupons, and switch between active, used and expired listings. The coupon preview renders a shareable PNG in the browser with the six-digit code and a numeric QR, expiration, use limit and optional minimum spend. The Cloudflare preview currently uses the Little Paws green palette.

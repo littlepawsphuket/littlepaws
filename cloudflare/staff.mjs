@@ -1,5 +1,6 @@
 import { receiveStayPayment, stayBalance, authorizedStaff } from "./stay_payments.mjs";
 import { pendingBookings, bookingCalendar, bookingDetails, receiveBookingDeposit, deleteBookingDeposit } from "./bookings.mjs";
+import { listCoupons, couponDetails, saveCoupon, archiveCoupon } from "./coupon_admin.mjs";
 import { staySummary } from "./stay_summary.mjs";
 import { checkInBooking, checkInDirect, previewDirectStay, previewCheckInCoupon, checkInTerms } from "./check_in.mjs";
 import { saveBooking, archiveBooking, bookingRates } from "./booking_writes.mjs";
@@ -115,6 +116,7 @@ export default {
     const dogMatch = /^\/api\/customers\/(\d+)\/dogs(?:\/(\d+))?$/.exec(url.pathname);
     const customerMatch = /^\/api\/customers\/(\d+)(?:\/dogs\/(\d+)\/photo)?$/.exec(url.pathname);
     const staySummaryMatch = /^\/api\/stays\/(\d+)$/.exec(url.pathname);
+    const couponMatch = /^\/api\/coupons(?:\/(\d+))?$/.exec(url.pathname);
     const directCheckIn = url.pathname === "/api/stays/check-in";
     const couponPreview = url.pathname === "/api/stays/check-in/coupon";
     const directPreview = url.pathname === "/api/stays/check-in/preview";
@@ -122,11 +124,44 @@ export default {
     const bookingMatch = /^\/api\/bookings\/(\d+)$/.exec(url.pathname);
     const receiptMatch = /^\/api\/receipts\/(\d+)$/.exec(url.pathname);
     const isFile = receiptMatch || url.pathname === "/api/payment-qr.jpg";
-    if (!match && !depositMatch && !dogMatch && !customerMatch && !bookingMatch && !checkInMatch && !directCheckIn && !directPreview && !couponPreview && !staySummaryMatch && !isFile && !["/", "/api/account", "/api/customers", "/api/bookings", "/api/bookings/rates", "/api/bookings/calendar", "/api/bookings/pending", "/api/stays/outstanding", "/api/stays/current"].includes(url.pathname)) return json({error: "not_found"}, 404);
+    if (!match && !depositMatch && !dogMatch && !customerMatch && !bookingMatch && !checkInMatch && !couponMatch && !directCheckIn && !directPreview && !couponPreview && !staySummaryMatch && !isFile && !["/", "/api/account", "/api/customers", "/api/bookings", "/api/bookings/rates", "/api/bookings/calendar", "/api/bookings/pending", "/api/stays/outstanding", "/api/stays/current"].includes(url.pathname)) return json({error: "not_found"}, 404);
     try {
       const user = await authorizedUser(env, ctx);
       if (!user) return json({error: "access_required"}, 403);
       if (isFile) return await privateFile(request, env, receiptMatch);
+      if (couponMatch) {
+        if (!user.is_admin) return json({error:"admin_required"},403);
+        const id = couponMatch[1] ? Number(couponMatch[1]) : null;
+        if (id !== null && (!Number.isSafeInteger(id) || id < 1)) return json({error:"not_found"},404);
+        if (request.method === "GET") {
+          if (id !== null) {
+            const coupon = await couponDetails(env.DB,id);
+            return coupon ? json(coupon) : json({error:"not_found"},404);
+          }
+          const group = url.searchParams.get("status") || "active";
+          const before = Number(url.searchParams.get("before") || Number.MAX_SAFE_INTEGER);
+          if (!["active","used","expired"].includes(group) || !Number.isSafeInteger(before) || before < 1) {
+            return json({error:"invalid_search"},400);
+          }
+          return json(await listCoupons(env.DB,group,before));
+        }
+        if (!(id === null ? ["POST"] : ["PUT","DELETE"]).includes(request.method)) {
+          return json({error:"method_not_allowed"},405);
+        }
+        if (request.headers.get("Origin") !== url.origin) return json({error:"invalid_origin"},403);
+        let result;
+        if (request.method === "DELETE") {
+          result = await archiveCoupon(env.DB,id,user);
+        } else {
+          if (request.headers.get("Content-Type")?.split(";",1)[0].trim().toLowerCase() !== "application/json") {
+            return json({error:"invalid_content_type"},415);
+          }
+          const form = await smallJson(request);
+          if (!form) return json({error:"invalid"},400);
+          result = await saveCoupon(env.DB,id,form,user);
+        }
+        return json(result,{created:201,saved:200,removed:200,invalid:400,conflict:409,not_found:404}[result.status]);
+      }
       if (checkInMatch || directCheckIn || directPreview || couponPreview) {
         const id = checkInMatch ? Number(checkInMatch[1]) : null;
         if (checkInMatch && (!Number.isSafeInteger(id) || id < 1)) return json({error:"not_found"},404);
@@ -213,7 +248,7 @@ export default {
       }
       if (!match && !depositMatch) {
         if (request.method !== "GET") return json({error: "method_not_allowed"}, 405);
-        if (url.pathname === "/") return outstandingPage();
+        if (url.pathname === "/") return outstandingPage(Boolean(user.is_admin));
         if (url.pathname === "/api/account") {
           return json({id: user.id, displayName: user.display_name, isAdmin: !!user.is_admin});
         }
