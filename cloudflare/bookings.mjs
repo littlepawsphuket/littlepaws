@@ -29,13 +29,13 @@ export async function pendingBookings(db, after, search) {
 
 export async function bookingDetails(db, id) {
   const [details, dogs, payments] = await db.batch([
-    db.prepare(`SELECT a.id,a.booking_number,a.checkin,a.checkout,a.charged_nights,a.service_type,
-      a.status,a.stay_id,a.note,a.discount_cents,c.name AS customer,
+    db.prepare(`SELECT a.id,a.customer_id,a.cloud_revision,a.booking_number,a.checkin,a.checkout,a.charged_nights,a.service_type,
+      a.status,a.stay_id,a.note,a.discount_cents,a.rounding_cents,c.name AS customer,
       COALESCE(NULLIF(TRIM(c.owner_phone || ' / ' || c.line_id,' /'),''),c.contact) AS contact,
       ROUND(COALESCE(s.agreed_total,a.agreed_total)*100) AS total_cents
       FROM appointments a JOIN customers c ON c.id=a.customer_id LEFT JOIN stays s ON s.id=a.stay_id
-      WHERE a.id=?`).bind(id),
-    db.prepare(`SELECT d.name,ad.nightly_rate_cents
+      WHERE a.id=? AND a.status!='cancelled'`).bind(id),
+    db.prepare(`SELECT d.id,d.name,ad.nightly_rate_cents
       FROM appointment_dogs ad JOIN dogs d ON d.id=ad.dog_id
       WHERE ad.appointment_id=? ORDER BY d.name,d.id`).bind(id),
     db.prepare(`SELECT t.id,t.payment_key,t.occurred_on,t.received_time,t.payment_type,ROUND(t.amount*100) AS amount_cents

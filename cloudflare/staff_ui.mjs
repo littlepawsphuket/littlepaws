@@ -544,6 +544,211 @@ function main() {
   }
 
   let bookingRequest;
+  const addBooking = document.getElementById("add-booking");
+  addBooking.addEventListener("click", () => bookingEditor());
+  let createBookingKey;
+
+  async function bookingEditor(booking) {
+    bookingRequest?.abort();
+    const controller = bookingRequest = new AbortController();
+    if (!bookingDialog.open) bookingDialog.showModal();
+    const status = node("p", "");
+    status.setAttribute("role","status");
+    const today = parts.format(new Date());
+    const form = node("form");
+    const submit = node("button","บันทึกการจอง");
+    submit.disabled = true;
+    const search = Object.assign(node("input"), {type:"search", maxLength:100, placeholder:"พิมพ์ชื่อแล้วกดค้นหา"});
+    const searchButton = Object.assign(node("button","ค้นหา"),{type:"button"});
+    const owner = node("select");
+    owner.required = true;
+    owner.append(new Option("เลือกลูกค้า",""));
+    const ownerGroup = node("label","ลูกค้า");
+    ownerGroup.append(owner);
+    const dogs = node("fieldset");
+    dogs.append(node("legend","สุนัขและราคา"));
+    const choices = new Map();
+    let rates;
+    let requestId = 0;
+    let pendingSave = false;
+    function field(label, type, value) {
+      const input = Object.assign(node("input"), {type,value});
+      const wrapper = node("label", label);
+      wrapper.append(input);
+      form.append(wrapper);
+      return input;
+    }
+    if (booking) {
+      owner.append(new Option(booking.customer, booking.customer_id));
+      owner.value = booking.customer_id;
+      owner.disabled = true;
+    } else form.append(search,searchButton);
+    form.append(ownerGroup);
+    const service = node("select");
+    for (const [value,[label]] of Object.entries(services)) service.append(new Option(label,value));
+    service.value = booking?.service_type || "overnight";
+    const serviceLabel = node("label","ประเภทบริการ");
+    serviceLabel.append(service);
+    form.append(serviceLabel);
+    const checkin = field("วันเข้าพัก","date",booking?.checkin || today);
+    const checkout = field("วันรับกลับ","date",booking?.checkout || today);
+    const quantity = field("จำนวนวัน / เดือน","number",booking?.charged_nights ?? 1);
+    const discount = field("ส่วนลด (บาท)","number",(booking?.discount_cents || 0)/100);
+    const note = field("หมายเหตุ","text",booking?.note || "");
+    note.maxLength = 800;
+    quantity.min = discount.min = "0";
+    discount.step = "0.01";
+    checkin.required = checkout.required = quantity.required = true;
+    form.append(dogs,submit,status);
+    bookingContent.replaceChildren(node("h3",booking ? "แก้ไขการจอง" : "สร้างการจอง"),form);
+    function defaults() {
+      quantity.step = service.value === "monthly" ? "0.01" : "1";
+      const days = (Date.parse(checkout.value) - Date.parse(checkin.value)) / 86400000;
+      if (Number.isFinite(days) && days >= 0) quantity.value = service.value === "monthly"
+        ? (days / 30).toFixed(2) : Math.max(service.value === "daycare" ? 1 : 0,days);
+    }
+    quantity.step = service.value === "monthly" ? "0.01" : "1";
+    checkin.addEventListener("change", defaults);
+    checkout.addEventListener("change", defaults);
+    service.addEventListener("change", () => {
+      defaults();
+      for (const {dog,rate} of choices.values()) rate.value = rates?.[service.value]?.[dog.size] ?? "";
+    });
+    async function searchOwners() {
+      const call = ++requestId;
+      searchButton.disabled = true;
+      try {
+        const response = await fetch("/api/customers?" + new URLSearchParams({q:search.value}), {signal:controller.signal});
+        if (!response.ok) throw Error();
+        const result = await response.json();
+        if (controller.signal.aborted || call !== requestId) return;
+        owner.replaceChildren(new Option("เลือกลูกค้า",""), ...result.customers.map((c) => new Option(c.name,c.id)));
+        dogs.replaceChildren(node("legend","สุนัขและราคา"));
+        choices.clear();
+        submit.disabled = true;
+        status.textContent = result.customers.length ? "" : "ไม่พบลูกค้า";
+      } catch {
+        if (!controller.signal.aborted) status.textContent = "ค้นหาลูกค้าไม่ได้";
+      } finally {
+        searchButton.disabled = false;
+      }
+    }
+    searchButton.addEventListener("click", searchOwners);
+    search.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") { event.preventDefault(); searchOwners(); }
+    });
+    async function loadDogs() {
+      const call = ++requestId;
+      submit.disabled = true;
+      dogs.replaceChildren(node("legend","สุนัขและราคา"));
+      choices.clear();
+      if (!owner.value) return;
+      const existing = new Map((booking?.dogs || []).map((dog) => [dog.id,dog]));
+      let available = [];
+      try {
+        const response = await fetch("/api/customers/" + owner.value,{signal:controller.signal});
+        if (response.ok) available = (await response.json()).dogs;
+        else if (!booking || response.status !== 404) throw Error();
+      } catch {
+        if (!controller.signal.aborted && call === requestId) status.textContent = "โหลดรายชื่อสุนัขไม่ได้";
+        return;
+      }
+      if (controller.signal.aborted || call !== requestId) return;
+      const allDogs = new Map(available.map((dog) => [dog.id,dog]));
+      for (const dog of existing.values()) if (!allDogs.has(dog.id)) allDogs.set(dog.id,dog);
+      for (const dog of allDogs.values()) {
+        const original = existing.get(dog.id);
+        const include = Object.assign(node("input"),{type:"checkbox",checked:!!original});
+        const rate = Object.assign(node("input"),{type:"number",min:"0",max:"999999.99",step:"0.01",
+          value:original ? (original.nightly_rate_cents === null ? "" : original.nightly_rate_cents / 100)
+            : rates?.[service.value]?.[dog.size] ?? ""});
+        const row = node("div");
+        const dogLabel = node("label", dog.name);
+        dogLabel.prepend(include);
+        const priceLabel = node("label","ราคา (บาท)");
+        priceLabel.append(rate);
+        row.append(dogLabel,priceLabel);
+        dogs.append(row);
+        choices.set(dog.id,{dog,include,rate});
+      }
+      submit.disabled = choices.size === 0;
+    }
+    owner.addEventListener("change", loadDogs);
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (pendingSave) return;
+      const selectedDogs = [...choices].filter(([,entry]) => entry.include.checked)
+        .map(([id,{rate}]) => ({id, rate:rate.value === "" ? null : Math.round(Number(rate.value)*100)}));
+      if (!selectedDogs.length) { status.textContent = "กรุณาเลือกสุนัขอย่างน้อยหนึ่งตัว"; return; }
+      if (!booking) createBookingKey ??= key();
+      const quantity100 = Math.round(Number(quantity.value)*100);
+      const discountCents = Math.round(Number(discount.value)*100);
+      const samePrice = booking && quantity100 === Math.round(booking.charged_nights*100) &&
+        discountCents === booking.discount_cents && selectedDogs.length === booking.dogs.length &&
+        selectedDogs.every((dog) => booking.dogs.some((old) => old.id === dog.id && old.nightly_rate_cents === dog.rate));
+      const body = {customerId:Number(owner.value),service:service.value, checkin:checkin.value,checkout:checkout.value,
+        quantity100,discountCents,
+        dogs:selectedDogs,note:note.value,wholeBaht:!samePrice || booking.rounding_cents > 0,key:createBookingKey,revision:booking?.cloud_revision ?? null};
+      pendingSave = true;
+      submit.disabled = true;
+      try {
+        const response = await fetch("/api/bookings" + (booking ? "/" + booking.id : ""),{
+          method:booking ? "PUT" : "POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body),
+        });
+        const result = await response.json();
+        if (!response.ok) {
+          status.textContent = response.status === 409
+            ? "บันทึกไม่ได้ กรุณาตรวจยอดมัดจำหรือเปิดรายละเอียดล่าสุดอีกครั้ง" : "บันทึกไม่ได้ กรุณาตรวจวัน ราคา และสุนัข";
+          return;
+        }
+        if (!booking) createBookingKey = undefined;
+        if (form.isConnected && bookingDialog.open) await showBooking(result.id);
+        if (selected === "bookings") await load(true);
+        message.textContent = "บันทึกการจองแล้ว";
+      } catch {
+        status.textContent = "ยังยืนยันผลไม่ได้ กรุณาตรวจรายการก่อนลองใหม่";
+      } finally {
+        pendingSave = false;
+        submit.disabled = false;
+      }
+    });
+    try {
+      const response = await fetch("/api/bookings/rates",{signal:controller.signal});
+      if (!response.ok) throw Error();
+      rates = await response.json();
+      if (booking) await loadDogs();
+      else await searchOwners();
+    } catch {
+      if (!controller.signal.aborted) status.textContent = "โหลดการตั้งค่าราคาไม่ได้ กรุณาเปิดหน้าจอใหม่";
+    }
+  }
+
+  function bookingActions(booking) {
+    const actions = node("div");
+    const edit = Object.assign(node("button","แก้ไขการจอง"),{type:"button"});
+    edit.addEventListener("click", () => bookingEditor(booking));
+    const remove = Object.assign(node("button","ลบการจอง"),{type:"button",className:"delete-deposit"});
+    remove.addEventListener("click", async () => {
+      if (!confirm("ยืนยันลบการจองนี้หรือไม่?")) return;
+      remove.disabled = true;
+      const status = document.getElementById("booking-status");
+      try {
+        const response = await fetch("/api/bookings/" + booking.id,{method:"DELETE"});
+        if (!response.ok) {
+          status.textContent = response.status === 409 ? "กรุณาตรวจยอดมัดจำและสถานะเช็กอินก่อนลบ" : "ลบการจองไม่ได้";
+          return;
+        }
+        if (remove.isConnected && bookingDialog.open) bookingDialog.close();
+        if (selected === "bookings") await load(true);
+        message.textContent = "ลบการจองแล้ว";
+      } catch {
+        status.textContent = "ยังยืนยันการลบไม่ได้ กรุณาลองใหม่";
+      } finally { remove.disabled = false; }
+    });
+    actions.append(edit,remove);
+    return actions;
+  }
+
   async function showBooking(id) {
     document.getElementById("booking-status").textContent = "";
     bookingContent.replaceChildren(node("p", "กำลังโหลด…"));
@@ -564,6 +769,7 @@ function main() {
         node("p", [data.checkin, data.checkout].map((day) => bookingDate.format(new Date(day))).join(" – ")),
         node("p", service + " · " + data.charged_nights + " " + unit),
       );
+      if (!data.stay_id && data.status === "pending") bookingContent.append(bookingActions(data));
       if (data.note) bookingContent.append(node("p", data.note));
       bookingContent.append(node("h3", "สุนัขที่จอง"));
       const dogs = node("ul");
@@ -686,6 +892,7 @@ function main() {
     mode.addEventListener("click", () => {
       if (selected === mode.dataset.mode) return;
       selected = mode.dataset.mode;
+      addBooking.hidden = selected !== "bookings";
       addCustomer.hidden = selected !== "customers";
       bookingSearch.hidden = selected !== "bookings" && selected !== "customers";
       searchLabel.textContent = selected === "customers" ? "ชื่อลูกค้าหรือชื่อสุนัข" : "เลขจอง ชื่อลูกค้า หรือชื่อสุนัข";
@@ -723,7 +930,7 @@ export function outstandingPage() {
       <label><span id="directory-search-label">เลขจอง ชื่อลูกค้า หรือชื่อสุนัข</span><input type="search" maxlength="100" id="booking-query"></label>
       <button type="submit">ค้นหา</button>
     </form>
-    <p><button id="add-customer" type="button" hidden>เพิ่มลูกค้า</button></p>
+    <p><button id="add-booking" type="button" hidden>สร้างการจอง</button><button id="add-customer" type="button" hidden>เพิ่มลูกค้า</button></p>
     <p><a id="payment-qr" href="/api/payment-qr.jpg" target="_blank" rel="noopener" hidden>เปิด QR สำหรับชำระเงิน</a></p>
     <p id="message" role="status"></p><div id="stays"></div>
     <button id="more" type="button" hidden>โหลดเพิ่มเติม</button></main>

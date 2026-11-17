@@ -1,5 +1,6 @@
 import { receiveStayPayment, stayBalance, authorizedStaff } from "./stay_payments.mjs";
 import { pendingBookings, bookingDetails, receiveBookingDeposit, deleteBookingDeposit } from "./bookings.mjs";
+import { saveBooking, archiveBooking, bookingRates } from "./booking_writes.mjs";
 import { searchCustomers, customerDetails, saveCustomer, archiveCustomer } from "./customers.mjs";
 import { dogPhoto, saveDogPhoto, photoLimit } from "./dog_photos.mjs";
 import { saveDog, archiveDog } from "./dogs.mjs";
@@ -114,11 +115,29 @@ export default {
     const bookingMatch = /^\/api\/bookings\/(\d+)$/.exec(url.pathname);
     const receiptMatch = /^\/api\/receipts\/(\d+)$/.exec(url.pathname);
     const isFile = receiptMatch || url.pathname === "/api/payment-qr.jpg";
-    if (!match && !depositMatch && !dogMatch && !customerMatch && !bookingMatch && !isFile && !["/", "/api/account", "/api/customers", "/api/bookings/pending", "/api/stays/outstanding", "/api/stays/current"].includes(url.pathname)) return json({error: "not_found"}, 404);
+    if (!match && !depositMatch && !dogMatch && !customerMatch && !bookingMatch && !isFile && !["/", "/api/account", "/api/customers", "/api/bookings", "/api/bookings/rates", "/api/bookings/pending", "/api/stays/outstanding", "/api/stays/current"].includes(url.pathname)) return json({error: "not_found"}, 404);
     try {
       const user = await authorizedUser(env, ctx);
       if (!user) return json({error: "access_required"}, 403);
       if (isFile) return await privateFile(request, env, receiptMatch);
+      if (request.method !== "GET" && (bookingMatch || url.pathname === "/api/bookings")) {
+        const id = bookingMatch ? Number(bookingMatch[1]) : null;
+        if (id !== null && (!Number.isSafeInteger(id) || id < 1)) return json({error:"not_found"}, 404);
+        if (!(id === null ? ["POST"] : ["PUT","DELETE"]).includes(request.method)) return json({error:"method_not_allowed"}, 405);
+        if (request.headers.get("Origin") !== url.origin) return json({error:"invalid_origin"}, 403);
+        let result;
+        if (request.method === "DELETE") {
+          result = await archiveBooking(env.DB, id, user);
+        } else {
+          if (request.headers.get("Content-Type")?.split(";",1)[0].trim().toLowerCase() !== "application/json") {
+            return json({error:"invalid_content_type"}, 415);
+          }
+          const form = await smallJson(request, 8192);
+          if (!form) return json({error:"invalid"}, 400);
+          result = await saveBooking(env.DB, id, form, user);
+        }
+        return json(result, {created:201,saved:200,removed:200,invalid:400,not_found:404,conflict:409}[result.status]);
+      }
       if (customerMatch?.[2] && request.method === "PUT") {
         if (request.headers.get("Origin") !== url.origin) return json({error:"invalid_origin"}, 403);
         if (request.headers.get("Content-Type") !== "image/jpeg") return json({error:"invalid_content_type"}, 415);
@@ -191,6 +210,8 @@ export default {
           const details = await customerDetails(env.DB, id, offset);
           return details ? json(details) : json({error: "not_found"}, 404);
         }
+        if (url.pathname === "/api/bookings") return json({error:"method_not_allowed"},405);
+        if (url.pathname === "/api/bookings/rates") return json(await bookingRates(env.DB));
         if (bookingMatch) {
           const id = Number(bookingMatch[1]);
           if (!Number.isSafeInteger(id) || id < 1) return json({error: "not_found"}, 404);
