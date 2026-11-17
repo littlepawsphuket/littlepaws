@@ -1,0 +1,6 @@
+{% set current_tab = {'transactions':'transactions','transaction_edit':'transactions','reports':'reports','report_guide':'reports'}.get(request.endpoint, tab|default('rates')) %}
+<nav class="calendar-tabs settings-tabs" aria-label="{{ _('ตั้งค่าระบบ') }}">
+  {% for key,label in [('rates','ตั้งค่าราคา'),('holidays','วันหยุดร้าน'),('theme','ธีมของระบบ'),('capacity','ความจุร้าน'),('backup','สำรองข้อมูล'),('care','ประเภทกิจกรรม'),('coupons','คูปอง'),('transactions','รายรับ–รายจ่าย'),('reports','รายงาน'),('users','จัดการผู้ใช้')] if key not in ('users','backup') or g.user.is_admin %}
+  <a class="button secondary" href="{{url_for('auth.users') if key == 'users' else url_for(key) if key in ('coupons','transactions','reports') else url_for('settings',tab=key)}}" {% if key==current_tab %}aria-current="page"{% endif %}>{{label|tr}}</a>
+  {% endfor %}
+</nav>

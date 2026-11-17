@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="{{guest_lang}}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta name="robots" content="noindex,nofollow">
+  <title>{{ guest_text('ไทม์ไลน์กิจกรรม') }} · Little Paws Homestay Phuket</title>
+  <link rel="stylesheet" href="{{url_for('static',filename='style.css',v=75)}}">
+</head>
+<body data-theme="{{active_theme}}" class="guest-timeline">
+<main>
+  <div class="guest-care-header">
+    <img src="{{url_for('static',filename='little-paws-logo.png')}}" alt="" width="68" height="68">
+    <div><strong>Little Paws Homestay Phuket</strong><h1>{{ guest_text('ไทม์ไลน์กิจกรรม') }} · {{dog_name}}</h1></div>
+  </div>
+  <div class="guest-care-tools">
+    <div class="language-switch" role="group" aria-label="{{ guest_text('ภาษา') }}">
+      {% for code,label in languages.items() %}
+      <a lang="{{code}}" href="{{url_for('public_care_timeline',token=token,day=selected,lang=code)}}"
+         {% if code == guest_lang %}aria-current="true"{% endif %}>{{label}}</a>
+      {% endfor %}
+    </div>
+    <a class="button secondary" href="{{url_for('public_care_pdf',token=token,day=selected,lang=guest_lang)}}">{{ guest_text('ดาวน์โหลด PDF') }}</a>
+  </div>
+  <nav class="guest-care-days" aria-label="{{ guest_text('เลือกวันที่') }}">
+    <a href="{{url_for('public_care_timeline',token=token,day='all',lang=guest_lang)}}"
+       {% if selected == 'all' %}aria-current="page"{% endif %}>{{ guest_text('ทุกวัน') }}</a>
+    <a href="{{url_for('public_care_timeline',token=token,lang=guest_lang)}}"
+       {% if selected == today %}aria-current="page"{% endif %}>{{ guest_text('วันนี้') }} · {{guest_date(today)}}</a>
+    {% for day in days if day != today %}
+    <a href="{{url_for('public_care_timeline',token=token,day=day,lang=guest_lang)}}"
+       {% if selected == day %}aria-current="page"{% endif %}>{{guest_date(day)}}</a>
+    {% endfor %}
+  </nav>
+  {% set previous = namespace(day='') %}
+  {% for event in events %}
+    {% set day = event.recorded_at[:10] %}
+    {% if day != previous.day %}
+      <h2 class="guest-care-date">{{guest_date(day)}}</h2>
+      {% set previous.day = day %}
+    {% endif %}
+    <article class="guest-care-event">
+      <h3><time class="care-event-clock">{{event.recorded_at[11:16]}}</time> {{ guest_text(care_event_title(event)) }}</h3>
+      {% if event.note %}<p class="care-event-note">{{event.note}}</p>{% endif %}
+      {% if event.photos %}
+      <div class="care-gallery">{% for photo_id in event.photos.split(',') %}
+        <a href="{{url_for('public_care_photo',token=token,photo_id=photo_id)}}"><img src="{{url_for('public_care_photo',token=token,photo_id=photo_id)}}" alt="{{ guest_text('รูปประกอบกิจกรรม') }}" loading="lazy"></a>
+      {% endfor %}</div>
+      {% endif %}
+    </article>
+  {% else %}
+    <div class="card">
+      <p>{{ guest_text('ยังไม่มีอัปเดตในวันที่เลือก') if days else guest_text('ยังไม่มีอัปเดตกิจกรรม') }}</p>
+      {% if days and selected != 'all' %}<a href="{{url_for('public_care_timeline',token=token,day='all',lang=guest_lang)}}">{{ guest_text('ดูทุกวัน') }}</a>{% endif %}
+    </div>
+  {% endfor %}
+</main>
+<footer>
+  <p>{{ guest_text('ลิงก์นี้จะหมดอายุภายใน {hours} ชั่วโมงหลังเช็กเอาต์').format(hours=expiry_hours) }}</p>
+  <small>{{slogan_title}}</small>
+</footer>
+</body>
+</html>

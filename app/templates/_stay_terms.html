@@ -1,0 +1,10 @@
+{% macro term_sections(sections) %}
+<div class="terms-columns">
+  {% for section in sections %}
+  <section>
+    <h4>{{section.heading}}</h4>
+    <ul>{% for item in section['items'] %}<li>{{item}}</li>{% endfor %}</ul>
+  </section>
+  {% endfor %}
+</div>
+{% endmacro %}

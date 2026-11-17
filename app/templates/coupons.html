@@ -1,0 +1,56 @@
+{% extends 'base.html' %}
+{% from '_icons.html' import app_icon %}
+{% block page_heading %}
+<h1>{{ _('ตั้งค่าระบบ') }} · {{ _('คูปอง') }}</h1>
+{% endblock %}
+{% block content %}
+{% include '_settings_tabs.html' %}
+<section class="card">
+  <h2>{% if editing %}{{ _('แก้ไขคูปอง') }} {{editing.code}}{% else %}{{ _('สร้างคูปอง') }}{% endif %}</h2>
+  <form method="post" class="form">
+    <input type="hidden" name="_csrf" value="{{csrf}}">
+    <div class="formgrid">
+      <label>{{ _('ประเภทส่วนลด') }}
+        <select name="kind" id="coupon-kind">
+          <option value="percent">{{ _('เปอร์เซ็นต์ (%)') }}</option>
+          <option value="fixed" {% if submitted.get('kind',editing.kind if editing else '')=='fixed' %}selected{% endif %}>{{ _('จำนวนเงิน (บาท)') }}</option>
+        </select>
+      </label>
+      <label>{{ _('มูลค่าส่วนลด') }}<input name="value" type="number" min="0.01" step="0.01" required value="{{submitted.get('value',editing.value/100 if editing else '')}}"></label>
+      <label>{{ _('ยอดค่าฝากขั้นต่ำ (บาท)') }}<input name="minimum" type="number" min="0" step="0.01" value="{{submitted.get('minimum',editing.minimum_cents/100 if editing else '')}}"></label>
+      <label>{{ _('วันหมดอายุ') }}<input name="expires_on" type="date" min="{{[coupon_date,editing.expires_on]|min if editing else coupon_date}}" required value="{{submitted.get('expires_on',editing.expires_on if editing else default_expiry)}}"></label>
+      <label>{{ _('จำนวนครั้งที่ใช้ได้') }}<input name="max_uses" type="number" min="{{[1,editing.used]|max if editing else 1}}" max="999999" required value="{{submitted.get('max_uses',editing.max_uses if editing else 1)}}"></label>
+    </div>
+    <div class="actions"><button>{{ _('บันทึกการแก้ไข') if editing else _('สร้างคูปอง') }}</button>
+      {% if editing %}<a class="button secondary" href="{{url_for('coupons',status=coupon_group,_anchor='coupon-list')}}">{{ _('ยกเลิก') }}</a>{% endif %}
+    </div>
+  </form>
+</section>
+<section class="card" id="coupon-list">
+  <h2>{{ _('รายการคูปอง') }}</h2>
+  <nav class="calendar-tabs settings-tabs" aria-label="{{ _('สถานะคูปอง') }}">
+    {% for key,label in [('active','พร้อมใช้'),('used','มีการใช้งานแล้ว'),('expired','หมดอายุ')] %}
+    <a class="button secondary" href="{{url_for('coupons',status=key)}}" {% if key==coupon_group %}aria-current="page"{% endif %}>{{label|tr}} · {{groups[key]|length}}</a>
+    {% endfor %}
+  </nav>
+  <div class="scroll"><table>
+    <thead><tr><th>{{ _('รหัสคูปอง') }}</th><th>{{ _('ส่วนลด') }}</th><th>{{ _('ยอดค่าฝากขั้นต่ำ (บาท)') }}</th><th>{{ _('วันหมดอายุ') }}</th><th>{{ _('ใช้แล้ว / ใช้ได้') }}</th><th>{{ _('สถานะ') }}</th><th>{{ _('จัดการ') }}</th></tr></thead>
+    <tbody>
+      {% for coupon in coupons %}
+      <tr><td><strong>{{coupon.code}}</strong></td><td>{{fmt(coupon.value/100)}} {{ '%' if coupon.kind=='percent' else _('บาท') }}</td>
+        <td>{{fmt(coupon.minimum_cents/100)}}</td><td>{{coupon.expires_on|thai_date}}</td><td>{{coupon.used}} / {{coupon.max_uses}}</td>
+        <td>{{ _('หมดอายุ') if coupon.expires_on<coupon_date else _('ใช้ครบแล้ว') if coupon.used>=coupon.max_uses else _('เหลือ {count} ครั้ง').format(count=coupon.max_uses-coupon.used) if coupon.used else _('พร้อมใช้') }}</td>
+        <td><div class="appointment-actions"><a class="button secondary appointment-icon" data-image-export target="_blank" rel="noopener" href="{{url_for('coupon_image',coupon_id=coupon.id)}}" {% if preview_coupon and preview_coupon.id == coupon.id %}data-image-export-auto{% endif %}
+          aria-label="{{ _('ดาวน์โหลดรูปคูปอง') }} {{coupon.code}}" title="{{ _('ดาวน์โหลดรูปคูปอง') }}">{{app_icon('image')}}</a>
+          <a class="button secondary appointment-icon" href="{{url_for('coupons',coupon_id=coupon.id,status=coupon_group)}}" aria-label="{{ _('แก้ไขคูปอง') }}" title="{{ _('แก้ไขคูปอง') }}">{{app_icon('edit')}}</a>
+          <form method="post" action="{{url_for('coupons',coupon_id=coupon.id,status=coupon_group)}}"
+                onsubmit="return confirm({{ _('ยืนยันลบคูปองนี้?')|tojson|forceescape }})">
+            <input type="hidden" name="_csrf" value="{{csrf}}">
+            <button class="danger appointment-icon" name="action" value="delete" aria-label="{{ _('ลบคูปอง') }}" title="{{ _('ลบคูปอง') }}">{{app_icon('delete')}}</button>
+          </form>
+        </div></td></tr>
+      {% else %}<tr><td colspan="7">{{ _('ยังไม่มีคูปอง') }}</td></tr>{% endfor %}
+    </tbody>
+  </table></div>
+</section>
+{% endblock %}

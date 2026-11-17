@@ -1,0 +1,118 @@
+{% extends 'base.html' %}
+{% block page_heading %}
+<h1>{{ _('ตั้งค่าระบบ') }}</h1>
+{% endblock %}
+{% block content %}
+{% include '_settings_tabs.html' %}
+<section class="card">
+  {% if tab == 'rates' %}
+  <h2>{{ _('ตั้งค่าราคา') }}</h2>
+  <form method="post" class="form">
+    <input type="hidden" name="_csrf" value="{{csrf}}">
+    <div class="settings-price-grid">
+      {% for service,label in services.items() %}
+      <section class="intake-group settings-rates" aria-labelledby="price-{{service}}">
+        <h3 id="price-{{service}}">{{label|tr}} <small>{{rate_units[service]|tr}}</small></h3>
+        {% for size,size_label in sizes.items() %}
+        {% set key=service ~ '_' ~ size %}
+        <label>{{loop.cycle('S','M','L')}} · {{size_label|tr}}
+          <input type="number" name="{{key}}" min="0" max="999999999" step="0.01" {% if service != 'monthly' %}required{% endif %} value="{{submitted.get(key,rates[service][size]) if submitted.get(key,rates[service][size]) is not none else ''}}">
+        </label>
+        {% endfor %}
+      </section>
+      {% endfor %}
+    </div>
+    <div><button>{{ _('บันทึก') }}</button></div>
+  </form>
+  {% elif tab == 'holidays' %}
+  <h2>{{ _('แก้ไขวันหยุดร้าน') if holiday else _('เพิ่มวันหยุดร้าน') }}</h2>
+  <form method="post" class="form">
+    <input type="hidden" name="_csrf" value="{{csrf}}">
+    <label>{{ _('ชื่อวันหยุด') }}<input name="name" maxlength="100" required value="{{submitted.get('name',holiday.name if holiday else '')}}"></label>
+    <div class="formgrid">
+      <label>{{ _('ตั้งแต่') }}<input type="date" name="starts_on" required value="{{submitted.get('starts_on',holiday.starts_on if holiday else '')}}"></label>
+      <label>{{ _('ถึง') }}<input type="date" name="ends_on" required value="{{submitted.get('ends_on',holiday.ends_on if holiday else '')}}"></label>
+    </div>
+    <div class="actions"><button>{{ _('บันทึก') }}</button>
+      {% if holiday %}<a class="button secondary" href="{{url_for('settings',tab='holidays')}}">{{ _('ยกเลิก') }}</a>{% endif %}
+      <a class="button secondary" href="{{url_for('appointments')}}">{{ _('ดูปฏิทินการจอง') }}</a>
+    </div>
+  </form>
+  <div class="scroll"><table>
+    <thead><tr><th>{{ _('ชื่อวันหยุด') }}</th><th>{{ _('ตั้งแต่') }}</th><th>{{ _('ถึง') }}</th><th>{{ _('จัดการ') }}</th></tr></thead>
+    <tbody>{% for item in holidays %}
+    <tr><td>{{item.name}}</td><td>{{item.starts_on|thai_date}}</td><td>{{item.ends_on|thai_date}}</td><td>
+      <a href="{{url_for('settings',tab='holidays',edit=item.id)}}">{{ _('แก้ไข') }}</a>
+      <form class="inline" method="post" action="{{url_for('settings',tab='holidays',edit=item.id)}}"
+            onsubmit="return confirm({{ _('ยกเลิกวันหยุดนี้?')|tojson|forceescape }})">
+        <input type="hidden" name="_csrf" value="{{csrf}}">
+        <button class="danger small" name="action" value="delete">{{ _('ยกเลิกวันหยุด') }}</button>
+      </form></td></tr>
+    {% else %}<tr><td colspan="4">{{ _('ยังไม่มีวันหยุดร้าน') }}</td></tr>{% endfor %}</tbody>
+  </table></div>
+  {% elif tab == 'capacity' %}
+  <h2>{{ _('ความจุร้าน') }}</h2>
+  <form method="post" class="form">
+    <input type="hidden" name="_csrf" value="{{csrf}}">
+    <label>{{ _('จำนวนสุนัขสูงสุดต่อวัน') }}<input type="number" name="capacity" min="0" max="10000" value="{{capacity}}" required></label>
+    <p class="muted">{{ _('ใส่ 0 เพื่อปิดการเตือนความจุ') }}</p>
+    {% if g.user.is_admin %}
+    <label>{{ _('อายุลิงก์ไทม์ไลน์หลังเช็กเอาต์ (ชั่วโมง)') }}
+      <input type="number" name="care_link_hours" min="0" step="1" value="{{expiry_hours}}" required>
+    </label>
+    <p class="muted">{{ _('ใส่ 0 เพื่อให้ลิงก์หมดอายุทันทีหลังเช็กเอาต์') }}</p>
+    {% endif %}
+    <div><button>{{ _('บันทึก') }}</button></div>
+  </form>
+  {% elif tab == 'care' %}
+  <h2>{{ _('ประเภทกิจกรรม') }}</h2>
+  <p>{{ _('ประเภทกิจกรรมเริ่มต้น') }} · {% for label in standard_activities %}{{ _(label) }}{% if not loop.last %} · {% endif %}{% endfor %}</p>
+  <form method="post" class="form">
+    <input type="hidden" name="_csrf" value="{{csrf}}">
+    <label>{{ _('ชื่อกิจกรรม') }}<input name="activity" maxlength="60" required></label>
+    <div><button>{{ _('เพิ่มกิจกรรม') }}</button></div>
+  </form>
+  {% if care_activities %}<ul class="care-settings-list">
+    {% for activity in care_activities %}
+    <li><span>{{activity}}</span>
+      <form method="post" onsubmit="return confirm(this.dataset.confirm)" data-confirm="{{ _('นำกิจกรรมนี้ออกจากรายการเลือก?') }}">
+        <input type="hidden" name="_csrf" value="{{csrf}}">
+        <input type="hidden" name="activity" value="{{activity}}">
+        <button class="button danger" name="action" value="delete">{{ _('นำออก') }}</button>
+      </form>
+    </li>
+    {% endfor %}
+  </ul>{% endif %}
+  {% elif tab == 'backup' %}
+  <h2>{{ _('สำรองข้อมูล') }}</h2>
+  <p>{{ _('สำรองล่าสุด') }} · {% if last_backup %}{{last_backup[:10]|thai_date}} {{last_backup[11:16]}}{% else %}—{% endif %}</p>
+  <form method="post" action="{{url_for('backup_archive')}}">
+    <input type="hidden" name="_csrf" value="{{csrf}}">
+    <button>{{ _('ดาวน์โหลด ZIP ฐานข้อมูลและใบเสร็จ') }}</button>
+  </form>
+  <form class="form intake-group" method="post" action="{{url_for('verify_backup')}}" enctype="multipart/form-data">
+    <input type="hidden" name="_csrf" value="{{csrf}}">
+    <label>{{ _('ไฟล์สำรอง ZIP') }}<input type="file" name="archive" accept=".zip,application/zip" required></label>
+    <div><button class="button secondary">{{ _('ทดสอบกู้คืนกับสำเนา') }}</button></div>
+  </form>
+  {% else %}
+  <h2>{{ _('ธีมของระบบ') }}</h2>
+  <form method="post" class="form">
+    <input type="hidden" name="_csrf" value="{{csrf}}">
+    <div class="theme-grid">
+      {% for key,(label,art) in themes.items() %}
+      <label class="theme-option" data-theme="{{key}}">
+        <span class="theme-swatch" aria-hidden="true">
+          {% if key != 'classic' %}<img class="theme-swatch-landscape" src="{{url_for('static',filename='theme-' ~ key ~ '.webp')}}" alt="" loading="lazy">{% endif %}
+          <img src="{{url_for('static',filename='balen-gucci-relax.webp' if key=='classic' else 'mascot-' ~ key ~ '.webp')}}" alt="">
+          <b>{{art}}</b>
+        </span>
+        <span><input name="theme" type="radio" value="{{key}}" {% if active_theme==key %}checked{% endif %}> {{label|tr}}</span>
+      </label>
+      {% endfor %}
+    </div>
+    <div><button>{{ _('บันทึก') }}</button></div>
+  </form>
+  {% endif %}
+</section>
+{% endblock %}

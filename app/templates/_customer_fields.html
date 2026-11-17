@@ -1,0 +1,5 @@
+{% macro customer_details(customer=none) %}
+<label>{{'เบอร์โทรเจ้าของ'|tr}}<input name="owner_phone" type="tel" autocomplete="tel" value="{{customer.owner_phone if customer else ''}}"></label>
+<label>{{'LINE ID / Facebook'|tr}}<input name="line_id" value="{{customer.line_id if customer else ''}}"></label>
+<label>{{'ที่อยู่กรณีฉุกเฉิน'|tr}}<textarea name="emergency_address" rows="2">{{customer.emergency_address if customer else ''}}</textarea></label>
+{% endmacro %}

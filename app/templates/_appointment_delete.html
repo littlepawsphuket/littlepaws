@@ -1,0 +1,6 @@
+{% from '_icons.html' import app_icon %}
+<form method="post" action="{{url_for('appointment_delete',aid=appointment_id,**(list_context if list_context is defined else booking_navigation()))}}"
+      onsubmit="return confirm({{ _('ลบการจองนี้ออกจากระบบ? หากเช็กอินแล้ว บิลการเข้าพักจะยังอยู่')|tojson|forceescape }})">
+  <input type="hidden" name="_csrf" value="{{csrf}}">
+  <button class="danger appointment-icon" aria-label="{{ _('ลบการจอง') }}" title="{{ _('ลบการจอง') }}">{{app_icon('delete')}}</button>
+</form>

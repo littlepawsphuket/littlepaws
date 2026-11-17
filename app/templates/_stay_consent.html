@@ -1,0 +1,37 @@
+{% from '_stay_terms.html' import term_sections %}
+<section class="stay-consent" aria-labelledby="stay-consent-title">
+  <div class="consent-heading">
+    <span class="consent-paw" aria-hidden="true">🐾</span>
+    <div><h3 id="stay-consent-title">{{terms.title}}</h3><strong>{{terms.business}}</strong><p>{{terms.intro}}</p></div>
+  </div>
+  {{term_sections(terms.sections)}}
+  {% if consent %}
+  <div class="signed-stay">
+    <div><strong>{{ _('รับทราบและลงลายเซ็นแล้ว') }}</strong><br>{{consent.customer_name}} · {{consent.signed_at[:10]|thai_date}} {{ _('เวลา') }} {{consent.signed_at[11:16]}} {{ _('น.') }}</div>
+    {% include '_signature_preview.html' %}
+    {% if signed_terms != terms %}
+    <details><summary>{{ _('เงื่อนไขฉบับที่ลงลายเซ็น') }}</summary>{{term_sections(signed_terms.sections)}}</details>
+    {% endif %}
+  </div>
+  {% elif mode == 'stay' and stay %}
+  <p class="muted">{{ _('รายการนี้ยังไม่มีลายเซ็นที่บันทึกไว้ สามารถให้ลูกค้าลงลายเซ็นเพิ่มเติมได้') }}</p>
+  {% endif %}
+  <div class="signature-panel" id="stay-signature" data-required="{{'true' if mode == 'conversion' or not stay else 'false'}}" data-original-owner="{{stay.customer_id if stay and mode == 'stay' else ''}}">
+    <input type="hidden" name="terms_language" value="{{lang}}">
+    <input type="hidden" name="terms_version" value="{{terms_version}}">
+    <input type="hidden" name="signature" value="{{draft_signature|tojson if draft_signature else ''}}">
+    <label class="terms-ack check-tile">
+      <input type="checkbox" name="terms_ack" value="1" {% if acknowledged %}checked{% endif %}><span class="check-mark" aria-hidden="true"></span>
+      <span>{{ _('ข้าพเจ้าอ่านและรับทราบเงื่อนไขการฝากเลี้ยงข้างต้นแล้ว') }}</span>
+    </label>
+    <div class="signature-toolbar">
+      <div><h4>{{ _('ลายเซ็นลูกค้า') }}</h4><small>{{ _('ใช้นิ้ว ปากกา หรือเมาส์เซ็นในกรอบ') }}</small></div>
+      <button class="secondary small" type="button" id="clear-stay-signature">{{ _('ล้างลายเซ็น') }}</button>
+    </div>
+    <svg class="signature-pad" id="stay-signature-pad" viewBox="0 0 720 240" preserveAspectRatio="none" role="img" aria-label="{{ _('พื้นที่สำหรับเซ็นลายเซ็น') }}">
+      <line x1="30" y1="190" x2="690" y2="190" class="signature-guide"></line>
+      <g id="stay-signature-strokes"></g>
+    </svg>
+    <p class="alert error" id="stay-signature-error" role="alert" hidden></p>
+  </div>
+</section>

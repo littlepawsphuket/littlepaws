@@ -1,0 +1,34 @@
+{% from '_intake_fields.html' import optional_field %}
+{% from '_dog_photo.html' import dog_photo_fields %}
+{% macro dog_fields(sizes, profile_groups, today, dog=none) %}
+{% set profile = dog.profile if dog else {} %}
+<input type="hidden" name="profile_fields" value="1">
+<label>{{ _('ชื่อสุนัข') }}<input name="dog_name" value="{{dog.name if dog else ''}}" required></label>
+<label>{{ _('ขนาด') }}<select name="size">
+  {% for value,label in sizes.items() %}
+  <option value="{{value}}" {% if dog and dog.size==value %}selected{% endif %}>{{label|tr}}</option>
+  {% endfor %}
+</select></label>
+{% for heading, fields in profile_groups %}
+<fieldset class="intake-group">
+  <legend>{{heading|tr}}</legend>
+  <div class="formgrid">
+  {% for key,title,kind in fields %}{{ optional_field(key,title,kind,profile) }}{% endfor %}
+  {% if loop.first %}
+  <div class="dog-age-fields" data-dog-age data-today="{{today}}">
+    <input type="hidden" name="age_source" value="birth">
+    <input type="hidden" name="birth_estimated" value="{{'1' if profile.get('birth_estimated') else '0'}}">
+    <label>{{ _('วันเกิด') }}<input name="birth_date" type="date" max="{{today}}" value="{{profile.get('birth_date','')}}"></label>
+    <div class="dog-age-inputs">
+      <label>{{ _('อายุ (ปี)') }}<input name="age_years" type="number" min="0" step="1" inputmode="numeric" value="{{dog.age_years if dog else ''}}"></label>
+      <label>{{ _('อายุ (เดือน)') }}<input name="age_months" type="number" min="0" max="11" step="1" inputmode="numeric" value="{{dog.age_months if dog else ''}}"></label>
+    </div>
+    <small class="muted" data-age-help>{{ _('กรอกวันเกิดหรืออายุโดยประมาณ ระบบจะคำนวณให้อีกช่อง') }}</small>
+  </div>
+  <label>{{ _('นิสัย / ข้อควรระวัง') }}<textarea name="note" rows="2">{{dog.note or '' if dog else ''}}</textarea></label>
+  {% endif %}
+  </div>
+</fieldset>
+{% endfor %}
+{{dog_photo_fields()}}
+{% endmacro %}

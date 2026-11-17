@@ -1,0 +1,99 @@
+{% extends 'base.html' %}
+{% block page_heading %}
+<h1>{{ _('รายงาน') }}</h1>
+<p>{{report.title}} · {{report.period}}</p>
+{% endblock %}
+{% block content %}
+{% include '_settings_tabs.html' %}
+{% include '_report_tabs.html' %}
+<section class="card">
+  <form class="formgrid report-filters" method="get">
+    <label>{{ _('ช่วงเวลา') }}<select name="range" id="report-range">
+      {% for value,label in [('month','รายเดือน'),('year','ปี ค.ศ.'),('custom','กำหนดช่วงเอง')] %}
+      <option value="{{value}}" {% if preset==value %}selected{% endif %}>{{label|tr}}</option>
+      {% endfor %}
+    </select></label>
+    <label data-report-range="month">{{ _('รายเดือน') }}<input type="month" name="month" value="{{start.isoformat()[:7]}}"></label>
+    <label data-report-range="year">{{ _('ปี ค.ศ.') }}<input type="number" name="year" min="1" max="9999" value="{{start.year}}"></label>
+    <label data-report-range="custom">{{ _('ตั้งแต่') }}<input type="date" name="start" value="{{start.isoformat()}}"></label>
+    <label data-report-range="custom">{{ _('ถึง') }}<input type="date" name="end" value="{{end.isoformat()}}"></label>
+    {% if name=='finance' %}
+    <label>{{ _('ประเภท') }}<select name="kind"><option value="">{{ _('ทั้งหมด') }}</option>
+      {% for key,label in [('income','รายรับ'),('refund','คืนเงิน'),('expense','รายจ่าย')] %}<option value="{{key}}" {% if filters.kind==key %}selected{% endif %}>{{label|tr}}</option>{% endfor %}
+    </select></label>
+    <label>{{ _('หมวด') }}<select name="category"><option value="">{{ _('ทั้งหมด') }}</option>
+      {% for category in categories %}<option {% if filters.category==category.category %}selected{% endif %} value="{{category.category}}">{{category.category|tr}}</option>{% endfor %}
+    </select></label>
+    {% elif name in ('balances','boarding') %}
+    <label>{{ _('ลูกค้า') }}<select name="customer"><option value="">{{ _('ทั้งหมด') }}</option>
+      {% for customer in customers %}<option value="{{customer.id}}" {% if filters.customer==customer.id|string %}selected{% endif %}>{{customer.name}}</option>{% endfor %}
+    </select></label>
+    <label>{{ _('ประเภทบริการ') }}<select name="service"><option value="">{{ _('ทั้งหมด') }}</option>
+      {% for key,label in service_names.items() %}<option value="{{key}}" {% if filters.service==key %}selected{% endif %}>{{label|tr}}</option>{% endfor %}
+    </select></label>
+    <label>{{ _('สถานะการเข้าพัก') }}<select name="status"><option value="">{{ _('ทั้งหมด') }}</option>
+      {% for key,label in [('checked_in','เข้าพัก'),('completed','กลับบ้านแล้ว')] %}<option value="{{key}}" {% if filters.status==key %}selected{% endif %}>{{label|tr}}</option>{% endfor %}
+    </select></label>
+    {% elif name=='coupons' %}
+    <label>{{ _('รหัสคูปอง') }}<input name="code" inputmode="numeric" value="{{filters.code}}"></label>
+    {% else %}
+    <label>{{ _('กลุ่มลูกค้า') }}<select name="segment"><option value="">{{ _('ทั้งหมด') }}</option>
+      {% for key,label in [('new','ลูกค้าใหม่'),('returning','ลูกค้ากลับมา'),('registered','เพิ่มโปรไฟล์'),('first_booking','จองครั้งแรก')] %}<option value="{{key}}" {% if filters.segment==key %}selected{% endif %}>{{label|tr}}</option>{% endfor %}
+    </select></label>
+    {% endif %}
+    <div class="report-actions"><button>{{ _('แสดงรายงาน') }}</button>
+      {% for ext,label in [('xlsx','Excel'),('pdf','PDF'),('png','PNG')] %}
+      <a class="button secondary" {% if ext=='png' %}data-image-export target="_blank" rel="noopener"{% endif %} href="{{url_for('reports',name=name,export=ext,**report_params)}}">{{label}}</a>
+      {% endfor %}
+    </div>
+  </form>
+  <p class="muted">{{report.note}}</p>
+</section>
+<section class="report-stats">
+  {% for label,value in report.summary %}
+  <a class="card stat" href="#report-details"><small>{{label}}</small><strong>{{fmt(value) if value is float else value}}</strong></a>
+  {% endfor %}
+</section>
+{% for title,entries in report.groups %}
+<section class="card"><h2>{{title}}</h2>
+  {% for label,value in entries %}<div class="listline">{{label}} <span>฿{{fmt(value)}}</span></div>{% endfor %}
+  {% if not entries %}<p class="muted">{{ _('ไม่พบรายการตามตัวกรอง') }}</p>{% endif %}
+</section>
+{% endfor %}
+{% if report.chart and report.chart[1] %}
+<section class="card"><h2>{{ _('แนวโน้มรายเดือน') }}</h2>
+  {% set series, points = report.chart %}
+  <div class="report-legend">{% for label in series %}<span class="report-series-{{loop.index}}">{{label}}</span>{% endfor %}</div>
+  <div class="scroll"><div class="report-chart">
+    {% set peak = [1,points|map(attribute=1)|map('max')|max]|max %}
+    {% for month,values in points %}
+    <div class="report-chart-month">
+      <div class="report-bars">
+        {% for value in values %}<div class="report-series-{{loop.index}}" style="height:{{value/peak*100}}%" title="{{series[loop.index0]}} · {{fmt(value)}}"></div>{% endfor %}
+      </div><small>{{month}}</small>
+    </div>
+    {% endfor %}
+  </div></div>
+</section>
+{% endif %}
+<section class="card" id="report-details"><h2>{{ _('รายละเอียด') }}</h2>
+  <div class="scroll"><table>
+    <thead><tr>{% for column in report.columns %}<th>{{column}}</th>{% endfor %}<th>{{ _('รายการต้นทาง') }}</th></tr></thead>
+    <tbody>{% for row in report.rows %}
+      <tr>{% for value in row['values'] %}<td>{{fmt(value) if value is float else value}}</td>{% endfor %}
+        <td><a href="{{row.link}}">{{ _('เปิดรายการ') }}</a></td></tr>
+    {% else %}<tr><td colspan="{{report.columns|length+1}}">{{ _('ไม่พบรายการตามตัวกรอง') }}</td></tr>{% endfor %}</tbody>
+  </table></div>
+</section>
+<script>
+  const range = document.getElementById('report-range');
+  function showReportRange() {
+    document.querySelectorAll('[data-report-range]').forEach(label => {
+      label.hidden = label.dataset.reportRange !== range.value;
+      label.querySelector('input').disabled = label.hidden;
+    });
+  }
+  range.addEventListener('change', showReportRange);
+  showReportRange();
+</script>
+{% endblock %}

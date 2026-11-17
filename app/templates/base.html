@@ -1,0 +1,107 @@
+{% from '_icons.html' import app_icon %}
+{% macro season_particles() %}
+<div class="season-motion" aria-hidden="true">
+  {% for particle in range(25) %}<span></span>{% endfor %}
+</div>
+{% endmacro %}
+<!doctype html>
+<html lang="{{lang}}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Little Paws Homestay Phuket</title>
+  <link rel="icon" type="image/png" href="{{url_for('static',filename='little-paws-icon.png')}}">
+  <link rel="stylesheet" href="{{url_for('static',filename='style.css',v=80)}}">
+</head>
+<body data-theme="{{active_theme}}">
+<header>
+  {% if active_theme == 'classic' %}{{ season_particles() }}{% endif %}
+  <a class="brand" href="{{url_for('dashboard')}}">
+    <img src="{{url_for('static',filename='little-paws-logo.png')}}" width="94" height="88" alt="">
+    <span class="brand-title">
+      <strong>Little Paws Homestay Phuket</strong>
+      <small>Management System</small>
+    </span>
+  </a>
+  {% if g.user and not g.user.needs_password %}
+  <nav class="primary-nav" aria-label="{{ _('เมนูหลัก') }}">
+    {% set section = request.endpoint or '' %}
+    {% for endpoint, label, related in [
+      ('dashboard', _('ภาพรวม'), []),
+      ('stays', _('ฝากเลี้ยง'), []),
+      ('stay_history', _('ประวัติการเข้าพัก'), ['stay_summary','care_timeline']),
+      ('appointments', _('การจอง'), ['appointment_preview','appointment_edit','appointment_checkin']),
+      ('customers', _('ลูกค้า'), ['customer_detail']),
+      ('settings', _('ตั้งค่าระบบ'), ['coupons','transactions','transaction_edit','reports','report_guide','auth.users'])] %}
+    <a href="{{url_for(endpoint)}}"{% if endpoint == 'settings' %} class="nav-settings-icon" aria-label="{{label}}" title="{{label}}"{% endif %} {% if section == endpoint or section in related %}aria-current="page"{% endif %}>{{app_icon('settings') if endpoint == 'settings' else label|tr}}</a>
+    {% endfor %}
+  </nav>
+  {% endif %}
+  <div class="header-controls">
+    {% if g.user %}
+    <details class="account-menu">
+      <summary class="account-avatar" aria-label="{{ _('เมนูบัญชี') }}" title="{{ _('เมนูบัญชี') }}">
+        {% if g.user.has_photo %}<img src="{{url_for('auth.photo')}}" alt="" width="44" height="44">
+        {% else %}{{app_icon('user')}}{% endif %}
+      </summary>
+      <div class="account-menu-panel">
+        <strong>{{g.user.display_name}}</strong>
+        {% if not g.user.needs_password %}
+        <a href="{{url_for('auth.profile')}}">{{app_icon('user')}} {{ _('แก้ไขโปรไฟล์') }}</a>
+        <a href="{{url_for('auth.password')}}">{{app_icon('edit')}} {{ _('เปลี่ยนรหัสผ่าน') }}</a>
+        {% endif %}
+        <form method="post" action="{{url_for('auth.logout')}}">
+          <input type="hidden" name="_csrf" value="{{csrf}}">
+          <button class="button secondary">{{app_icon('checkout')}} {{ _('ออกจากระบบ') }}</button>
+        </form>
+      </div>
+    </details>
+    {% endif %}
+  <div class="language-switch" role="group" aria-label="{{ _('ภาษา') }}">
+    <span class="language-globe">{{app_icon('globe')}}</span>
+    {% for code, label in languages.items() %}
+    <a href="{{language_url(code)}}" lang="{{code}}" aria-label="{{label}}" title="{{label}}"
+       {% if code == lang %}aria-current="true"{% endif %}>{{code|upper}}</a>
+    {% endfor %}
+  </div>
+  </div>
+</header>
+{% if g.user and not g.user.needs_password and active_theme != 'classic' %}
+<div class="season-decoration season-with-heading">
+  <img class="season-landscape" src="{{url_for('static',filename='theme-' ~ active_theme ~ '.webp')}}" alt="" width="1440" height="480">
+  {{ season_particles() }}
+  <div class="screen-heading">{% block page_heading %}{% endblock %}</div>
+  <img class="season-mascot" src="{{url_for('static',filename=mascot_file)}}" alt="" width="640" height="320">
+</div>
+{% endif %}
+<main>
+  {% for category,msg in get_flashed_messages(with_categories=true) %}<div class="alert {{category}}" role="status">{{msg|tr}}</div>{% endfor %}
+  {% if not g.user or g.user.needs_password or active_theme == 'classic' %}
+  <div class="screen-heading{% if request.endpoint in ('auth.login','auth.password','auth.profile') %} account-heading{% endif %}">{{ self.page_heading() }}</div>
+  {% endif %}
+  {% block content %}{% endblock %}
+</main>
+<footer class="site-footer">
+  <div class="site-slogan"><strong lang="en">🐾 {{slogan_title}}</strong>
+    <p lang="th">{{slogan_text}} ❤️</p>
+  </div>
+  <small>{{ _('Little Paws Homestay Phuket · ข้อมูลเก็บใน Mac เครื่องนี้') }}</small>
+</footer>
+<script id="ui-messages" type="application/json">{{ui_messages|tojson}}</script>
+<dialog id="image-export-preview" aria-labelledby="image-export-title">
+  <div class="image-export-toolbar">
+    <h2 id="image-export-title">{{ _('ตัวอย่างรูปภาพ') }}</h2>
+    <form method="dialog"><button class="secondary" autofocus>{{ _('ปิด') }}</button></form>
+  </div>
+  <p data-image-status role="status"></p>
+  <div class="image-export-body"><img data-image-preview alt="{{ _('ตัวอย่างรูปภาพ') }}" hidden></div>
+  <div class="actions image-export-actions">
+    <button type="button" data-image-share hidden>{{ _('แชร์รูปภาพ') }}</button>
+    <a class="button secondary" data-image-save target="_blank" rel="noopener" hidden>{{ _('บันทึกรูปภาพ') }}</a>
+    <a class="button secondary" data-image-retry target="_blank" rel="noopener" hidden>{{ _('เปิดรูปในแท็บใหม่') }}</a>
+  </div>
+  <small data-image-help hidden>{{ _('แตะค้างที่รูปเพื่อบันทึกหรือแชร์') }}</small>
+</dialog>
+<script src="{{url_for('static',filename='app.js',v=35)}}"></script>
+</body>
+</html>

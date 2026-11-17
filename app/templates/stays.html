@@ -1,0 +1,14 @@
+{% extends 'base.html' %}
+{% from '_icons.html' import app_icon %}
+{% block page_heading %}
+<h1>{{ _('รายการฝากเลี้ยง') }}</h1>
+<p>{{ _('จัดการวันเข้าพัก ราคา และสถานะของน้องหมา') }}</p>
+{% endblock %}
+{% block content %}
+<div class="actions">
+  <a class="button secondary" href="{{url_for('appointment_edit')}}">{{ _('+ จองล่วงหน้า') }}</a>
+  <a class="button secondary" href="#stay-history">{{ _('ประวัติการเข้าพัก') }}</a>
+</div>
+{% include '_stay_form.html' %}
+{% include '_stay_history.html' %}
+{% endblock %}

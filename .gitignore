@@ -1,0 +1,16 @@
+.env.local
+.venv/
+data/
+__pycache__/
+.pytest_cache/
+
+# Local credentials, generated deployments, and private installation assets
+.env
+.env.*
+.dev.vars
+.dev.vars.*
+.wrangler/
+node_modules/
+app/static/payment-qr.jpg
+app/static/guide/
+cloudflare/wrangler.staging.toml

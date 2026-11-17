@@ -1,0 +1,108 @@
+{% extends 'base.html' %}
+{% macro photo(file, caption) %}
+{% if file in guide_images %}
+<figure class="guide-photo">
+  <a href="{{url_for('static', filename='guide/' ~ file ~ '.webp')}}" target="_blank" rel="noopener">
+    <img src="{{url_for('static', filename='guide/' ~ file ~ '.webp')}}" alt="{{caption}}" loading="lazy">
+  </a>
+  <figcaption>{{caption}}</figcaption>
+</figure>
+{% endif %}
+{% endmacro %}
+{% block page_heading %}
+<h1>{{ _('คู่มือ') }}</h1>
+<p>{{ _('คู่มือการใช้งานและการสำรองข้อมูล') }}</p>
+{% endblock %}
+{% block content %}
+{% include '_settings_tabs.html' %}
+{% include '_report_tabs.html' %}
+<nav class="calendar-tabs" aria-label="{{ _('คู่มือ') }}">
+  <a class="button secondary" href="{{url_for('report_guide')}}" {% if chapter=='usage' %}aria-current="page"{% endif %}>{{ _('คู่มือการใช้งาน') }}</a>
+  <a class="button secondary" href="{{url_for('report_guide',chapter='backup')}}" {% if chapter=='backup' %}aria-current="page"{% endif %}>{{ _('คู่มือสำรองและกู้คืน') }}</a>
+</nav>
+{% if lang == 'en' %}<p class="muted">The illustrated guide below is in Thai.</p>{% endif %}
+<div class="guide-chapter" lang="th">
+{% if chapter == 'usage' %}
+<section class="card">
+  <h2>คู่มือการใช้งาน</h2>
+  <p>เปิดเว็บบน Mac หรือใช้ iPad และมือถือที่ต่อ Wi‑Fi เดียวกันกับ Mac เปิดภาพประกอบเพื่อดูขนาดเต็มได้</p>
+  <nav class="guide-contents" aria-label="สารบัญ">
+    <a href="#dashboard-guide">แดชบอร์ด</a><a href="#customers-guide">ลูกค้าและสุนัข</a><a href="#booking-guide">การจอง</a>
+    <a href="#checkin-guide">เข้าพักและรับกลับ</a><a href="#payments-guide">รับชำระและออกเอกสาร</a><a href="#finance-guide">รายงานและตั้งค่า</a>
+  </nav>
+</section>
+<section class="card" id="dashboard-guide">
+  <h2>แดชบอร์ด</h2>
+  <p>ดูสุนัขที่กำลังเข้าพัก วันรับกลับ และการจองที่รอเช็กอิน แตะ <strong>ดูการจอง</strong> เพื่อเปิดรายละเอียด หรือแตะ <strong>เช็กอิน</strong> เพื่อเริ่มรับฝากจากการจองนั้น เลือกช่วงเดือนเพื่อดูแนวโน้มรายรับและรายจ่าย</p>
+  {{ photo('dashboard','แดชบอร์ดและการ์ดสุนัขที่มีกำหนดเข้าพัก') }}
+</section>
+<section class="card" id="customers-guide">
+  <h2>ลูกค้าและสุนัข</h2>
+  <ol><li>เปิด <strong>ลูกค้า</strong> แล้วพิมพ์ชื่อในช่องเลือกลูกค้า หรือเพิ่มลูกค้าใหม่</li>
+    <li>เพิ่มสุนัขในโปรไฟล์ลูกค้า ใส่ขนาด ข้อมูลสุขภาพ วันเกิดหรืออายุ และเลือกรูปจากเครื่องหรือถ่ายด้วยกล้อง</li>
+    <li>เปิดประวัติการเข้าพักเพื่อดูการใช้บริการของสุนัขทุกตัวของลูกค้ารายนั้น หากมียอดค้าง ให้แตะยอดเพื่อเปิดหน้ารับชำระ</li></ol>
+  {{ photo('customers','เมนูลูกค้าและฟอร์มเพิ่มข้อมูลลูกค้า') }}
+</section>
+<section class="card" id="booking-guide">
+  <h2>การจองและมัดจำ</h2>
+  <ol><li>เปิด <strong>การจอง</strong> แล้วกดไอคอนเพิ่ม เลือกลูกค้า สุนัข ประเภทบริการ วันเข้าพักและวันรับกลับ ตรวจราคาก่อนบันทึก</li>
+    <li>เมื่อพบวันหยุด การจองซ้ำ หรือเกินความจุ ให้ตรวจคำเตือนและยืนยันหากต้องการบันทึกต่อ</li>
+    <li>เปิดหน้าดูการจองเพื่อแก้ไขข้อมูล ออกใบยืนยัน หรือเพิ่มรายการมัดจำตามยอด วัน และเวลาที่รับจริง ออกใบรับมัดจำของแต่ละรายการเป็น PDF หรือรูปภาพได้</li></ol>
+  {{ photo('bookings','ปฏิทินการจองและปุ่มเพิ่มการจอง') }}
+</section>
+<section class="card" id="checkin-guide">
+  <h2>เช็กอิน ดูแล และรับกลับ</h2>
+  <ol><li>เริ่มจากปุ่ม <strong>เช็กอิน</strong> ในการจองเดิม หรือเปิด <strong>ฝากเลี้ยง</strong> สำหรับลูกค้าที่มาโดยตรง เพิ่มหรือแก้ไขข้อมูลลูกค้าและสุนัขจากฟอร์มได้</li>
+    <li>ตรวจวันเวลา ราคา ส่วนลดหรือคูปอง และยอดรับจริง กรอกของใช้และผลตรวจร่างกายตามที่จำเป็น ให้ลูกค้าติ๊กรับทราบเงื่อนไขและเซ็นก่อนบันทึก</li>
+    <li>ระหว่างเข้าพัก เปิด <strong>การดูแลวันนี้</strong> ในการ์ดบนแดชบอร์ดเพื่อบันทึกให้อาหารหรือให้ยา เมื่อน้องกลับบ้าน กด <strong>เช็กเอาต์</strong> แล้วยืนยัน</li></ol>
+  {{ photo('checkin','ฟอร์มฝากเลี้ยงสำหรับเลือกลูกค้า ประเภทบริการ และวันเวลา') }}
+</section>
+<section class="card" id="payments-guide">
+  <h2>รับชำระและออกเอกสาร</h2>
+  <p>หลังบันทึกการรับฝาก ให้เปิดหน้าสรุปเพื่อดูยอดสุทธิ มัดจำ ยอดที่รับแล้ว และยอดค้าง ใช้ QR สำหรับโอนหรือบันทึกรับเงินเพิ่มเมื่อได้รับจริง หากลบรายการรับชำระให้ระบุเหตุผล</p>
+  <p>ใช้ปุ่ม PDF หรือรูปภาพภาษาไทยหรืออังกฤษเพื่อส่งเอกสารให้ลูกค้า หากยกเลิกการเข้าพัก ให้ระบุเหตุผลในหน้าสรุป และบันทึกการคืนเงินแยกเมื่อคืนเงินจริง</p>
+</section>
+<section class="card" id="finance-guide">
+  <h2>รายรับ–รายจ่าย รายงาน และตั้งค่า</h2>
+  <ul><li><strong>ตั้งค่าระบบ → รายรับ–รายจ่าย</strong> ใช้บันทึกธุรกรรมทั่วไปพร้อมหมวดและใบเสร็จ และกรองตามประเภทหรือช่วงวันที่</li>
+    <li><strong>ตั้งค่าระบบ → รายงาน</strong> เลือกรายงานและช่วงเวลา แล้วส่งออก Excel, PDF หรือรูปภาพ</li>
+    <li><strong>ตั้งค่าระบบ</strong> ใช้ตั้งราคาตามประเภทและขนาด กำหนดวันหยุด ความจุ เปลี่ยนธีม และจัดการคูปอง</li></ul>
+  {{ photo('reports','ตัวกรองช่วงเวลาและตัวเลือกส่งออกรายงาน') }}
+  <p><a href="{{url_for('report_guide',chapter='backup')}}">อ่านคู่มือสำรองและกู้คืน</a></p>
+</section>
+{% else %}
+<section class="card">
+  <h2>คู่มือสำรองและกู้คืน</h2>
+  <nav class="guide-contents" aria-label="สารบัญ"><a href="#backup-guide">ดาวน์โหลด ZIP</a><a href="#verify-guide">ทดสอบกู้คืน</a><a href="#restore-guide">กู้คืนจริงบน Mac</a></nav>
+</section>
+<section class="card" id="backup-guide">
+  <h2>ดาวน์โหลดชุดสำรอง</h2>
+  <ol><li>เปิด <a href="{{url_for('settings',tab='backup')}}"><strong>ตั้งค่าระบบ → สำรองข้อมูล</strong></a></li>
+    <li>กด <strong>ดาวน์โหลด ZIP ฐานข้อมูลและใบเสร็จ</strong> แล้วตรวจว่าไฟล์ดาวน์โหลดครบ</li>
+    <li>เก็บไฟล์ ZIP ไว้ในที่ที่เข้าถึงได้เมื่อต้องกู้เครื่อง และจำกัดสิทธิ์เข้าถึงเพราะไฟล์มีข้อมูลลูกค้า</li></ol>
+  {{ photo('backup','หน้าสำรองข้อมูลพร้อมปุ่มดาวน์โหลดและทดสอบกู้คืน') }}
+</section>
+<section class="card" id="verify-guide">
+  <h2>ทดสอบกู้คืนกับสำเนา</h2>
+  <ol><li>เลือกไฟล์ ZIP ที่เพิ่งดาวน์โหลดในช่อง <strong>ไฟล์สำรอง ZIP</strong></li>
+    <li>กด <strong>ทดสอบกู้คืนกับสำเนา</strong> รอข้อความยืนยันและจำนวนไฟล์ใบเสร็จที่ตรวจพบ การทดสอบจะใช้พื้นที่ชั่วคราว</li>
+    <li>หากทดสอบไม่ผ่าน ให้ดาวน์โหลดชุดสำรองใหม่หรือเลือกชุดอื่นที่ทดสอบผ่านก่อนกู้คืนจริง</li></ol>
+  {{ photo('verified','ข้อความยืนยันเมื่อทดสอบกู้คืนกับสำเนาสำเร็จ') }}
+</section>
+<section class="card" id="restore-guide">
+  <h2>กู้คืนจริงบน Mac</h2>
+  <p>การกู้คืนจริงจะนำข้อมูลใน ZIP กลับมาเป็นข้อมูลที่ระบบใช้งาน ให้ดาวน์โหลดชุดสำรองของข้อมูลปัจจุบันก่อน แล้วทำขั้นตอนต่อไปนี้ใน Terminal บน Mac</p>
+  <ol><li>เปลี่ยน <code>ชื่อไฟล์.zip</code> ให้ตรงกับไฟล์จริง หากไฟล์อยู่นอก Downloads ให้เปลี่ยนตำแหน่งด้วย</li>
+    <li>ใช้สองบรรทัดแรกเพื่อตรวจและแตก ZIP ลงโฟลเดอร์ใหม่ หากตรวจไม่ผ่านให้หยุดที่ขั้นนี้ หากชื่อ <code>restore-staging</code> มีอยู่แล้ว ให้ใช้ชื่อใหม่ทั้งในคำสั่งตรวจและคำสั่งย้าย</li>
+    <li>เมื่อเห็นข้อความ <code>Verified database</code> ให้รันคำสั่งส่วนที่เหลือทีละบรรทัด แล้วเปิดเว็บเพื่อตรวจรายการ ลูกค้า การเข้าพัก และใบเสร็จ</li></ol>
+  <pre><code>cd "$HOME/Library/Application Support/Little Paws Finance"
+.venv/bin/python -m app.backup_archive "$HOME/Downloads/ชื่อไฟล์.zip" restore-staging
+./stop-macos.command
+mv data "data-before-restore-$(date +%Y%m%d-%H%M%S)"
+mv restore-staging data
+./start-macos.command</code></pre>
+  <p><strong>ย้อนกลับเมื่อพบปัญหา</strong> ปิดระบบ ย้ายโฟลเดอร์ <code>data</code> ที่เพิ่งกู้ไปอีกชื่อ เปลี่ยนชื่อโฟลเดอร์ <code>data-before-restore-…</code> ที่สร้างในรอบนี้กลับเป็น <code>data</code> แล้วเปิดระบบอีกครั้ง</p>
+</section>
+{% endif %}
+</div>
+{% endblock %}

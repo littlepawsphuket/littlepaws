@@ -1,0 +1,9 @@
+{% extends 'base.html' %}
+{% block page_heading %}
+<h1>{{ _('แก้ไขรายการ #') }}{{tx.id}}</h1>
+{% endblock %}
+{% block content %}
+{% include '_settings_tabs.html' %}
+<a class="back-link" href="{{url_for('transactions',_anchor='transaction-history',**filters)}}">‹ {{ _('กลับไปรายรับ–รายจ่าย') }}</a>
+{% include '_transaction_form.html' %}
+{% endblock %}

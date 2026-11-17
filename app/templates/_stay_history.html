@@ -1,0 +1,45 @@
+{% from '_icons.html' import app_icon %}
+<section class="card" id="stay-history">
+  {% if request.endpoint != 'stay_history' %}<h2>{{ _('ประวัติการเข้าพัก') }}</h2>{% endif %}
+  {% set origin = 'history' if request.endpoint == 'stay_history' else none %}
+  {% if origin %}
+  <nav class="history-status-switch" aria-label="{{ _('สถานะการเข้าพัก') }}">
+    {% for value,label in [(none,'ทั้งหมด'),('checked_in','กำลังเข้าพัก'),('completed','เช็กเอาต์แล้ว')] %}
+    <a href="{{url_for('stay_history',status=value,**period)}}" {% if history_status == value %}aria-current="page"{% endif %}>{{ _(label) }}</a>
+    {% endfor %}
+  </nav>
+  {% endif %}
+  <form class="period-filter" method="get" action="{{url_for('stay_history' if origin else 'stays',_anchor='stay-history')}}">
+    {% if origin and history_status %}<input type="hidden" name="status" value="{{history_status}}">{% endif %}
+    <label>{{ _('ตั้งแต่') }}<input type="date" name="start" value="{{period.start}}" required></label>
+    <label>{{ _('ถึง') }}<input type="date" name="end" value="{{period.end}}" required></label>
+    <label>{{ _('ค้นหาการเข้าพัก') }}
+      <input type="search" name="q" maxlength="120" value="{{period.q or ''}}" placeholder="{{ _('เลขเข้าพัก ชื่อลูกค้า หรือชื่อสุนัข') }}">
+    </label>
+    <button>{{ _('แสดงรายการ') }}</button>
+    {% if period.q %}<a class="button secondary" href="{{url_for('stay_history' if origin else 'stays',start=period.start,end=period.end,status=history_status|default(none),_anchor='stay-history')}}">{{ _('ล้างการค้นหา') }}</a>{% endif %}
+  </form>
+  <div class="scroll"><table>
+    <thead><tr><th>{{ _('ลูกค้า / สุนัข') }}</th><th>{{ _('เข้าพัก') }}</th><th>{{ _('รับกลับ') }}</th><th>{{ _('จำนวนที่คิดเงิน') }}</th><th>{{ _('ส่วนลด') }}</th><th>{{ _('ยอดสุทธิ') }}</th><th>{{ _('สถานะ') }}</th><th>{{ _('จัดการ') }}</th></tr></thead>
+    <tbody>{% for s in rows %}
+    <tr><td>{{s.customer}}<br><small>{{s.dog_names}}</small>{% if s.stay_number %}<br><small>{{ _('หมายเลขการเข้าพัก') }} {{s.stay_number}}</small>{% endif %}</td><td>{{s.checkin|thai_date}}</td><td>{{s.checkout|thai_date}}</td><td>{{stay_duration(s.charged_nights,s.service_type)}}</td><td>฿{{fmt(s.discount_cents/100)}}</td><td>฿{{fmt(s.agreed_total)}}
+      {% if s.due_cents > 0 %}<br><a class="stay-due-badge" href="{{url_for('stay_summary',sid=s.id,_anchor='stay-payment-history',status=history_status|default(none),**period)}}">{{app_icon('warning')}} {{ _('ค้างชำระ') }} ฿{{fmt(s.due_cents/100)}}</a>{% endif %}
+    </td>
+    <td>{% if s.status == 'completed' %}{{ statuses.completed|tr }}{% else %}<form method="post" action="{{url_for('stay_status', sid=s.id, origin=origin, status=history_status|default(none),**period)}}"><input type="hidden" name="_csrf" value="{{csrf}}"><select name="status" {% if s.cancelled_at %}disabled{% endif %} aria-label="{{ _('สถานะการเข้าพัก') }} {{s.id}}" onchange="if (this.value === 'completed' &amp;&amp; !confirm({{ _('ยืนยันเช็กเอาต์สุนัขทุกตัวในรายการนี้?')|tojson|forceescape }})) { this.form.reset(); } else { this.form.submit(); }">{% for value,label in statuses.items() if value != 'cancelled' or s.status == 'cancelled' %}<option value="{{value}}" {% if s.status==value %}selected{% endif %}>{{label|tr}}</option>{% endfor %}</select></form>{% endif %}</td>
+    <td><a href="{{url_for('stay_summary',sid=s.id,status=history_status|default(none),**period)}}">{{ _('ดูสรุป') }}</a>{% if s.status != 'completed' %} · <a href="{{url_for('stays', stay_id=s.id, _anchor='stay-entry', status=history_status|default(none),**period)}}">{{ _('แก้ไข') }}</a>{% else %} · <button type="button" class="secondary small" disabled>{{ _('แก้ไข') }}</button>{% endif %}
+      {% if s.status == 'checked_in' %}
+      {% with checkout_url=url_for('stay_checkout',sid=s.id,origin=origin,status=history_status|default(none),**period) %}
+      {% include '_stay_checkout.html' %}
+      {% endwith %}
+      {% elif s.status == 'completed' and not s.cancelled_at %}
+      {% with stay=s %}{% include '_stay_recheckin.html' %}{% endwith %}
+      {% endif %}
+      {% if s.status != 'completed' %}<form class="inline" method="post" action="{{url_for('stay_delete',sid=s.id,origin=origin,status=history_status|default(none),**period)}}" onsubmit="return confirm({{ _('ลบการเข้าพักนี้และรายรับที่ระบบสร้างให้อัตโนมัติ? หากมาจากการจอง รายการจองจะกลับไปรอเช็กอิน')|tojson|forceescape }})">
+        <input type="hidden" name="_csrf" value="{{csrf}}"><button class="danger small">{{ _('ลบ') }}</button>
+      </form>{% else %}
+      <button type="button" class="danger small" disabled>{{ _('ลบ') }}</button>
+      {% endif %}
+    </td></tr>
+    {% else %}<tr><td colspan="8">{{ _('ไม่พบรายการที่ตรงกับคำค้นหา') if period.q else _('ไม่มีการเข้าพักในช่วงนี้') }}</td></tr>{% endfor %}</tbody>
+  </table></div>
+</section>

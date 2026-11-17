@@ -1,0 +1,94 @@
+{% extends 'base.html' %}
+{% from '_care_events.html' import care_event_list, care_record_button with context %}
+{% from '_icons.html' import app_icon %}
+{% block page_heading %}
+<h1>{{ _('ไทม์ไลน์กิจกรรม') }} · {{dog.name}}</h1>
+<p>{{dog.checkin|thai_date}} – {{dog.checkout|thai_date}}</p>
+{% endblock %}
+{% block content %}
+{% from '_dog_photo.html' import dog_avatar %}
+<a class="back-link" href="{{url_for('stay_summary',sid=sid)}}">‹ {{ _('สรุปการรับฝาก') }}</a>
+
+<section class="card care-timeline">
+  <div class="heading">
+    <div class="timeline-heading">{{dog_avatar(dog_id,dog.has_photo)}}<h2>{{ _('ทุกวันที่เข้าพักครั้งนี้') if all_days else day|thai_date }}</h2></div>
+    {% if dog.status == 'checked_in' %}{{ care_record_button(sid,dog_id,dog.name,care_options,'timeline',day) }}{% endif %}
+  </div>
+  <div class="care-date-controls" role="group" aria-label="{{ _('เลือกวันที่') }}">
+    <a class="button{% if not all_days %} secondary{% endif %}" href="{{url_for('care_timeline',sid=sid,dog_id=dog_id,day='all')}}"{% if all_days %} aria-current="page"{% endif %}>{{ _('แสดงทั้งหมด') }}</a>
+    <div class="care-date-strip" data-care-date-strip>
+      {% for choice in days %}
+      {% set date_label = choice|thai_date %}
+      <a class="button{% if choice != day %} secondary{% endif %}" href="{{url_for('care_timeline',sid=sid,dog_id=dog_id,day=choice)}}"
+         aria-label="{{ (_('วันนี้') ~ ' · ' if choice == today else '') ~ date_label }}"
+         {% if choice == day %}aria-current="page"{% endif %}>{{ _('วันนี้') if choice == today else date_label.rsplit(' ', 1)[0] }}</a>
+      {% endfor %}
+    </div>
+    <button type="button" class="secondary appointment-icon" data-care-dialog="care-date-picker"
+            aria-haspopup="dialog" aria-label="{{ _('เลือกวันที่') }}" title="{{ _('เลือกวันที่') }}">{{app_icon('calendar')}}</button>
+  </div>
+  <dialog class="care-dialog" id="care-date-picker" aria-labelledby="care-date-picker-title">
+    <h2 id="care-date-picker-title">{{ _('เลือกวันที่') }}</h2>
+    <form method="get" class="form">
+      <input type="date" name="day" aria-label="{{ _('เลือกวันที่') }}" value="{{today if all_days else day}}" max="{{today}}" required autofocus>
+      <div class="actions">
+        <button type="button" class="secondary" data-care-close>{{ _('ปิด') }}</button>
+        <button>{{ _('แสดงรายการ') }}</button>
+      </div>
+    </form>
+  </dialog>
+  {% if all_days and events %}
+    {% for group in events|groupby('event_day')|reverse %}
+      <h3>{{group.grouper|thai_date}}</h3>
+      {{ care_event_list(group.list,care_options,'timeline',day,editable=dog.status != 'completed') }}
+    {% endfor %}
+  {% elif events %}
+    {{ care_event_list(events,care_options,'timeline',day,editable=dog.status != 'completed') }}
+  {% else %}
+    <p class="muted">{{ _('ยังไม่มีกิจกรรม') if all_days else _('ยังไม่มีกิจกรรมในวันนี้') }}</p>
+  {% endif %}
+</section>
+<section class="card" id="share-timeline">
+  <h2>{{ _('แชร์ไทม์ไลน์ให้ลูกค้า') }}</h2>
+  {% if share_url %}
+    <label>{{ _('ลิงก์สำหรับลูกค้า') }}<input type="url" readonly value="{{share_url}}" data-share-url></label>
+    <p role="status" data-share-status></p>
+    <div class="actions">
+      <button type="button" class="button secondary" data-copy-share data-copied="{{ _('คัดลอกลิงก์แล้ว') }}" data-copy-help="{{ _('แตะค้างที่ลิงก์เพื่อคัดลอก') }}">{{ _('คัดลอกลิงก์') }}</button>
+      <a class="button secondary" href="{{share_path}}" target="_blank" rel="noopener noreferrer">{{ _('ดูแบบที่ลูกค้าเห็น') }}</a>
+    </div>
+  {% endif %}
+  {% if not all_days and share_url and events|rejectattr('customer_visible')|list %}
+  {% if dog.status == 'completed' %}
+  <button type="button" class="secondary" disabled>{{ _('แชร์กิจกรรมทั้งหมดของวันที่เลือก') }} · {{day|thai_date}}</button>
+  {% else %}
+  <form class="actions" method="post" action="{{url_for('manage_care_share',sid=sid,dog_id=dog_id)}}"
+        onsubmit="return confirm(this.dataset.confirm)" data-confirm="{{ _('แชร์ทุกกิจกรรมพร้อมข้อความและรูปของวันที่เลือกให้ลูกค้าเห็นหรือไม่?') }}">
+    <input type="hidden" name="_csrf" value="{{csrf}}"><input type="hidden" name="day" value="{{day}}">
+    <button class="button secondary" name="action" value="publish-day">{{ _('แชร์กิจกรรมทั้งหมดของวันที่เลือก') }} · {{day|thai_date}}</button>
+  </form>
+  {% endif %}
+  {% endif %}
+  <p class="muted">{{ _('ลูกค้าเห็นเฉพาะกิจกรรมที่เลือกแชร์ ลิงก์ใช้ผ่าน Wi‑Fi เดียวกันและหมดอายุ {hours} ชั่วโมงหลังเช็กเอาต์').format(hours=expiry_hours) }}</p>
+  {% if share_exists or share_allowed %}
+  <form method="post" action="{{url_for('manage_care_share',sid=sid,dog_id=dog_id)}}">
+    <input type="hidden" name="_csrf" value="{{csrf}}"><input type="hidden" name="day" value="{{day}}">
+    {% if share_exists %}<button class="button danger" name="action" value="revoke" onclick="return confirm(this.dataset.confirm)" data-confirm="{{ _('ยกเลิกลิงก์นี้หรือไม่?') }}">{{ _('ยกเลิกลิงก์') }}</button>
+    {% else %}<button name="action" value="create">{{ _('สร้างลิงก์ให้ลูกค้า') }}</button>{% endif %}
+  </form>
+  {% endif %}
+</section>
+<section class="card">
+  <h2>{{ _('ส่งสรุปกิจกรรมให้ลูกค้า') }}</h2>
+  <div class="care-export-options">
+    {% for scope,label in [('today','เฉพาะวันนี้'),('all','ทุกวันที่เข้าพักครั้งนี้')] %}
+    <div><h3>{{ _(label) }}</h3>
+      <div class="actions">
+        <a class="button secondary" href="{{url_for('care_export',sid=sid,dog_id=dog_id,format='pdf',scope=scope)}}">{{app_icon('pdf')}} PDF</a>
+        <a class="button secondary" href="{{url_for('care_export',sid=sid,dog_id=dog_id,format='png',scope=scope)}}" data-image-export target="_blank" rel="noopener">{{app_icon('image')}} {{ _('รูปภาพ') }}</a>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}

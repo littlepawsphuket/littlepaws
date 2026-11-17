@@ -1,0 +1,210 @@
+{% from '_customer_fields.html' import customer_details %}
+{% from '_intake_fields.html' import optional_field %}
+{% from '_dog_photo.html' import dog_photo_fields, dog_avatar %}
+{% macro dog_row(d, selected=false, rate_value="", profile_groups=none, rate_size="", auto_rate=false) %}
+<div class="dog-rate" data-customer="{{d.customer_id}}" data-rate-size="{{rate_size}}" data-auto-rate="{{1 if auto_rate else 0}}" hidden>
+        <label class="dog-check check-tile"><input type="checkbox" name="dog_ids" value="{{d.id}}" {% if selected %}checked{% endif %}><span class="check-mark" aria-hidden="true"></span>{{dog_avatar(d.id, d.has_photo)}}<span class="dog-name">{{d.name}}</span></label>
+        <label><span data-rate-unit>{{rate_units[service_type]|tr}}</span><input type="number" name="rate_{{d.id}}" min="0" max="999999999" step="0.01" value="{{rate_value}}"></label>
+        <output class="dog-total"></output>
+        {% if profile_groups %}
+        <div class="dog-profile-preview" hidden>
+          <div class="dog-profile-content">
+            {% with dog=d %}{% include '_dog_profile_summary.html' %}{% endwith %}
+          </div>
+          <button type="button" class="secondary small" data-edit-dog
+            data-profile-url="{{url_for('dog_profile_modal',cid=d.customer_id,dog_id=d.id) if d.can_edit else ''}}"
+            {% if not d.can_edit %}hidden{% endif %}>{{ _('แก้ไขข้อมูลสุนัข') }}</button>
+        </div>
+        {% endif %}
+      </div>
+{% endmacro %}
+<section class="card stay-entry" id="stay-entry">
+  <h2>{% if mode == 'appointment' %}{{_('แก้ไขการจอง') if stay else _('เพิ่มการจอง')}}{% elif mode == 'conversion' %}{{ _('ยืนยันเช็กอินจากการจอง') }} {{stay.booking_number}}{% else %}{{_('แก้ไขการเข้าพัก #') ~ stay.id if stay else _('เพิ่มการเข้าพัก')}}{% endif %}</h2>
+  {% if mode == 'stay' and stay and none in rates.values() %}<p class="muted">{{ _('รายการเดิมมียอดสุทธิ ฿') }}{{fmt(stay.agreed_total)}} {{ _('กรุณาระบุราคา/คืนของแต่ละตัวเมื่อต้องการคำนวณยอดใหม่') }}</p>{% endif %}
+  <form method="post" class="form" id="stay-form" data-mode="{{mode}}" data-existing-net="{{stay.agreed_total if stay and mode != 'conversion' else ''}}" data-existing-rounding="{{stay.rounding_cents if stay else 0}}" data-existing-discount="{{stay.discount_cents if stay else 0}}" data-new-booking="{{'true' if mode == 'appointment' and not stay else 'false'}}" data-rate-table='{{default_dog_rates|tojson}}'  data-new-checkin="{{'true' if mode == 'conversion' or (mode == 'stay' and not stay) else 'false'}}">
+    <input type="hidden" name="booking_warning_check" value="1">
+    {% if booking_warning %}
+    <input type="hidden" name="booking_warning_token" value="{{booking_warning[1]}}">
+    <div class="alert error" role="alert">
+      <strong>{{ _('ตรวจพบรายการที่ควรตรวจสอบก่อนบันทึก') }}</strong>
+      <ul>{% for message in booking_warning[0] %}<li>{{message|tr}}</li>{% endfor %}</ul>
+      <label><input type="checkbox" name="booking_warning_override" value="1" required> {{ _('ตรวจสอบแล้วและยืนยันบันทึกต่อ') }}</label>
+    </div>
+    {% endif %}
+
+    <input type="hidden" name="_csrf" value="{{csrf}}">
+    <input type="hidden" name="whole_baht" value="1">
+    {% if not stay %}<input type="hidden" name="create_key" value="{{create_key}}">{% endif %}
+    {% if mode != 'appointment' %}
+    <input type="hidden" name="intake_fields" value="1">
+    <input type="hidden" name="intake_checklists" value="1">
+    {% set contact_fields = intake_groups[0][1] %}
+    {% endif %}
+    <div class="formgrid stay-details">
+      <div class="stay-customer-field">
+      <div class="customer-combobox" id="stay-customer-combobox" hidden>
+        <label>{{ _('ลูกค้า') }}
+          <input id="stay-customer-search" type="text" role="combobox" aria-autocomplete="list"
+                 aria-expanded="false" aria-controls="stay-customer-options"
+                 placeholder="{{ _('เลือกหรือพิมพ์ชื่อลูกค้า') }}" autocomplete="off">
+        </label>
+        <div class="customer-options" id="stay-customer-options" role="listbox" aria-label="{{ _('รายชื่อลูกค้า') }}" hidden></div>
+        <div class="customer-options muted" id="stay-customer-matches" role="status" hidden>{{ _('ไม่พบลูกค้าที่ตรงกับชื่อที่ค้นหา') }}</div>
+      </div>
+      <label id="stay-native-customer">{{ _('ลูกค้า') }}
+        <select name="customer_id" id="stay-customer" required>
+          <option value="">{{ _('เลือกลูกค้า') }}</option>
+          {% set customer_id = submitted.get('customer_id')|int if submitted is not none else (stay.customer_id if stay else 0) %}
+          {% for c in customers %}<option value="{{c.id}}" data-phone="{{c.owner_phone}}" data-line="{{c.line_id}}" data-address="{{c.emergency_address}}" data-archived="{{c.archived}}" {% if c.id == customer_id %}selected{% endif %}>{{c.name}}</option>{% endfor %}
+        </select>
+      </label>
+        <button type="button" class="secondary small" data-contact-mode="customer">{{ _('+ เพิ่มลูกค้า') }}</button>
+      </div>
+      {% if mode == 'stay' %}
+      {% if stay and stay.status == 'completed' %}
+      <label>{{ _('สถานะ') }}<strong>{{ statuses.completed|tr }}</strong></label>
+      <input type="hidden" name="status" value="completed">
+      {% else %}
+      <label>{{ _('สถานะ') }}
+        {% set status = submitted.get('status') if submitted is not none else ('checked_in' if not stay or (stay.status == 'booked' and request.args.get('check_in') == '1') else stay.status) %}
+        <select name="status">{% for value, label in statuses.items() if value != 'cancelled' or status == 'cancelled' %}<option value="{{value}}" {% if status == value %}selected{% endif %}>{{label|tr}}</option>{% endfor %}</select>
+      </label>
+      {% endif %}
+      {% endif %}
+      {% if mode != 'appointment' %}
+      <div id="stay-owner-profile" class="stay-owner-profile" hidden>
+        <dl class="stay-owner-values">
+          <div><dt>{{ _('เบอร์โทรเจ้าของ') }}</dt><dd data-owner-value="phone"></dd></div>
+          <div><dt>{{ _('LINE ID / Facebook') }}</dt><dd data-owner-value="line"></dd></div>
+          <div><dt>{{ _('ที่อยู่กรณีฉุกเฉิน') }}</dt><dd data-owner-value="address"></dd></div>
+        </dl>
+        <button type="button" class="secondary small" data-contact-mode="edit_customer">{{ _('แก้ไขข้อมูลลูกค้า') }}</button>
+      </div>
+      {% endif %}
+      <fieldset class="service-picker">
+        <legend>{{ _('ประเภทบริการ') }}</legend>
+        <div class="service-options">
+          {% for value in ('overnight','daycare','monthly') %}
+          <label>
+            <input type="radio" name="service_type" value="{{value}}" {% if service_type==value %}checked{% endif %}>
+            <span>{{services[value]|tr}}</span>
+          </label>
+          {% endfor %}
+        </div>
+      </fieldset>
+      <div class="stay-date-row">
+        <div class="stay-date-pair">
+          <label>{{_('วันเข้าพักที่จอง') if mode == 'appointment' else _('วันเข้าพัก')}}<input type="date" name="checkin" {% if mode == 'conversion' %}max="{{today}}"{% endif %} value="{{submitted.get('checkin') if submitted is not none else (stay.checkin if stay else default_checkin|default(current_checkin_day))}}" required></label>
+          {% if mode != 'appointment' %}{{optional_field(*contact_fields[0], values=intake)}}{% endif %}
+        </div>
+        <div class="stay-date-pair">
+          <label>{{ _('วันรับกลับ') }}<input type="date" name="checkout" value="{{submitted.get('checkout') if submitted is not none else (stay.checkout if stay else (current_checkin_day if mode == 'stay' else ''))}}" required></label>
+          {% if mode != 'appointment' %}{{optional_field(*contact_fields[1], values=intake)}}{% endif %}
+        </div>
+      </div>
+      <label><span data-charge-unit>{{ _('จำนวนเดือนที่คิดเงิน') if service_type == 'monthly' else _('จำนวนวันที่คิดเงิน') if service_type == 'daycare' else _('จำนวนคืนที่คิดเงิน') }}</span><input type="number" name="charged_nights" step="{{'0.01' if service_type == 'monthly' else '1'}}" min="0"  max="36600" value="{{submitted.get('charged_nights') if submitted is not none else (stay.charged_nights if stay else 1)}}" required><small>{{ _('ปรับจำนวนที่คิดเงินได้') }}</small></label>
+      <label>{{ _('หมายเหตุ') }}<input name="note" value="{{submitted.get('note','') if submitted is not none else (stay.note if stay else '')}}"></label>
+    </div>
+    <fieldset class="dog-picker">
+      <legend>{{ _('สุนัขและราคา') }}</legend>
+      <p class="muted">{{ _('ราคาเริ่มต้นตามขนาดสุนัข ปรับราคาแต่ละตัวได้') }}</p>
+      <div class="dog-picker-actions">
+        <p class="muted" id="dog-empty">{{ _('เลือกลูกค้าหรือเพิ่มลูกค้าเพื่อเริ่มบันทึก') }}</p>
+        <button type="button" class="secondary small" data-contact-mode="dog" disabled>{{ _('+ เพิ่มสุนัข') }}</button>
+      </div>
+      <template id="new-dog-row">{{ dog_row(dict(id='', name='', customer_id='', has_photo=false, profile={}, can_edit=false), true, '', profile_groups if mode != 'appointment' else none) }}</template>
+      {% for d in dogs %}
+      {% set key = d.id|string %}
+      {% set rate = rates.get(key) %}
+      {% set selected = key in submitted.getlist('dog_ids') if submitted is not none else key in rates %}
+      {% set auto_rate = key not in rates or (mode == 'conversion' and rate is none) %}
+      {% set default_rate = default_dog_rates[service_type].get(d.size) if auto_rate else none %}
+      {% if default_rate is none %}{% set default_rate = '' %}{% endif %}
+      {% set rate_value = submitted.get('rate_' ~ key, default_rate) if submitted is not none else ('%.2f'|format(rate/100) if rate is not none else default_rate) %}
+      {{ dog_row(d, selected, rate_value, profile_groups if mode != 'appointment' else none, d.size, auto_rate and (submitted is none or ('rate_' ~ key) not in submitted)) }}
+      {% endfor %}
+    </fieldset>
+    {% if mode != 'appointment' %}{% include '_stay_intake.html' %}{% endif %}
+    <div class="formgrid bill">
+      <label>{{ _('ส่วนลดท้ายบิล (บาท)') }}<input type="number" name="discount" min="0" max="999999999" step="0.01" value="{{submitted.get('discount','0') if submitted is not none else ('%.2f'|format((stay.discount_cents-(saved_coupon.discount_cents if saved_coupon else 0))/100) if stay else '0')}}"></label>
+      {% if mode != 'appointment' %}
+      <div class="coupon-field" data-coupon-url="{{url_for('coupon_lookup')}}" data-stay-id="{{stay.id if mode=='stay' and stay else ''}}">
+        <label>{{ _('รหัสคูปอง') }}<input name="coupon_code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="off"
+          value="{{submitted.get('coupon_code','') if submitted is not none else (saved_coupon.code if saved_coupon else '')}}"></label>
+        <button type="button" class="secondary" id="apply-coupon">{{ _('ใช้คูปอง') }}</button>
+        <small id="coupon-feedback" role="status"></small>
+      </div>
+      {% endif %}
+      <dl><div><dt>{{ _('ก่อนหักส่วนลด') }}</dt><dd id="stay-subtotal">฿0.00</dd></div><div id="stay-rounding-row" hidden><dt>{{ _('ปัดเศษสตางค์ทิ้ง') }}</dt><dd id="stay-rounding"></dd></div><div><dt>{{ _('ยอดสุทธิ') }}</dt><dd id="stay-net" aria-live="polite">฿0.00</dd></div></dl>
+    </div>
+    {% if mode != 'stay' or not stay or stay.payment_tracking %}
+    <fieldset class="intake-group" id="stay-payments" data-paid="{{payments|sum(attribute='amount')}}">
+      <legend>{{ _('การชำระเงิน') }}</legend>
+      {% if mode == 'appointment' %}
+      <input type="hidden" name="payment_key" value="{{create_key}}">
+      {% if payments %}
+      <p>{{ _('มัดจำแล้ว') }} <strong>฿{{fmt(payments|sum(attribute='amount'))}}</strong>
+        · <a href="{{url_for('appointment_preview',aid=stay.id,**booking_navigation())}}#deposit-records">{{ _('จัดการรายการมัดจำ') }}</a></p>
+      {% endif %}
+      <div class="formgrid">
+        <label>{{ _('ยอดมัดจำครั้งนี้ (บาท)') }}<input type="number" name="deposit_amount" min="0" max="999999999" step="0.01" value="{{submitted.get('deposit_amount','') if submitted is not none else ''}}"></label>
+        <label>{{ _('วันที่รับมัดจำ') }}<input type="date" name="deposit_date" max="{{today}}" value="{{submitted.get('deposit_date',today) if submitted is not none else today}}"></label>
+        <label>{{ _('เวลารับมัดจำ') }}<input type="time" name="deposit_time" value="{{submitted.get('deposit_time','') if submitted is not none else current_payment_time}}"></label>
+      </div>
+      {% else %}
+      <input type="hidden" name="payment_key" value="{{create_key}}">
+      <p><strong>{{ _('มัดจำแล้ว') }} ฿{{fmt(payments|selectattr('payment_type','equalto','deposit')|sum(attribute='amount'))}}</strong>
+        · {{ _('ชำระแล้ว') }} ฿{{fmt(payments|sum(attribute='amount'))}} · {{ _('ยอดคงเหลือก่อนรับเพิ่ม') }} <output id="payment-balance"></output></p>
+      <div class="formgrid">
+        <label>{{ _('ยอดรับชำระครั้งนี้ (บาท)') }}<input type="number" name="payment_amount" min="0" max="999999999" step="0.01" {% if (mode == 'conversion' or not stay) and submitted is none %}data-suggest-balance{% endif %} value="{{submitted.get('payment_amount','') if submitted is not none else ''}}"></label>
+        <label>{{ _('วันที่รับชำระ') }}<input type="date" name="payment_date" max="{{today}}" value="{{submitted.get('payment_date',today) if submitted is not none else today}}"></label>
+        <label>{{ _('เวลารับชำระ') }}<input type="time" name="payment_time" value="{{submitted.get('payment_time',current_payment_time) if submitted is not none else current_payment_time}}"></label>
+      </div>
+      <p><strong>{{ _('ยอดค้างหลังรับชำระครั้งนี้') }} <output id="payment-after" aria-live="polite"></output></strong></p>
+      {% endif %}
+    </fieldset>
+    {% endif %}
+    <p class="muted bill-hint">{% if mode == 'appointment' %}{{ _('ระบบลงรายรับตามยอดที่รับจริงในแต่ละวัน') }}{% elif mode == 'conversion' or not stay or stay.payment_tracking %}{{ _('ระบบลงรายรับตามยอดที่รับจริงในแต่ละวัน') }}{% else %}{{ _('ระบบบันทึกรายรับสุทธิตามวันที่บันทึก อัปเดตยอดเดิมเมื่อแก้ไขการเข้าพัก และปรับรายรับที่ระบบสร้างเป็นศูนย์เมื่อยกเลิก') }}{% endif %}</p>
+    {% if mode != 'appointment' %}{% include '_stay_consent.html' %}{% endif %}
+    <div class="actions stay-submit">
+      <button id="save-stay" type="submit" disabled>{% if mode == 'appointment' %}{{ _('บันทึกการจอง') }}{% elif mode == 'conversion' %}{{ _('ยืนยันเช็กอิน') }}{% else %}{{_('บันทึกการแก้ไข') if stay else _('บันทึกการเข้าพัก')}}{% endif %}</button>
+      {% if mode != 'stay' and stay %}<a class="button secondary" href="{{url_for('appointment_preview',aid=stay.id,**booking_navigation())}}">{{ _('กลับไปดูรายละเอียดการจอง') }}</a>
+      {% elif mode != 'stay' %}<a class="button secondary" href="{{booking_list_url()}}">{{ _('กลับไปการจอง') }}</a>
+      {% elif stay %}<a class="button secondary" href="{{url_for('stay_summary',sid=stay.id,**period)}}">{{ _('กลับไปดูสรุปการเข้าพัก') }}</a>{% endif %}
+    </div>
+  </form>
+</section>
+<dialog id="stay-contact-dialog" aria-labelledby="stay-contact-title">
+  <form id="stay-contact-form" method="post" action="{{url_for('stay_contacts')}}" class="form" enctype="multipart/form-data">
+    <h2 id="stay-contact-title"></h2>
+    <input type="hidden" name="_csrf" value="{{csrf}}">
+    <input type="hidden" name="mode">
+    <input type="hidden" name="customer_id">
+    <div id="new-owner-fields">
+      <label>{{ _('ชื่อลูกค้า') }}<input name="customer_name" autocomplete="off"></label>
+      {{customer_details()}}
+    </div>
+    <p id="selected-owner" class="muted" hidden></p>
+    <div id="contact-dog-fields">
+    <div class="formgrid">
+      <label><span id="new-dog-label">{{ _('ชื่อสุนัข') }}</span><input name="dog_name" autocomplete="off"></label>
+      <label>{{ _('ขนาด') }}<select name="size"><option value="small">{{ _('เล็ก') }}</option><option value="medium">{{ _('กลาง') }}</option><option value="large">{{ _('ใหญ่') }}</option></select></label>
+    </div>
+    {{dog_photo_fields()}}
+    </div>
+    <p id="contact-error" class="alert error" role="alert" hidden></p>
+    <div class="actions">
+      <button type="submit">{{ _('บันทึก') }}</button>
+      <button type="button" class="secondary" id="close-contact">{{ _('ยกเลิก') }}</button>
+    </div>
+  </form>
+</dialog>
+<p id="contact-success" class="alert" role="status" hidden></p>
+
+{% if mode != 'appointment' %}
+<dialog id="dog-profile-dialog" aria-labelledby="dog-profile-title">
+  <h2 id="dog-profile-title">{{ _('แก้ไขข้อมูลสุนัข') }}</h2>
+  <div data-profile-form></div>
+  <button type="button" class="secondary" data-close-profile>{{ _('ปิด') }}</button>
+</dialog>
+{% endif %}

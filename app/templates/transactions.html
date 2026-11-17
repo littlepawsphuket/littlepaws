@@ -1,0 +1,20 @@
+{% extends 'base.html' %}{% block page_heading %}
+<h1>{{ _('รายรับ–รายจ่าย') }}</h1>
+{% endblock %}
+{% block content %}{% include '_settings_tabs.html' %}
+{% include '_transaction_form.html' %}<section class="card"><div class="heading"><h2>{{ _('รายการรายรับ–รายจ่าย') }}</h2><div class="actions"><a class="button secondary" href="{{url_for('export_csv',kind='transactions')}}">{{ _('⬇ Export CSV ทั้งหมด') }}</a></div></div>
+<form class="period-filter" id="transaction-history" method="get" action="{{url_for('transactions',_anchor='transaction-history')}}">
+  <label>{{ _('ประเภท') }}
+    <select name="kind">
+      {% for value, label in [('all',_('ทั้งหมด')),('income',_('รายรับ')),('expense',_('รายจ่าย'))] %}
+      <option value="{{value}}" {% if filters.kind == value %}selected{% endif %}>{{label|tr}}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>{{ _('ตั้งแต่') }}<input type="date" name="start" value="{{filters.start}}" required></label>
+  <label>{{ _('ถึง') }}<input type="date" name="end" value="{{filters.end}}" required></label>
+  <button>{{ _('แสดงรายการ') }}</button>
+  <a class="button secondary" href="{{url_for('transactions',_anchor='transaction-history')}}">{{ _('เดือนปัจจุบัน') }}</a>
+</form>
+<p class="muted">{{filters.start|thai_date}} {{ _('ถึง') }} {{filters.end|thai_date}}</p>
+<div class="scroll"><table><thead><tr><th>{{ _('วันที่') }}</th><th>{{ _('ประเภท') }}</th><th>{{ _('หมวด') }}</th><th>{{ _('รายละเอียด') }}</th><th>{{ _('ลูกค้า') }}</th><th>{{ _('ร้านค้า') }}</th><th>{{ _('หลักฐาน') }}</th><th class="right">{{ _('ยอด') }}</th><th>{{ _('จัดการ') }}</th></tr></thead><tbody>{% for t in rows %}<tr><td>{{t.occurred_on|thai_date}}</td><td>{{{'income':_('รับเงิน'),'refund':_('คืนเงิน'),'expense':_('รายจ่าย')}[t.kind]}}</td><td>{{t.category|tr}}</td><td>{{ _('ค่าฝากเลี้ยง') ~ ' #' ~ t.stay_id if lang == 'en' and t.auto_stay and t.stay_id else t.description }}</td><td>{{t.customer or '—'}}</td><td>{{t.merchant}}</td><td>{% if t.receipt %}<a href="{{url_for('receipt',filename=t.receipt)}}">{{ _('เปิดไฟล์') }}</a>{% else %}—{% endif %}</td><td class="right">฿{{fmt(t.amount)}}</td><td>{% set source = managed_transaction_url(t) %}{% if source %}<a href="{{source}}">{{ _('ดูรายการต้นทาง') }}</a>{% else %}<a href="{{url_for('transaction_edit',tid=t.id,**filters)}}">{{ _('แก้ไข') }}</a><form method="post" action="{{url_for('transaction_delete',tid=t.id,**filters)}}" class="inline" onsubmit="return confirm({{ _('ยืนยันลบรายการนี้?')|tojson|forceescape }})"><input type="hidden" name="_csrf" value="{{csrf}}"><button class="danger small">{{ _('ลบ') }}</button></form>{% endif %}</td></tr>{% else %}<tr><td colspan="9">{{ _('ไม่พบรายการตามตัวกรอง') }}</td></tr>{% endfor %}</tbody></table></div></section>{% endblock %}

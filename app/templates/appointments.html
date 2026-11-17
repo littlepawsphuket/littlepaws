@@ -1,0 +1,121 @@
+{% extends 'base.html' %}
+{% from '_icons.html' import app_icon %}
+{% macro appointment_status(row) %}
+  {% if row.stay_id %}{{ _('เช็กอินแล้ว') }}{% elif row.status == 'cancelled' %}{{ _('ยกเลิกแล้ว') }}{% else %}{{ _('รอเช็กอิน') }}{% endif %}
+{% endmacro %}
+{% block page_heading %}
+<h1>{{ _('การจองฝากเลี้ยง') }}</h1>
+<p>{{ _('ดูวันจองและเปิดข้อมูลเพื่อเช็กอินเมื่อน้องหมามาถึง') }}</p>
+{% endblock %}
+{% block content %}
+
+ {% set list_context = dict(view=view,date=anchor.isoformat(),scope='pending' if show_all else ('month' if view == 'list' else none),q=search_query) %}
+<section class="card">
+  <div class="heading calendar-heading">
+    <div class="calendar-tabs" aria-label="{{ _('มุมมองการจอง') }}">
+    {% for key,label in views.items() %}
+      <a class="button secondary" {% if key==view %}aria-current="page"{% endif %} href="{{url_for('appointments',view=key,date=anchor.isoformat(),scope='pending' if key == 'list' else none,q=search_query if key == 'list' else none)}}">{{label|tr}}</a>
+    {% endfor %}
+    </div>
+    <a class="button appointment-icon" href="{{url_for('appointment_edit',**list_context)}}" aria-label="{{ _('เพิ่มการจอง') }}" title="{{ _('เพิ่มการจอง') }}">{{app_icon('add')}}</a>
+  </div>
+  <div class="heading calendar-navigation">
+    <h2>{{title}}</h2>
+    <div class="calendar-controls">
+      {% if view == 'list' %}
+        {% if show_all %}
+          <a class="button secondary" href="{{url_for('appointments',view='list',date=anchor.isoformat(),q=search_query)}}">{{ _('ดูตามเดือน') }}</a>
+        {% else %}
+          <a class="button secondary" href="{{url_for('appointments',view='list',date=anchor.isoformat(),scope='pending',q=search_query)}}">{{ _('แสดงทั้งหมด') }}</a>
+        {% endif %}
+      {% endif %}
+      {% if not show_all %}
+      <a class="button secondary appointment-icon" aria-label="{{ _('ช่วงก่อนหน้า') }}" title="{{ _('ช่วงก่อนหน้า') }}" href="{{url_for('appointments',view=view,date=previous.isoformat(),q=search_query)}}">{{app_icon('previous')}}</a>
+      <a class="button secondary" href="{{url_for('appointments',view=view,date=today_date.isoformat(),q=search_query)}}">{{ _('วันนี้') }}</a>
+      <a class="button secondary appointment-icon" aria-label="{{ _('ช่วงถัดไป') }}" title="{{ _('ช่วงถัดไป') }}" href="{{url_for('appointments',view=view,date=following.isoformat(),q=search_query)}}">{{app_icon('next')}}</a>
+      <form method="get" class="calendar-controls">
+        <input type="hidden" name="view" value="{{view}}">
+        {% if search_query %}<input type="hidden" name="q" value="{{search_query}}">{% endif %}
+        <input type="date" name="date" aria-label="{{ _('ไปที่วันที่') }}" value="{{anchor.isoformat()}}" required>
+        <button class="secondary">{{ _('ไป') }}</button>
+      </form>
+      {% endif %}
+    </div>
+  </div>
+  {% if view in ('month','week') %}
+  <div class="scroll"><div class="calendar-grid">
+    {% for day in weekdays %}<div class="calendar-weekday">{{day|tr}}</div>{% endfor %}
+    {% for cell in cells %}
+    <div class="calendar-cell{% if cell.muted %} outside{% endif %}{% if cell.day==today_date %} current{% endif %}">
+      <a class="calendar-date" aria-label="{{ _('ดูวันที่') }} {{cell.iso|thai_date}}" href="{{url_for('appointments',view='day',date=cell.iso)}}">{{cell.day.day}}</a>
+      {% for holiday in cell.holidays %}<div class="calendar-holiday">{{ _('วันหยุดร้าน') }} · {{holiday.name}}</div>{% endfor %}
+      {% for row in cell.events %}
+        {% set target = url_for('appointment_preview',aid=row.id,**list_context) %}
+        <a class="calendar-event{% if row.stay_id %} converted{% elif row.status=='cancelled' %} cancelled{% endif %}" href="{{target}}">
+          <strong>{{row.dog_names}}</strong><span>{{row.owner}} · {{appointment_status(row)|trim}}</span>
+        </a>
+      {% endfor %}
+    </div>
+    {% endfor %}
+  </div></div>
+  {% else %}
+  {% for holiday in holidays %}<p class="calendar-holiday">{{ _('วันหยุดร้าน') }} · {{holiday.name}} · {{holiday.starts_on|thai_date}} – {{holiday.ends_on|thai_date}}</p>{% endfor %}
+  {% if booking_totals %}
+  <form method="get" class="period-filter" action="{{url_for('appointments')}}">
+    <input type="hidden" name="view" value="list">
+    <input type="hidden" name="date" value="{{anchor.isoformat()}}">
+    <input type="hidden" name="scope" value="{{'pending' if show_all else 'month'}}">
+    <label>{{ _('ค้นหาการจอง') }}
+      <input type="search" name="q" maxlength="120" value="{{search_query or ''}}" placeholder="{{ _('เลขจอง ชื่อลูกค้า หรือชื่อสุนัข') }}">
+    </label>
+    <button>{{ _('ค้นหา') }}</button>
+    {% if search_query %}<a class="button secondary" href="{{url_for('appointments', view='list', date=anchor.isoformat(), scope='pending' if show_all else 'month')}}">{{ _('ล้างการค้นหา') }}</a>{% endif %}
+  </form>
+  <section class="booking-forecast" aria-labelledby="booking-forecast-title">
+    <h3 id="booking-forecast-title">{{ _('ประมาณการรายรับจากการจองที่รอเช็กอิน') }}</h3>
+    <dl>
+      <div><dt>{{ _('ยอดจองรวม') }}</dt><dd>฿{{fmt(booking_totals.booked/100)}}</dd></div>
+      <div><dt>{{ _('มัดจำแล้ว') }}</dt><dd>฿{{fmt(booking_totals.deposited/100)}}</dd></div>
+      <div><dt>{{ _('ยอดที่คาดว่าจะรับเพิ่ม') }}</dt><dd>฿{{fmt(booking_totals.expected/100)}}</dd></div>
+    </dl>
+    {% if booking_totals.unpriced %}
+    <p class="muted">{{ _('มี {count} รายการที่รอระบุราคา ยังไม่นับในยอดจองรวมและยอดที่คาดว่าจะรับเพิ่ม').format(count=booking_totals.unpriced) }}</p>
+    {% endif %}
+  </section>
+  {% endif %}
+  <div class="scroll"><table>
+    <thead><tr><th>{{ _('สุนัข / เจ้าของ') }}</th><th>{{ _('วันเข้าพักที่จอง') }}</th><th>{{ _('วันรับกลับ') }}</th><th>{{ _('สถานะ') }}</th>
+      {% if view == 'list' %}<th class="right">{{ _('ยอดสุทธิ') }}</th><th class="right">{{ _('มัดจำแล้ว') }}</th><th class="right">{{ _('ยอดคงเหลือ') }}</th>{% endif %}
+      <th>{{ _('จัดการ') }}</th></tr></thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        <td><strong>{{row.dog_names}}</strong>{% if row.booking_number %}<br><small>{{ _('เลขจอง') }} {{row.booking_number}}</small>{% endif %}<br><a href="{{url_for('customer_detail',cid=row.customer_id)}}">{{row.owner}}</a>{% if row.contact %}<br><small>{{row.contact}}</small>{% endif %}</td>
+        <td>{{row.checkin|thai_date}}</td><td>{{row.checkout|thai_date}}</td><td>{{appointment_status(row)|trim}}</td>
+        {% if view == 'list' %}
+        {% set price_unknown = row.quote_pending and not row.actual_payments %}
+        {% set paid_cents = row.paid_cents if row.actual_payments else row.deposit_cents %}
+        <td class="right">{% if price_unknown %}<span class="muted">{{ _('รอระบุราคา') }}</span>{% else %}฿{{fmt(row.display_total)}}{% endif %}</td>
+        <td class="right">฿{{fmt(row.deposit_cents/100)}}</td>
+        <td class="right">{% if price_unknown or row.status == 'cancelled' or (row.stay_id and not row.actual_payments) %}<span class="muted">—</span>{% else %}<strong>฿{{fmt([0,row.display_total-paid_cents/100]|max)}}</strong>{% endif %}</td>
+        {% endif %}
+        <td><div class="appointment-actions">
+        <a class="button secondary appointment-icon" href="{{url_for('appointment_preview',aid=row.id,**list_context)}}" aria-label="{{ _('ดูการจอง') }}" title="{{ _('ดูการจอง') }}">{{app_icon('details')}}</a>
+        {% if row.stay_id %}
+          <a class="button secondary appointment-icon" href="{{url_for('stay_summary',sid=row.stay_id,**list_context)}}" aria-label="{{ _('ดูการเข้าพัก') }}" title="{{ _('ดูการเข้าพัก') }}">{{app_icon('stay')}}</a>
+        {% elif row.status=='pending' %}
+          <a class="button appointment-icon" href="{{url_for('appointment_checkin',aid=row.id,**list_context)}}" aria-label="{{ _('เช็กอิน') }}" title="{{ _('เช็กอิน') }}">{{app_icon('checkin')}}</a>
+          <a class="button secondary appointment-icon" href="{{url_for('appointment_edit',aid=row.id,**list_context)}}" aria-label="{{ _('แก้ไข') }}" title="{{ _('แก้ไข') }}">{{app_icon('edit')}}</a>
+        {% endif %}
+        <a class="button secondary appointment-icon" href="{{url_for('appointment_pdf',aid=row.id)}}" aria-label="{{ _('ดาวน์โหลดใบจอง PDF') }}" title="{{ _('ดาวน์โหลดใบจอง PDF') }}">{{app_icon('print')}}</a>
+        <a class="button secondary appointment-icon" data-image-export target="_blank" rel="noopener" href="{{url_for('appointment_image',aid=row.id)}}" aria-label="{{ _('ดาวน์โหลดรูปใบจอง') }}" title="{{ _('ดาวน์โหลดรูปใบจอง') }}">{{app_icon('image')}}</a>
+        {% with appointment_id=row.id %}{% include '_appointment_delete.html' %}{% endwith %}
+        </div>
+        </td>
+      </tr>
+      {% else %}<tr><td colspan="{{8 if view == 'list' else 5}}">{{ _('ไม่พบรายการที่ตรงกับคำค้นหา') if search_query else _('ไม่มีการจองที่รอเช็กอิน') if show_all else _('ไม่มีการจองในช่วงนี้') }}</td></tr>{% endfor %}
+    </tbody>
+  </table></div>
+  {% endif %}
+</section>
+{% endblock %}

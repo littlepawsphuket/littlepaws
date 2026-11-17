@@ -1,0 +1,171 @@
+{% extends 'base.html' %}
+{% from '_dog_photo.html' import dog_avatar %}
+{% from '_stay_terms.html' import term_sections %}
+{% from '_icons.html' import app_icon %}
+{% from '_care_events.html' import care_event_list with context %}
+{% block page_heading %}
+<h1>{{ _('สรุปการรับฝาก') }}</h1>
+<p>{{ _('รายการ #') }}{{stay.id}} · {{status|tr}}</p>
+{% endblock %}
+{% block content %}
+{% set checked_out = stay.status == 'completed' %}
+{% if stay.appointment_id and (request.args.get('view') or request.args.get('origin')) %}
+<a class="back-link" href="{{url_for('appointment_preview',aid=stay.appointment_id,**booking_navigation())}}">‹ {{ _('กลับไปดูรายละเอียดการจอง') }}</a>
+{% else %}
+<a class="back-link" href="{{url_for('stay_history',status=request.args.get('status'),**period)}}">‹ {{ _('ประวัติการเข้าพัก') }}</a>
+{% endif %}
+<div class="summary-actions">
+    {% for endpoint, icon, format, action in [
+      ('stay_summary_pdf','pdf','PDF',_('ดาวน์โหลด PDF')),
+      ('stay_summary_image','image','PNG',_('ดาวน์โหลดรูปสรุป'))] %}
+      <div class="summary-export-group" role="group" aria-label="{{action}}">
+        {% for code, language_name in languages.items() %}
+        {% set accessible_name = action ~ ' · ' ~ language_name %}
+        <a class="button summary-icon summary-icon-{{icon}}" {% if format=='PNG' %}data-image-export target="_blank" rel="noopener"{% endif %} href="{{url_for(endpoint,sid=stay.id,lang=code)}}"
+           aria-label="{{accessible_name}}" title="{{accessible_name}}">
+          {{app_icon(icon)}}<span class="summary-icon-label" aria-hidden="true">{{format}} <b>{{code|upper}}</b></span>
+        </a>
+        {% endfor %}
+      </div>
+    {% endfor %}
+    <a class="button secondary summary-icon summary-dashboard-icon" href="{{url_for('dashboard')}}"
+       aria-label="{{ _('กลับไปหน้า Dashboard') }}" title="{{ _('กลับไปหน้า Dashboard') }}">{{app_icon('dashboard')}}</a>
+  </div>
+<div class="stay-summary-layout">
+  <section class="card stay-summary-details">
+    <div class="stay-summary-heading">
+      <h2>{{ _('รายละเอียดการเข้าพัก') }}</h2>
+      <span class="stay-summary-status stay-summary-status--{{stay.status}}">{{ _('กำลังเข้าพัก') if stay.status == 'checked_in' else status|tr }}</span>
+    </div>
+    <dl class="stay-summary-facts">
+      {% set has_reference = stay.stay_number or stay.booking_number %}
+      <div{% if not has_reference %} class="stay-fact-full"{% endif %}><dt>{{ _('ลูกค้า') }}</dt><dd>{{stay.customer}}</dd></div>
+      {% if has_reference %}
+      <div class="stay-reference">
+        {% if stay.stay_number %}
+        <dt>{{ _('หมายเลขการเข้าพัก') }}</dt><dd>{{stay.stay_number}}</dd>
+        {% else %}
+        <dt>{{ _('เลขจอง') }}</dt>
+        {% endif %}
+        {% if stay.booking_number %}
+        <dd{% if stay.stay_number %} class="stay-reference-booking"{% endif %}>
+          {% if stay.stay_number %}<span>{{ _('เลขจอง') }}</span>{% endif %}
+          <a href="{{url_for('appointment_preview',aid=stay.appointment_id,**booking_navigation())}}">{{stay.booking_number}}</a>
+        </dd>
+        {% endif %}
+      </div>
+      {% endif %}
+      <div><dt>{{ _('วันเข้าพัก') }}</dt><dd>{{stay.checkin|thai_date}}</dd></div>
+      <div><dt>{{ _('วันรับกลับ') }}</dt><dd>{{stay.checkout|thai_date}}</dd></div>
+      {% for field,label in [('actual_checkin_at','เช็กอินจริง'),('actual_checkout_at','เช็กเอาต์จริง')] %}
+      <div><dt>{{ _(label) }}</dt><dd>{% if stay[field] %}{{stay[field][:10]|thai_date}}{% if stay[field][11:16] %} · {{stay[field][11:16]}}{% endif %}{% else %}—{% endif %}</dd></div>
+      {% endfor %}
+      <div><dt>{{ _('จำนวนเดือน' if stay.service_type == 'monthly' else 'จำนวนวัน') }}</dt><dd>{{stay_duration(stay.charged_nights,stay.service_type)}}</dd></div>
+      <div><dt>{{ _('ประเภทบริการ') }}</dt><dd>{{service_names.get(stay.service_type,service_names.overnight)|tr}}</dd></div>
+    </dl>
+    <h3>{{ _('สุนัขที่รับฝาก') }}</h3>
+    <ul class="stay-summary-dogs">
+      {% for dog in dogs %}
+      <li>
+        {{dog_avatar(dog.id,dog.has_photo,'🐶')}}
+        <div><strong>{{dog.name}}</strong>
+          {% if dog.nightly_rate_cents is not none %}<small>฿{{fmt(dog.nightly_rate_cents/100)}} {{ _('/ เดือน') if stay.service_type == 'monthly' else _('/ วัน') if stay.service_type == 'daycare' else _('/ คืน') }}</small>{% endif %}
+        </div>
+        {% if dog.nightly_rate_cents is not none %}
+        <b class="right">฿{{fmt(dog.nightly_rate_cents*stay.charged_nights/100)}}</b>
+        {% endif %}
+      </li>
+      {% else %}<li>{{ _('ไม่มีรายชื่อสุนัขในรายการนี้') }}</li>{% endfor %}
+    </ul>
+    <dl class="stay-summary-totals">
+      <div><dt>{{ _('รวมก่อนส่วนลด') }}</dt><dd>฿{{fmt(stay.agreed_total+(stay.discount_cents+stay.rounding_cents)/100)}}</dd></div>
+      <div><dt>{{ _('ส่วนลด') }}</dt><dd>฿{{fmt(stay.discount_cents/100)}}</dd></div>
+      {% if stay.rounding_cents %}<div><dt>{{ _('ปัดเศษสตางค์ทิ้ง') }}</dt><dd>฿{{fmt(stay.rounding_cents/100)}}</dd></div>{% endif %}
+      <div class="stay-summary-net"><dt>{{ _('ยอดสุทธิ') }}</dt><dd>฿{{fmt(stay.agreed_total)}}</dd></div>
+    </dl>
+    {% include '_payment_history.html' %}
+    <div class="actions">{% for dog in dogs %}
+      <a class="button secondary" href="{{url_for('care_timeline',sid=stay.id,dog_id=dog.id)}}">{{ _('ดูไทม์ไลน์') }} · {{dog.name}}</a>
+    {% endfor %}</div>
+    {% if care_history %}
+    <details class="today-details" id="stay-care-history" {% if request.args.get('show_care') %}open{% endif %}><summary>{{ _('ประวัติการดูแล') }} · {{care_history|length}}</summary>
+      {{ care_event_list(care_history, care_options, editable=not checked_out) }}
+    </details>
+    {% endif %}
+    {% if stay.appointment_id and stay.payments|selectattr('payment_type','equalto','deposit')|list %}
+    {% if checked_out %}
+    <button type="button" class="secondary" disabled>{{ _('จัดการรายการมัดจำ') }}</button>
+    {% else %}
+    <a href="{{url_for('appointment_preview',aid=stay.appointment_id)}}#deposit-records">{{ _('จัดการรายการมัดจำ') }}</a>
+    {% endif %}
+    {% endif %}
+    {% if stay.cancelled_at %}
+    <h3>{{ _('ยกเลิกรายการเข้าพัก') }}</h3>
+    <p>{{stay.cancelled_at[:10]|thai_date}} · {{stay.cancelled_at[11:16]}} · {{stay.cancel_reason}}</p>
+    {% if refunds %}
+      <h3>{{ _('ประวัติการคืนเงิน') }}</h3>
+      <ul>{% for refund in refunds %}<li>{{refund.occurred_on|thai_date}} · ฿{{fmt(refund.amount)}} · {{refund.note}}</li>{% endfor %}</ul>
+    {% endif %}
+    {% if refundable > 0 %}
+    <form class="form intake-group" method="post" action="{{url_for('refund_stay',sid=stay.id)}}">
+      <input type="hidden" name="_csrf" value="{{csrf}}">
+      <input type="hidden" name="payment_key" value="{{receipt_key}}">
+      <p>{{ _('ยอดที่คืนได้') }} <strong>฿{{fmt(refundable)}}</strong></p>
+      <label>{{ _('ยอดคืนเงิน') }}<input type="number" name="amount" step="0.01" min="0.01" max="{{refundable}}" required></label>
+      <label>{{ _('วันที่คืนเงิน') }}<input type="date" name="date" value="{{today}}" max="{{today}}" required></label>
+      <label>{{ _('เหตุผล') }}<input name="reason" maxlength="500" required></label>
+      <button class="button">{{ _('บันทึกคืนเงิน') }}</button>
+    </form>
+    {% endif %}
+    {% elif checked_out %}
+    <div class="actions">
+      <button type="button" class="secondary" disabled>{{ _('แก้ไขรายการ') }}</button>
+      <button type="button" class="danger" disabled>{{ _('ยกเลิกรายการเข้าพัก') }}</button>
+      {% include '_stay_recheckin.html' %}
+    </div>
+    {% else %}
+    <div class="actions"><a href="{{url_for('stays',stay_id=stay.id,_anchor='stay-entry',status=request.args.get('status'),**period)}}" class="button secondary">{{ _('แก้ไขรายการ') }}</a>
+    </div>
+    <details class="today-details">
+      <summary>{{ _('ยกเลิกรายการเข้าพัก') }}</summary>
+      <form class="form" method="post" action="{{url_for('cancel_stay',sid=stay.id)}}" onsubmit="return confirm(this.dataset.confirm)" data-confirm="{{ _('ยืนยันยกเลิกรายการเข้าพักและรายการชำระเงินที่เกี่ยวข้องหรือไม่?') }}">
+        <input type="hidden" name="_csrf" value="{{csrf}}">
+        <label>{{ _('เหตุผลการยกเลิก') }}<input name="reason" maxlength="500" required></label>
+        <button class="button danger">{{ _('ยกเลิกรายการเข้าพัก') }}</button>
+      </form>
+    </details>
+    {% endif %}
+  </section>
+  {% set due = [0,stay.agreed_total-(stay.payments|sum(attribute='amount'))]|max %}
+  {% if stay.status != 'cancelled' and payment_qr_url %}
+  <section class="card stay-payment">
+    <h2>{{ _('โอนเงินผ่าน QR Code') }}</h2>
+    {% if stay.payment_tracking and stay.due_cents == 0 %}
+    <p>{{ _('ชำระครบแล้ว') }}</p>
+    {% else %}
+    <p>{{ _('ใช้แอปธนาคารสแกนและกรอกยอด') }} <strong>฿{{fmt(stay.due_cents/100 if stay.payment_tracking else due)}}</strong></p>
+    {% endif %}
+    <a href="{{payment_qr_url}}" aria-label="{{ _('เปิด QR Code ภาพเต็ม') }}">
+      <img src="{{payment_qr_url}}" width="885" height="1200" alt="{{ _('QR Code สำหรับโอนเงิน') }}">
+    </a>
+  </section>
+  {% endif %}
+</div>
+<section class="card stay-consent">
+  <h2>{{terms.title}}</h2>
+  {% if consent %}
+  <p class="muted">{{ _('ฉบับที่') }} {{consent.customer_name}} {{ _('รับทราบเมื่อ') }} {{consent.signed_at[:10]|thai_date}} {{ _('เวลา') }} {{consent.signed_at[11:16]}} {{ _('น.') }} · {{ _('ภาษาที่ลงลายเซ็น') }} {{languages[consent.signed_language]|tr}}</p>
+  {% else %}<p class="muted">{{ _('เงื่อนไขปัจจุบัน · รายการนี้ยังไม่มีลายเซ็นที่บันทึกไว้') }}</p>{% endif %}
+  {{term_sections(terms.sections)}}
+  {% if updated_terms %}
+  <h3>{{ _('เงื่อนไขปัจจุบันที่เพิ่มหลังลงลายเซ็น') }}</h3>
+  {{term_sections(updated_terms)}}
+  {% endif %}
+  {% if consent and consent.strokes %}
+  <div class="signed-stay">
+    <h3>{{ _('ลายเซ็นลูกค้า') }}</h3>
+    {% include '_signature_preview.html' %}
+  </div>
+  {% endif %}
+</section>
+{% endblock %}

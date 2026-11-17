@@ -1,0 +1,110 @@
+{% from '_icons.html' import app_icon %}
+{% macro delete_care_button(event, origin='summary', day='') %}
+<form class="inline" method="post" action="{{url_for('delete_care',sid=event.stay_id,dog_id=event.dog_id,event_id=event.id)}}"
+      onsubmit="return confirm(this.dataset.confirm)" data-confirm="{{ _('ยืนยันลบบันทึกการดูแลรายการนี้?') }}">
+  <input type="hidden" name="_csrf" value="{{csrf}}">
+  <input type="hidden" name="origin" value="{{origin}}">
+  <input type="hidden" name="day" value="{{day}}">
+  <button type="submit" class="danger appointment-icon" aria-label="{{ _('ลบบันทึกการดูแล') }}" title="{{ _('ลบบันทึกการดูแล') }}">{{app_icon('delete')}}</button>
+</form>
+{% endmacro %}
+
+{% macro care_event_list(events, options, origin='summary', day='', editable=true) %}
+<ul class="care-events">
+  {% for event in events %}
+  <li>
+    <div class="care-event-heading">
+      <div class="care-event-copy">
+        <div class="care-event-meta">
+          <span class="care-event-clock">{% if origin == 'summary' %}{{event.recorded_at[:10]|thai_date}} · {% endif %}{{event.recorded_at[11:16]}}</span>
+          <strong>{% if origin == 'summary' %}{{event.dog}} · {% endif %}{{ _(care_event_title(event)) }}</strong>
+        </div>
+        {% if event.customer_visible %}<small class="muted">{{ _('แชร์ให้ลูกค้าเห็น') }}</small>{% endif %}
+        {% if event.note %}<div class="care-event-note">{{event.note}}</div>{% endif %}
+      </div>
+      <div class="care-event-actions">
+        {% if editable %}
+        <button type="button" class="button secondary appointment-icon" data-care-dialog="care-edit-{{event.id}}"
+                aria-haspopup="dialog" aria-label="{{ _('แก้ไขกิจกรรม') }}" title="{{ _('แก้ไขกิจกรรม') }}">{{app_icon('edit')}}</button>
+        {{ delete_care_button(event, origin, day) }}
+        {% else %}
+        <button type="button" class="secondary appointment-icon" disabled
+                aria-label="{{ _('แก้ไขกิจกรรม') }}" title="{{ _('แก้ไขกิจกรรม') }}">{{app_icon('edit')}}</button>
+        <button type="button" class="danger appointment-icon" disabled
+                aria-label="{{ _('ลบบันทึกการดูแล') }}" title="{{ _('ลบบันทึกการดูแล') }}">{{app_icon('delete')}}</button>
+        {% endif %}
+      </div>
+    </div>
+    {% if event.photos %}
+    <div class="care-gallery">{% for photo_id in event.photos.split(',') %}
+      <a href="{{url_for('care_photo',photo_id=photo_id)}}" target="_blank" rel="noopener"><img src="{{url_for('care_photo',photo_id=photo_id)}}" loading="lazy" alt="{{ _('รูปประกอบกิจกรรม') }}"></a>
+    {% endfor %}</div>
+    {% endif %}
+    {% if editable %}{{ care_activity_dialog('care-edit-' ~ event.id, event.stay_id, event.dog_id, event.dog|default(''), options, origin, day, event) }}{% endif %}
+  </li>
+  {% endfor %}
+</ul>
+{% endmacro %}
+
+{% macro care_record_button(sid, dog_id, dog_name, options, origin, day='') %}
+{% set dialog_id = 'care-record-' ~ sid ~ '-' ~ dog_id %}
+<button type="button" class="button" data-care-dialog="{{dialog_id}}" aria-haspopup="dialog">{{app_icon('add')}} {{ _('บันทึกกิจกรรม') }}</button>
+{{ care_activity_dialog(dialog_id, sid, dog_id, dog_name, options, origin, day) }}
+{% endmacro %}
+
+{% macro care_activity_dialog(dialog_id, sid, dog_id, dog_name, options, origin, day, event=none) %}
+{% set title = _('แก้ไขกิจกรรม') if event else _('บันทึกกิจกรรม') %}
+{% set selected = event.kind if event else '' %}
+{% if event and event.kind == 'custom' and event.activity_label %}
+  {% set match = namespace(key='existing-activity') %}
+  {% for key,label in options.items() if key not in ('food','medicine','custom') and label == event.activity_label %}
+    {% set match.key = key %}
+  {% endfor %}
+  {% set selected = match.key %}
+{% endif %}
+<dialog class="care-dialog" id="{{dialog_id}}" aria-labelledby="{{dialog_id}}-title">
+  <h2 id="{{dialog_id}}-title">{{title}}</h2>
+  {% if dog_name %}<p>{{dog_name}}</p>{% endif %}
+  {% set action = url_for('edit_care_time',sid=sid,dog_id=dog_id,event_id=event.id) if event else url_for('record_care',sid=sid,dog_id=dog_id) %}
+  <form class="form" method="post" enctype="multipart/form-data" action="{{action}}">
+    <input type="hidden" name="_csrf" value="{{csrf}}">
+    <input type="hidden" name="origin" value="{{origin}}">
+    <input type="hidden" name="day" value="{{day}}">
+    <div class="formgrid">
+      <label>{{ _('วันที่กิจกรรม') }}<input type="date" name="care_date" value="{{event.recorded_at[:10] if event else today}}" max="{{today}}" {% if not event %}data-care-current-date{% endif %} required></label>
+      <label>{{ _('เวลากิจกรรม') }}<input type="time" name="care_time" value="{{event.recorded_at[11:16] if event else current_payment_time}}" required></label>
+    </div>
+    <label>{{ _('ประเภทกิจกรรม') }}
+      <select name="kind" required autofocus data-care-kind>
+        <option value="">{{ _('เลือกกิจกรรม') }}</option>
+        {% if selected == 'existing-activity' %}<option value="existing-activity" selected>{{event.activity_label}}</option>{% endif %}
+        {% for key,label in options.items() %}<option value="{{key}}" {% if key == selected %}selected{% endif %}>{{ label if key.startswith('activity:') else _(label) }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>{{ _('รายละเอียดเพิ่มเติม') }}<textarea name="note" rows="3" maxlength="500">{{event.note if event else ''}}</textarea></label>
+    {% if event and event.photos %}
+    <fieldset>
+      <legend>{{ _('รูปที่แนบไว้') }}</legend>
+      <div class="care-gallery">
+        {% for photo_id in event.photos.split(',') %}
+        <label>
+          <img src="{{url_for('care_photo',photo_id=photo_id)}}" loading="lazy" alt="{{ _('รูปประกอบกิจกรรม') }} {{loop.index}}">
+          <span><input type="checkbox" name="remove_photos" value="{{photo_id}}"> {{ _('นำรูปนี้ออก') }}</span>
+        </label>
+        {% endfor %}
+      </div>
+    </fieldset>
+    {% endif %}
+    <label class="care-share-opt-in">
+      <input type="checkbox" name="customer_visible" value="1" {% if not event or event.customer_visible %}checked{% endif %}>
+      {{ _('แสดงข้อความและรูปกิจกรรมนี้ให้ลูกค้าเห็น') }}
+    </label>
+    <label>{{ (_('แนบรูปเพิ่ม') if event else _('รูปประกอบกิจกรรม')) }}<input name="photos" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" multiple></label>
+    <small>{{ _('เลือกได้สูงสุด 4 รูป รวมไม่เกิน 7 MB') }}</small>
+    <div class="actions">
+      <button type="button" class="button secondary" data-care-close>{{ _('ยกเลิก') }}</button>
+      <button>{{ _('บันทึกการแก้ไข') if event else _('บันทึก') }}</button>
+    </div>
+  </form>
+</dialog>
+{% endmacro %}

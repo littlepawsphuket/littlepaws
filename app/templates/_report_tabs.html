@@ -1,0 +1,6 @@
+<nav class="calendar-tabs settings-tabs" aria-label="{{ _('รายงาน') }}">
+  {% for key,title in reports.items() %}
+  <a class="button secondary" href="{{url_for('reports',name=key,range=preset,month=start.isoformat()[:7],year=start.year,start=start.isoformat(),end=end.isoformat()) if request.endpoint == 'reports' else url_for('reports',name=key)}}" {% if key==name %}aria-current="page"{% endif %}>{{title[1 if lang=='en' else 0]}}</a>
+  {% endfor %}
+  <a class="button secondary" href="{{url_for('report_guide')}}" {% if request.endpoint == 'report_guide' %}aria-current="page"{% endif %}>{{ _('คู่มือ') }}</a>
+</nav>

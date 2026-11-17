@@ -1,0 +1,10 @@
+{% from '_dog_profile_fields.html' import dog_fields %}
+<form action="{{url_for('manage_dog',cid=dog.customer_id,dog_id=dog.id,action='edit')}}" method="post" enctype="multipart/form-data" class="form">
+  <input type="hidden" name="_csrf" value="{{csrf}}">
+  {{dog_fields(sizes, profile_groups, today, dog)}}
+  <p class="alert error" data-profile-error role="alert" hidden></p>
+  <div class="actions">
+    <button type="submit">{{ _('บันทึกการแก้ไข') }}</button>
+    <button type="button" class="secondary" data-close-profile>{{ _('ยกเลิก') }}</button>
+  </div>
+</form>

@@ -1,0 +1,132 @@
+{% extends 'base.html' %}
+{% from '_icons.html' import app_icon %}
+{% from '_dog_photo.html' import dog_avatar %}
+{% from '_care_events.html' import care_event_list, care_record_button with context %}
+{% block page_heading %}
+<h1>{{ _('ภาพรวมธุรกิจ') }}</h1>
+<p>{{ _('รายรับ รายจ่าย และการเข้าพักของ Little Paws') }}</p>
+{% endblock %}
+{% block content %}
+<section class="card" id="current-stays">
+  <div class="heading"><h2>{{ _('สุนัขที่กำลังเข้าพัก') }} <span class="count">{{boarding|length}}</span></h2><a href="{{url_for('stays',_anchor='stay-history')}}">{{ _('ดูรายการฝากเลี้ยง') }}</a></div>
+  {% if boarding %}<div class="boarding-list">{% for dog in boarding %}
+  <article>
+    <div class="boarding-dog-heading current-dog-heading">
+      <div class="current-dog-identity">
+        {{dog_avatar(dog.dog_id, dog.has_photo)}}
+        <div>
+          <strong>{{dog.dog}}</strong>
+          <a href="{{url_for('customer_detail',cid=dog.customer_id)}}">{{dog.owner}}</a>
+          <small>{{dog.contact or _('ยังไม่มีช่องทางติดต่อ')}}</small>
+        </div>
+      </div>
+      <div class="current-dog-pickup">
+        {% if dog.checkout == today %}<strong class="pickup-today">{{ _('กลับบ้านวันนี้') }}</strong>
+        {% else %}<strong class="boarding-duration">{{ _('เหลือ {days} วัน').format(days=dog.days_left) }}</strong>{% endif %}
+        <small>{{ _('วันรับกลับ') }} {{dog.checkout|thai_date}}{% if dog.pickup_time %} · {{dog.pickup_time}}{% endif %}</small>
+      </div>
+    </div>
+    <details class="dog-care today-details" id="care-{{dog.stay_id}}-{{dog.dog_id}}">
+      <summary>
+        {{ _('การดูแลวันนี้') }} · {{dog.care|length}}
+        {% if dog.care %}{% set latest = dog.care[0] %}
+          <small class="care-latest">{{ _('ล่าสุด') }} {{latest.recorded_at[11:16]}} · {{ latest.note|truncate(75) if latest.kind == 'custom' and not latest.activity_label else _(care_event_title(latest)) }}</small>
+        {% endif %}
+      </summary>
+      {% if dog.details.get('medications') or dog.details.get('medical_history') %}
+      <dl class="care-facts care-important">
+        {% for key,label in [('medical_history','ประวัติสุขภาพ / แพ้อาหาร'),('medications','ยาประจำตัว')] if dog.details.get(key) %}
+        <div><dt>{{ _(label) }}</dt><dd>{{ dog.details[key] }}</dd></div>
+        {% endfor %}
+      </dl>
+      {% endif %}
+      <div class="actions care-dashboard-actions">
+        {{ care_record_button(dog.stay_id, dog.dog_id, dog.dog, care_options, 'dashboard') }}
+        <a class="button secondary" href="{{url_for('care_timeline',sid=dog.stay_id,dog_id=dog.dog_id)}}">{{ _('ดูไทม์ไลน์') }}</a>
+      </div>
+      {% if dog.care %}{{ care_event_list(dog.care, care_options, 'dashboard') }}{% endif %}
+      {% if dog.details.get('food') or dog.details.get('required_care') %}
+      <dl class="care-facts">
+        {% for key,label in [('food','อาหาร'),('required_care','โรคประจำตัว / การดูแลที่ต้องการ')] if dog.details.get(key) %}
+        <div><dt>{{ _(label) }}</dt><dd>{{ dog.details[key] }}</dd></div>
+        {% endfor %}
+      </dl>
+      {% elif not dog.details.get('medications') and not dog.details.get('medical_history') %}
+      <small class="muted">{{ _('ยังไม่มีข้อมูลการดูแลเพิ่มเติม') }}</small>
+      {% endif %}
+    </details>
+    <div class="boarding-checkout-actions">
+      <a href="{{url_for('stay_summary',sid=dog.stay_id)}}">{{ _('ดูการเข้าพัก') }}</a>
+      {% with checkout_url=url_for('stay_checkout',sid=dog.stay_id,origin='dashboard',from_month=from_month,to_month=to_month) %}
+      {% include '_stay_checkout.html' %}
+      {% endwith %}
+    </div>
+  </article>
+  {% endfor %}</div>{% else %}<p class="muted">{{ _('ขณะนี้ไม่มีสุนัขที่อยู่ในสถานะเข้าพัก') }}</p>{% endif %}
+</section>
+<section class="card" id="upcoming-stays">
+  <div class="heading"><h2>{{ _('สุนัขที่มีกำหนดเข้าพัก') }} <span class="count">{{upcoming|length}}</span></h2><a href="{{url_for('appointments')}}">{{ _('ดูปฏิทินการจอง') }}</a></div>
+  {% if upcoming %}
+  <div class="boarding-list">{% for dog in upcoming %}
+    <article>
+      <div class="upcoming-dog-heading">
+        {{dog_avatar(dog.dog_id, dog.has_photo)}}
+        <p class="upcoming-countdown">
+          {% if dog.days_until > 0 %}
+            <strong class="boarding-duration">{{ _('อีก {days} วันจะเข้าพัก').format(days=dog.days_until) }}</strong>
+          {% elif dog.days_until == 0 %}
+            <strong class="pickup-today">{{ _('เข้าพักวันนี้') }}</strong>
+          {% else %}
+            <strong class="boarding-duration">{{ _('เลยวันเข้าพัก {days} วัน').format(days=-dog.days_until) }}</strong>
+          {% endif %}
+        </p>
+      </div>
+      <strong>{{dog.dog}}</strong><span>{{dog.owner}}</span>
+      {% if dog.contact %}<span>{{dog.contact}}</span>{% endif %}
+      <div class="boarding-period">
+        <small>{{dog.checkin|thai_date}} {{ _('ถึง') }} {{dog.checkout|thai_date}}</small>
+        <strong class="boarding-duration">{{stay_duration(dog.charged_nights,dog.service_type)}}</strong>
+      </div>
+      {% if dog.source == 'appointment' %}
+      <div class="boarding-checkout-actions">
+        <a class="button secondary booking-preview-button" href="{{url_for('appointment_preview',aid=dog.id,origin='dashboard')}}">{{app_icon("details")}} {{ _('ดูการจอง') }}</a>
+        <a class="button stay-checkout-button" href="{{url_for('appointment_checkin',aid=dog.id,origin='dashboard')}}">{{app_icon('checkin')}} {{ _('เช็กอิน') }}</a>
+      </div>
+      {% else %}
+      <div class="boarding-checkout-actions">
+        <a href="{{url_for('stay_summary',sid=dog.id)}}">{{ _('ดูรายการจอง') }}</a>
+        <a class="button stay-checkout-button" href="{{url_for('stays',stay_id=dog.id,check_in=1,_anchor='stay-entry')}}">{{app_icon('checkin')}} {{ _('เช็กอิน') }}</a>
+      </div>
+      {% endif %}
+    </article>
+  {% endfor %}</div>
+  {% else %}<p class="muted">{{ _('ไม่มีการจองที่รอเช็กอิน') }}</p>{% endif %}
+</section>
+<form class="period-filter" method="get">
+  <label>{{ _('ตั้งแต่เดือน') }}<input type="month" name="from_month" value="{{from_month}}" required></label>
+  <label>{{ _('ถึงเดือน') }}<input type="month" name="to_month" value="{{to_month}}" required></label>
+  <button>{{ _('แสดงภาพรวม') }}</button>
+</form>
+<div class="stats"><div class="card stat"><small>{{ _('รายรับ') }}</small><strong class="green">฿{{fmt(income)}}</strong></div><div class="card stat"><small>{{ _('คืนเงิน') }}</small><strong>฿{{fmt(refunds)}}</strong></div><div class="card stat"><small>{{ _('รายจ่าย') }}</small><strong class="red">฿{{fmt(expenses)}}</strong></div><div class="card stat"><small>{{ _('กระแสเงินสดสุทธิ') }}</small><strong class="{{'green' if net>=0 else 'red'}}">฿{{fmt(net)}}</strong></div></div>
+<div class="stats three"><div class="card stat"><small>{{ _('การเข้าพัก (ครั้ง)') }}</small><strong>{{stats.stays}}</strong></div><div class="card stat"><small>{{ _('สุนัขเข้าพัก (ตัว/ครั้ง)') }}</small><strong>{{stats.dogs}}</strong></div><div class="card stat"><small>{{ _('คืนที่คิดค่าบริการ') }}</small><strong>{{stats.nights}}</strong></div></div>
+<div class="two"><section class="card"><h2>{{ _('รายรับสุทธิเทียบรายจ่าย · รายเดือน') }}</h2><div class="scroll"><div class="chart" id="trend-chart" data-values='{{trend|tojson}}'></div></div><div class="legend"><span>{{ _('🟢 รายรับหลังคืนเงิน') }}</span><span>{{ _('🟠 รายจ่าย') }}</span></div></section><section class="card expense-categories">
+  <h2>{{ _('รายจ่ายตามหมวดหมู่') }}</h2>
+  {% set colors = {'ค่าฝากเลี้ยง':'#24796b','อาหารและขนม':'#a54a4b','อุปกรณ์':'#3b6dab',
+    'ทำความสะอาด':'#43804a','ค่าน้ำไฟ':'#a86818','การตลาด':'#8255a0',
+    'ค่ารักษาพยาบาล':'#a94d7b','เอกสาร':'#546779','อื่นๆ':'#846343'} %}
+  {% for c in cats %}
+  <div class="category" style="--category-color:{{colors.get(c.category, '#576a71')}}">
+    <div><span class="category-name">{{c.category|tr}}</span><b>฿{{fmt(c.amount)}}</b></div>
+    <div class="track" aria-hidden="true"><div{% if c.amount > 0 %} class="has-amount"{% endif %} style="width:{{c.amount/expenses*100 if expenses else 0}}%"></div></div>
+  </div>
+  {% else %}<p class="muted">{{ _('ยังไม่มีรายจ่ายในช่วงนี้') }}</p>{% endfor %}
+</section></div>
+<section class="card"><div class="heading"><h2>{{ _('รายการล่าสุดในช่วงนี้') }}</h2><a class="button secondary" href="{{url_for('transactions',_anchor='transaction-history',**transaction_period)}}">{{ _('ดูรายรับ–รายจ่าย') }}</a></div><div class="scroll"><table><thead><tr><th>{{ _('วันที่') }}</th><th>{{ _('ประเภท') }}</th><th>{{ _('รายละเอียด') }}</th><th>{{ _('ลูกค้า') }}</th><th class="right">{{ _('จำนวน') }}</th></tr></thead><tbody>{% for t in tx %}<tr><td>{{t.occurred_on|thai_date}}</td><td>{{{'income':_('รับเงิน'),'refund':_('คืนเงิน'),'expense':_('รายจ่าย')}[t.kind]}}</td><td>{{ _('ค่าฝากเลี้ยง') ~ ' #' ~ t.stay_id if lang == 'en' and t.auto_stay and t.stay_id else t.description }}</td><td>{{t.customer or '—'}}</td><td class="right">฿{{fmt(t.amount)}}</td></tr>{% else %}<tr><td colspan="5">{{ _('ยังไม่มีรายการ') }}</td></tr>{% endfor %}</tbody></table></div></section>
+<div class="actions"><a class="button" href="{{url_for('transactions',_anchor='transaction-entry')}}">{{ _('+ เพิ่มรายการรับ/จ่าย') }}</a><a class="button secondary" href="{{url_for('stays')}}">{{ _('+ บันทึกการเข้าพัก') }}</a><a class="button secondary" href="{{url_for('settings',tab='backup')}}">{{ _('⬇ สำรองฐานข้อมูล') }}</a></div><p class="muted tiny">{{ _('สถิติการฝากเลี้ยงอิงวันที่เข้าพัก รายรับจากบิลฝากเลี้ยงอิงวันที่บันทึกบิล') }}</p><script>
+  function openCareSection() {
+    const section = document.getElementById(location.hash.slice(1));
+    if (section && section.matches('details.dog-care')) section.open = true;
+  }
+  window.addEventListener('hashchange', openCareSection);
+  openCareSection();
+</script>{% endblock %}

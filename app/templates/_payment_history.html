@@ -1,0 +1,69 @@
+{% from '_icons.html' import app_icon %}
+{% set summary_page = request.endpoint == 'stay_summary' %}
+{% set show_payment_actions = summary_page and not stay.cancelled_at %}
+{% set manage_payments = show_payment_actions and stay.status != 'completed' %}
+{% if stay.payments or stay.payment_tracking or (summary_page and payment_deletions) %}
+{% set received = stay.payments|sum(attribute='amount') %}
+<section class="payment-history"{% if request.endpoint == 'stay_summary' %} id="stay-payment-history"{% endif %}>
+  <h3>{{ _('ประวัติการชำระเงิน') }}</h3>
+  <div class="scroll">
+    <table>
+      <thead><tr><th>#</th><th>{{ _('วันที่รับชำระ') }}</th><th>{{ _('รายการ') }}</th><th class="right">{{ _('จำนวนเงิน') }}</th>{% if show_payment_actions %}<th>{{ _('จัดการ') }}</th>{% endif %}</tr></thead>
+      <tbody>{% for payment in stay.payments %}
+        <tr><td>{{loop.index}}</td><td>{{payment.occurred_on|thai_date}}{% if payment.received_time %} · {{payment.received_time}}{% endif %}</td><td>{{payment.label|tr}}</td><td class="right">฿{{fmt(payment.amount)}}</td>
+          {% if manage_payments %}
+          <td><details>
+            <summary class="button danger appointment-icon payment-delete-icon" aria-label="{{ _('ลบรายการชำระเงิน') }}" title="{{ _('ลบรายการชำระเงิน') }}">{{app_icon('delete')}}</summary>
+            <form class="form" method="post" action="{{url_for('delete_stay_payment',sid=stay.id,payment_id=payment.id,**period)}}"
+                  onsubmit="return confirm({{ _('ยืนยันลบรายการชำระเงินนี้?')|tojson|forceescape }})">
+              <input type="hidden" name="_csrf" value="{{csrf}}">
+              <label>{{ _('เหตุผลที่ลบ') }}<textarea name="reason" rows="2" maxlength="500" required></textarea></label>
+              <button class="danger" type="submit">{{ _('ยืนยันการลบ') }}</button>
+            </form>
+          </details></td>
+          {% elif show_payment_actions %}
+          <td><button type="button" class="danger appointment-icon payment-delete-icon" disabled
+                      aria-label="{{ _('ลบรายการชำระเงิน') }}" title="{{ _('ลบรายการชำระเงิน') }}">{{app_icon('delete')}}</button></td>
+          {% endif %}
+        </tr>
+      {% else %}<tr><td colspan="{{5 if show_payment_actions else 4}}">{{ _('ยังไม่มีการชำระเงิน') }}</td></tr>{% endfor %}</tbody>
+    </table>
+  </div>
+  <dl class="stay-summary-totals">
+    <div><dt>{{ _('ชำระแล้ว') }}</dt><dd>฿{{fmt(received)}}</dd></div>
+    {% if not quote_pending or stay.payment_tracking %}
+    <div><dt>{{ _('ยอดคงเหลือ') }}</dt><dd>฿{{fmt([0,(0 if stay.status == 'cancelled' else stay.get('payment_total',stay.agreed_total)-received)]|max)}}</dd></div>
+    {% endif %}
+  </dl>
+  {% if request.endpoint == 'stay_summary' and stay.due_cents > 0 %}
+  <details class="intake-group">
+    <summary class="button">{{ _('รับชำระยอดค้าง') }}</summary>
+    <form class="form" method="post" action="{{url_for('receive_stay_payment',sid=stay.id,**period)}}">
+      <input type="hidden" name="_csrf" value="{{csrf}}">
+      <input type="hidden" name="payment_key" value="{{receipt_key}}">
+      {% set balance = '%.2f'|format(stay.due_cents/100) %}
+      <div class="formgrid">
+        <label>{{ _('ยอดรับชำระครั้งนี้ (บาท)') }}<input name="payment_amount" type="number" min="0.01" max="{{balance}}" step="0.01" value="{{balance}}" required></label>
+        <label>{{ _('วันที่รับชำระ') }}<input name="payment_date" type="date" max="{{today}}" value="{{today}}" required></label>
+        <label>{{ _('เวลารับชำระ') }}<input type="time" name="payment_time" value="{{current_payment_time}}"></label>
+      </div>
+      <div><button>{{ _('บันทึกรับชำระ') }}</button></div>
+    </form>
+  </details>
+  {% endif %}
+  {% if summary_page and payment_deletions %}
+  <details class="intake-group">
+    <summary>{{ _('ประวัติการลบรายการชำระเงิน') }}</summary>
+    <ul>
+      {% for removed in payment_deletions %}
+      <li><strong>{{removed.label|tr}} · ฿{{fmt(removed.amount)}}</strong>
+        <div>{{ _('วันที่รับชำระ') }} {{removed.occurred_on|thai_date}}{% if removed.received_time %} · {{removed.received_time}}{% endif %}</div>
+        <div>{{ _('วันที่ลบ') }} {{removed.deleted_at[:10]|thai_date}} · {{removed.deleted_at[11:16]}}</div>
+        <div>{{ _('เหตุผลที่ลบ') }} · {{removed.reason}}</div>
+      </li>
+      {% endfor %}
+    </ul>
+  </details>
+  {% endif %}
+</section>
+{% endif %}

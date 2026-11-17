@@ -1,0 +1,6 @@
+{% from '_icons.html' import app_icon %}
+<form class="stay-checkout-form" method="post" action="{{checkout_url}}"
+      onsubmit="return confirm({{ _('ยืนยันเช็กเอาต์สุนัขทุกตัวในรายการนี้?')|tojson|forceescape }})">
+  <input type="hidden" name="_csrf" value="{{csrf}}">
+  <button class="secondary stay-checkout-button" type="submit">{{app_icon('checkout')}} {{ _('เช็กเอาต์') }}</button>
+</form>

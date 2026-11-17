@@ -1,0 +1,74 @@
+{% extends 'base.html' %}
+{% from '_dog_photo.html' import dog_avatar %}
+{% from '_icons.html' import app_icon %}
+ {% block page_heading %}
+<h1>{{ _('รายละเอียดการจอง') }}</h1>
+<p>{{ _('เลขจอง') }} <strong>{{stay.booking_number}}</strong> · {{status|tr}}</p>
+{% endblock %}
+{% block content %}
+<a class="back-link" href="{{booking_list_url(stay.checkin)}}">‹ {{ _('กลับหน้า Dashboard') if request.args.get('origin') == 'dashboard' else _('กลับไปการจอง') }}</a>
+<div class="actions">
+    {% if stay.stay_id %}
+      <a class="button secondary" href="{{url_for('stay_summary',sid=stay.stay_id,**booking_navigation())}}">{{ _('ดูการเข้าพัก') }}</a>
+    {% elif stay.status == 'pending' %}
+      <a class="button secondary" href="{{url_for('appointment_edit',aid=stay.id,**booking_navigation())}}">{{ _('แก้ไขการจอง') }}</a>
+      <a class="button" href="{{url_for('appointment_checkin',aid=stay.id,**booking_navigation())}}">{{ _('เช็กอิน') }}</a>
+    {% endif %}
+  </div>
+<section class="card stay-summary-details">
+  <dl class="stay-summary-facts">
+    <div><dt>{{ _('ลูกค้า') }}</dt><dd><a href="{{url_for('customer_detail',cid=stay.customer_id)}}">{{stay.customer}}</a>{% if stay.contact %}<br>{{stay.contact}}{% endif %}</dd></div>
+    <div><dt>{{ _('วันเข้าพักที่จอง') }}</dt><dd>{{stay.checkin|thai_date}}</dd></div>
+    <div><dt>{{ _('วันรับกลับ') }}</dt><dd>{{stay.checkout|thai_date}}</dd></div>
+    <div><dt>{{ _('จำนวนเดือน' if stay.service_type == 'monthly' else 'จำนวนวัน') }}</dt><dd>{{stay_duration(stay.charged_nights,stay.service_type)}}</dd></div>
+  </dl>
+  <h2>{{ _('สุนัขในการจอง') }}</h2>
+  <ul class="stay-summary-dogs">
+    {% for dog in dogs %}
+    <li>{{dog_avatar(dog.id,dog.has_photo,'🐶')}}<div><strong>{{dog.name}}</strong>
+      <small>{% if dog.nightly_rate_cents is not none %}฿{{fmt(dog.nightly_rate_cents/100)}} {{ _('/ เดือน') if stay.service_type == 'monthly' else _('/ วัน') if stay.service_type == 'daycare' else _('/ คืน') }}{% else %}{{ _('รอระบุราคา') }}{% endif %}</small></div></li>
+    {% endfor %}
+  </ul>
+  <p>{{ _('ส่วนลด') }} ฿{{fmt(stay.discount_cents/100)}} · <strong>{{ _('ยอดสุทธิโดยประมาณ') }} {% if quote_pending %}{{ _('รอระบุราคา') }}{% else %}฿{{fmt(stay.agreed_total)}}{% endif %}</strong></p>
+  {% if stay.note %}<p>{{ _('หมายเหตุการจอง') }} {{stay.note}}</p>{% endif %}
+  {% include '_payment_history.html' %}
+  <div class="actions">
+    <a class="button secondary" href="{{url_for('appointment_pdf',aid=stay.id)}}">{{ _('ดาวน์โหลดใบจอง PDF') }}</a>
+    <a class="button secondary" data-image-export target="_blank" rel="noopener" href="{{url_for('appointment_image',aid=stay.id)}}">{{ _('ดาวน์โหลดรูปใบจอง') }}</a>
+  </div>
+  {% set deposits = stay.payments|selectattr('payment_type','equalto','deposit')|list %}
+  {% if deposits %}
+  <section id="deposit-records">
+    <div class="heading">
+      <h2>{{ _('รายการมัดจำ') }}</h2>
+      {% if not stay.stay_id and stay.status == 'pending' %}
+      <a class="button secondary small" href="{{url_for('appointment_edit',aid=stay.id,**booking_navigation())}}#stay-payments">{{ _('เพิ่มรายการมัดจำ') }}</a>
+      {% endif %}
+    </div>
+    <div class="scroll"><table>
+      <thead><tr><th>{{ _('เลขที่ใบรับมัดจำ') }}</th><th>{{ _('วันที่รับชำระ') }}</th><th>{{ _('จำนวนเงิน') }}</th><th>{{ _('จัดการ') }}</th></tr></thead>
+      <tbody>{% for deposit in deposits %}
+        <tr><td>DEP-{{deposit.id}}</td><td>{{deposit.occurred_on|thai_date}}{% if deposit.received_time %} · {{deposit.received_time}}{% endif %}</td><td>฿{{fmt(deposit.amount)}}</td>
+          <td><div class="appointment-actions">
+            {% for format, icon in [('pdf','pdf'),('png','image')] %}
+            <a class="button secondary small" {% if format=='png' %}data-image-export target="_blank" rel="noopener"{% endif %} href="{{url_for('appointment_deposit',aid=stay.id,payment_id=deposit.id,format=format)}}"
+              aria-label="{{ _('ใบรับมัดจำ') }} {{format|upper}}" title="{{ _('ใบรับมัดจำ') }} {{format|upper}}">{{app_icon(icon)}} {{format|upper}}</a>
+            {% endfor %}
+            {% if stay.stay_id %}
+            <a class="button secondary small appointment-icon" href="{{url_for('stay_summary',sid=stay.stay_id,_anchor='stay-payment-history')}}"
+               aria-label="{{ _('ลบรายการชำระเงิน') }}" title="{{ _('ลบรายการชำระเงิน') }}">{{app_icon('delete')}}</a>
+            {% else %}
+            <form method="post" action="{{url_for('appointment_deposit_delete',aid=stay.id,payment_id=deposit.id,**booking_navigation())}}"
+                  onsubmit="return confirm({{ _('ลบรายการมัดจำและรายรับที่บันทึกไว้สำหรับรายการนี้?')|tojson|forceescape }})">
+              <input type="hidden" name="_csrf" value="{{csrf}}">
+              <button type="submit" class="danger small appointment-icon" aria-label="{{ _('ลบรายการมัดจำ') }}" title="{{ _('ลบรายการมัดจำ') }}">{{app_icon('delete')}}</button>
+            </form>
+            {% endif %}
+          </div></td></tr>
+      {% endfor %}</tbody>
+    </table></div>
+  </section>
+  {% endif %}
+</section>
+
+{% endblock %}

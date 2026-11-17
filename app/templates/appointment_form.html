@@ -1,0 +1,14 @@
+{% extends 'base.html' %}
+{% block page_heading %}
+<h1>{{_('เช็กอินจากการจอง') if mode == 'conversion' else _('การจองฝากเลี้ยง')}}</h1>
+<p>{{_('ปรับข้อมูลตามการเข้าพักจริงก่อนยืนยัน') if mode == 'conversion' else _('วางแผนวันเข้าพักและวันรับกลับ')}}</p>
+{% if stay and stay.booking_number %}<p><strong>{{ _('เลขจอง') }} {{stay.booking_number}}</strong></p>{% endif %}
+{% endblock %}
+{% block content %}
+{% if stay %}
+<a class="back-link" href="{{url_for('appointment_preview',aid=stay.id,**booking_navigation())}}">‹ {{ _('กลับไปดูรายละเอียดการจอง') }}</a>
+{% else %}
+<a class="back-link" href="{{booking_list_url()}}">‹ {{ _('กลับไปการจอง') }}</a>
+{% endif %}
+{% include '_stay_form.html' %}
+{% endblock %}

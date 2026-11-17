@@ -1,0 +1,63 @@
+{% extends 'base.html' %}
+{% block page_heading %}
+<h1>{{ _('จัดการผู้ใช้') }}</h1>
+{% endblock %}
+{% block content %}
+{% include '_settings_tabs.html' %}
+<section class="card">
+  <h2>{{ _('แก้ไขผู้ใช้') if editing else _('เพิ่มผู้ใช้') }}</h2>
+  <form class="form" method="post">
+    <input type="hidden" name="_csrf" value="{{csrf}}">
+    <div class="formgrid">
+      <label>{{ _('ชื่อผู้ใช้') }}
+        <input name="username" value="{{submitted.get('username', editing.username if editing else '')}}" pattern="[A-Za-z0-9_.\-]{3,32}" maxlength="32" autocapitalize="none" required>
+        <small>{{ _('ใช้ A–Z, 0–9, จุด ขีดกลาง หรือขีดล่าง 3–32 ตัว') }}</small>
+      </label>
+      <label>{{ _('ชื่อที่แสดง') }}<input name="display_name" value="{{submitted.get('display_name', editing.display_name if editing else '')}}" maxlength="80" required></label>
+      <label>{{ _('สิทธิ์ผู้ใช้') }}
+        {% set role=submitted.get('role','admin' if editing and editing.is_admin else 'staff') %}
+        <select name="role"><option value="staff" {% if role=='staff' %}selected{% endif %}>{{ _('ผู้ใช้งาน') }}</option><option value="admin" {% if role=='admin' %}selected{% endif %}>{{ _('แอดมิน') }}</option></select>
+      </label>
+      {% if not editing %}
+      <label>{{ _('รหัสผ่านชั่วคราว') }}<input name="password" type="password" autocomplete="new-password" minlength="8" maxlength="128" required></label>
+      {% endif %}
+    </div>
+    <div class="actions"><button name="action" value="save">{{ _('บันทึก') }}</button>
+      {% if editing %}<a class="button secondary" href="{{url_for('auth.users')}}">{{ _('ยกเลิก') }}</a>{% endif %}
+    </div>
+  </form>
+  {% if editing %}
+  <details class="today-details" id="reset-password" {% if request.args.get('reset') or submitted.get('action') == 'reset' %}open{% endif %}>
+    <summary>{{ _('ตั้งรหัสผ่านใหม่') }}</summary>
+    <form class="form" method="post">
+      <input type="hidden" name="_csrf" value="{{csrf}}">
+      <p>{{ _('ผู้ใช้ต้องใช้รหัสชั่วคราวเข้าสู่ระบบและตั้งรหัสผ่านของตนเองอีกครั้ง') }}</p>
+      <label>{{ _('รหัสผ่านชั่วคราว') }}<input name="password" type="password" autocomplete="new-password" minlength="8" maxlength="128" required></label>
+      <label>{{ _('ยืนยันรหัสผ่านใหม่') }}<input name="confirmation" type="password" autocomplete="new-password" minlength="8" maxlength="128" required></label>
+      <div><button name="action" value="reset">{{ _('ตั้งรหัสผ่านใหม่') }}</button></div>
+    </form>
+  </details>
+  {% endif %}
+</section>
+<section class="card">
+  <h2>{{ _('ผู้ใช้งาน') }}</h2>
+  <div class="scroll"><table>
+    <thead><tr><th>{{ _('ชื่อผู้ใช้') }}</th><th>{{ _('ชื่อที่แสดง') }}</th><th>{{ _('สิทธิ์ผู้ใช้') }}</th><th>{{ _('สถานะ') }}</th><th>{{ _('จัดการ') }}</th></tr></thead>
+    <tbody>{% for user in users %}
+    <tr><td>{{user.username}}</td><td>{{user.display_name}}</td><td>{{ _('แอดมิน') if user.is_admin else _('ผู้ใช้งาน') }}</td>
+      <td>{{ _('ปิดใช้งาน') if not user.active else _('รอเปลี่ยนรหัสผ่าน') if user.needs_password else _('เปิดใช้งาน') }}</td>
+      <td><div class="appointment-actions">
+        <a class="button secondary" href="{{url_for('auth.users', edit=user.id)}}">{{ _('แก้ไข') }}</a>
+        <a class="button secondary" href="{{url_for('auth.users',edit=user.id,reset=1,_anchor='reset-password')}}">{{ _('ตั้งรหัสผ่านใหม่') }}</a>
+        {% if user.id != g.user.id %}
+        <form method="post" action="{{url_for('auth.users', edit=user.id)}}" {% if user.active %}onsubmit="return confirm(this.dataset.confirm)" data-confirm="{{ _('ยืนยันปิดใช้งานบัญชีนี้?') }}"{% endif %}>
+          <input type="hidden" name="_csrf" value="{{csrf}}">
+          <button class="button {{'danger' if user.active else 'secondary'}}" name="action" value="toggle">{{ _('ปิดใช้งาน') if user.active else _('เปิดใช้งาน') }}</button>
+        </form>
+        {% endif %}
+      </div></td>
+    </tr>
+    {% endfor %}</tbody>
+  </table></div>
+</section>
+{% endblock %}

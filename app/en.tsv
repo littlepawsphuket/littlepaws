@@ -1,0 +1,774 @@
+เลือกรูปสุนัข	Choose a dog photo
+ถ่ายรูปด้วยกล้อง	Take a photo
+JPG, PNG, WebP, HEIC หรือ HEIF สูงสุด 7 MB	JPG, PNG, WebP, HEIC or HEIF, up to 7 MB
+รับทราบและลงลายเซ็นแล้ว	Acknowledged and signed
+เวลา	at
+น.	
+ลายเซ็นที่บันทึกแล้ว	Saved signature
+เงื่อนไขฉบับที่ลงลายเซ็น	Signed version of the terms
+รายการนี้ยังไม่มีลายเซ็นที่บันทึกไว้ สามารถให้ลูกค้าลงลายเซ็นเพิ่มเติมได้	No signature is on file. The customer can sign below.
+ข้าพเจ้าอ่านและรับทราบเงื่อนไขการฝากเลี้ยงข้างต้นแล้ว	I have read and acknowledge the boarding terms above.
+ลายเซ็นลูกค้า	Customer signature
+ใช้นิ้ว ปากกา หรือเมาส์เซ็นในกรอบ	Sign in the box using a finger, stylus, or mouse.
+ล้างลายเซ็น	Clear signature
+พื้นที่สำหรับเซ็นลายเซ็น	Signature area
+เช็กอินจากการจอง	Check in from booking
+การจองฝากเลี้ยง	Boarding bookings
+ปรับข้อมูลตามการเข้าพักจริงก่อนยืนยัน	Review the actual stay details before confirming.
+วางแผนวันเข้าพักและวันรับกลับ	Plan check-in and pickup dates.
+น้องบาเลนและน้องกุชชี่	Balen and Gucci
+บาเลน & กุชชี่	Balen & Gucci
+เมนูหลัก	Main navigation
+ภาพรวม	Dashboard
+ฝากเลี้ยง	Boarding
+การจอง	Bookings
+รายรับ–รายจ่าย	Income and expenses
+ลูกค้า	Customers
+Little Paws Homestay Phuket · ข้อมูลเก็บใน Mac เครื่องนี้	Little Paws Homestay Phuket · Data stored on this Mac
+💸 รายรับ–รายจ่าย	💸 Income and expenses
+เพิ่มรายการ	Add transaction
+ประเภท	Type
+รับเงิน	Income
+คืนเงินลูกค้า	Customer refund
+รายจ่าย	Expenses
+วันที่รับ/จ่ายจริง	Transaction date
+หมวดหมู่	Category
+ค่าฝากเลี้ยง	Boarding fee
+อาหารและขนม	Food and treats
+อุปกรณ์	Supplies
+ทำความสะอาด	Cleaning
+ค่าน้ำไฟ	Utilities
+การตลาด	Marketing
+ค่ารักษาพยาบาล	Veterinary expenses
+เอกสาร	Documents
+อื่นๆ	Other
+ทั่วไป	General
+จำนวนเงิน (บาท)	Amount (THB)
+รายละเอียด	Details
+ร้านค้า / ผู้รับเงิน	Merchant / payee
+ลูกค้า (ถ้ามี)	Customer (optional)
+เชื่อมการเข้าพัก (ถ้ามี)	Linked stay (optional)
+ช่องทางชำระ	Payment method
+โอน	Bank transfer
+เงินสด	Cash
+บัตร	Card
+เลขอ้างอิง	Reference
+ใบเสร็จ / สลิป (JPG PNG WEBP PDF)	Receipt or payment slip (JPG, PNG, WebP, PDF)
+หมายเหตุ	Notes
+บันทึกรายการ	Save transaction
+รายการรายรับ–รายจ่าย	Transactions
+⬇ Export CSV ทั้งหมด	⬇ Export all as CSV
+ทั้งหมด	All
+รายรับ	Income
+ตั้งแต่	From
+ถึง	to
+แสดงรายการ	Show results
+เดือนปัจจุบัน	Current month
+วันที่	Date
+หมวด	Category
+ร้านค้า	Merchant
+หลักฐาน	Receipt
+ยอด	Amount
+จัดการ	Actions
+คืนเงิน	Refund
+เปิดไฟล์	Open file
+แก้ไขบิลฝากเลี้ยง	Edit boarding bill
+แก้ไข	Edit
+ยืนยันลบรายการนี้?	Delete this transaction?
+ลบ	Delete
+ไม่พบรายการตามตัวกรอง	No transactions match these filters.
+← กลับ	← Back
+แก้ไขรายการ #	Edit transaction #
+จำนวนเงิน	Amount
+บันทึกการแก้ไข	Save changes
+ภาพรวมธุรกิจ	Business overview
+รายรับ รายจ่าย และการเข้าพักของ Little Paws	Little Paws income, expenses, and boarding activity
+สุนัขที่กำลังเข้าพัก	Dogs currently boarding
+ดูรายการฝากเลี้ยง	View boarding stays
+ยังไม่มีช่องทางติดต่อ	No contact details on file
+วันรับกลับ	Pickup date
+ขณะนี้ไม่มีสุนัขที่อยู่ในสถานะเข้าพัก	No dogs are currently boarding.
+สุนัขที่มีกำหนดเข้าพัก	Dogs scheduled to board
+ดูปฏิทินการจอง	View booking calendar
+ดูการจอง	View booking
+ดูรายการจอง	View booking
+ไม่มีการจองที่รอเช็กอิน	No bookings are awaiting check-in.
+ตั้งแต่เดือน	From month
+ถึงเดือน	To month
+แสดงภาพรวม	Show overview
+กระแสเงินสดสุทธิ	Net cash flow
+การเข้าพัก (ครั้ง)	Boarding stays
+สุนัขเข้าพัก (ตัว/ครั้ง)	Dogs boarded (per stay)
+คืนที่คิดค่าบริการ	Billable nights
+รายรับสุทธิเทียบรายจ่าย · รายเดือน	Monthly net income and expenses
+🟢 รายรับหลังคืนเงิน	🟢 Income after refunds
+🟠 รายจ่าย	🟠 Expenses
+รายจ่ายตามหมวดหมู่	Expenses by category
+ยังไม่มีรายจ่ายในช่วงนี้	No expenses in this period.
+รายการล่าสุดในช่วงนี้	Recent transactions in this period
+ดูรายรับ–รายจ่าย	View transactions
+จำนวน	Amount
+ยังไม่มีรายการ	No transactions yet.
++ เพิ่มรายการรับ/จ่าย	+ Add transaction
++ บันทึกการเข้าพัก	+ Record a stay
+⬇ สำรองฐานข้อมูล	⬇ Back up database
+สถิติการฝากเลี้ยงอิงวันที่เข้าพัก รายรับจากบิลฝากเลี้ยงอิงวันที่บันทึกบิล	Boarding figures use check-in dates. Boarding income uses the date the bill was recorded.
+รายการฝากเลี้ยง	Boarding stays
+จัดการวันเข้าพัก ราคา และสถานะของน้องหมา	Manage boarding dates, rates, and stay status.
++ จองล่วงหน้า	+ Make a booking
+ประวัติการเข้าพัก	Boarding history
+ลูกค้า / สุนัข	Customer / dog
+เข้าพัก	Checked in
+รับกลับ	Pickup
+คืนคิดเงิน	Billable nights
+ส่วนลด	Discount
+ยอดสุทธิ	Net total
+สถานะ	Status
+สถานะการเข้าพัก	Stay status
+ดูสรุป	View summary
+ลบการเข้าพักนี้และรายรับที่ระบบสร้างให้อัตโนมัติ? หากมาจากการจอง รายการจองจะกลับไปรอเช็กอิน	Delete this stay and its automatically recorded income? A linked booking will return to awaiting check-in.
+ไม่มีการเข้าพักในช่วงนี้	No stays in this period.
+เช็กอินแล้ว	Checked in
+ยกเลิก	Cancel
+รอเช็กอิน	Awaiting check-in
+ดูวันจองและเปิดข้อมูลเพื่อเช็กอินเมื่อน้องหมามาถึง	View bookings and open their details when a dog arrives.
+มุมมองการจอง	Booking views
++ เพิ่มการจอง	+ Add booking
+ช่วงก่อนหน้า	Previous period
+วันนี้	Today
+ช่วงถัดไป	Next period
+ไปที่วันที่	Jump to date
+ไป	Go
+ดูวันที่	View date
+สุนัข / เจ้าของ	Dog / owner
+วันเข้าพักที่จอง	Scheduled check-in
+ดูการเข้าพัก	View stay
+เช็กอิน	Check in
+ไม่มีการจองในช่วงนี้	No bookings in this period.
+👥 ลูกค้า	👥 Customers
+เพิ่มลูกค้า	Add customer
+ชื่อผู้ติดต่อ	Contact name
+โทรศัพท์ / LINE	Phone / LINE
+บันทึกลูกค้า	Save customer
+รายชื่อลูกค้า	Customer list
+ค้นหาชื่อลูกค้า	Search customer names
+พิมพ์ชื่อหรือบางส่วนของชื่อ	Type a full or partial name
+ชื่อ	Name
+ติดต่อ	Contact
+สุนัข	Dogs
+ลบลูกค้าและสุนัขของลูกค้ารายนี้จากรายการใช้งาน?	Remove this customer and their dogs from the active list?
+ยังไม่มีลูกค้า	No customers yet.
+สรุปการรับฝาก	Boarding summary
+รายการ #	Stay #
+กลับไปหน้า Dashboard	Back to Dashboard
+รายละเอียดการเข้าพัก	Stay details
+วันเข้าพัก	Check-in date
+จำนวนคืนที่คิดเงิน	Billable nights
+คืน	night(s)
+/ คืน	/ night
+สุนัขที่รับฝาก	Dogs in this stay
+ไม่มีรายชื่อสุนัขในรายการนี้	No dogs are listed for this stay.
+รวมก่อนส่วนลด	Subtotal
+แก้ไขรายการ	Edit stay
+โอนเงินผ่าน QR Code	Pay by QR code
+ใช้แอปธนาคารสแกนและกรอกยอด	Scan with your banking app and enter
+เปิด QR Code ภาพเต็ม	Open full-size payment QR code
+QR Code สำหรับโอนเงิน	Payment QR code
+ฉบับที่	Version acknowledged by
+รับทราบเมื่อ	on
+เงื่อนไขปัจจุบัน · รายการนี้ยังไม่มีลายเซ็นที่บันทึกไว้	Current terms · No signature is on file for this stay.
+เงื่อนไขปัจจุบันที่เพิ่มหลังลงลายเซ็น	Current terms added after signing
+บาท/คืน	THB / night
+แก้ไขการจอง	Edit booking
+เพิ่มการจอง	Add booking
+ยืนยันเช็กอินจากการจอง	Confirm check-in for booking
+แก้ไขการเข้าพัก #	Edit stay #
+เพิ่มการเข้าพัก	Add stay
+รายการเดิมมียอดสุทธิ ฿	Original net total: ฿
+กรุณาระบุราคา/คืนของแต่ละตัวเมื่อต้องการคำนวณยอดใหม่	Enter a nightly rate for each dog to recalculate.
+เลือกหรือพิมพ์ชื่อลูกค้า	Select or type a customer name
+ไม่พบลูกค้าที่ตรงกับชื่อที่ค้นหา	No matching customers.
+เลือกลูกค้า	Select customer
++ เพิ่มลูกค้า	+ Add customer
+ปรับได้หากจำนวนคืนที่คิดเงินต่างจากวันเข้าพัก	Adjust if the number of billable nights differs from the stay dates.
+สุนัขและราคา/คืน	Dogs and nightly rates
+เว้นราคาไว้ได้ แล้วระบุเมื่อเช็กอินจริง	Rates can be entered at check-in.
+เลือกลูกค้าหรือเพิ่มลูกค้าเพื่อเริ่มบันทึก	Select or add a customer to get started.
++ เพิ่มสุนัข	+ Add dog
+ส่วนลดท้ายบิล (บาท)	Bill discount (THB)
+ก่อนหักส่วนลด	Subtotal
+การจองยังไม่ลงรายรับ	Bookings do not record income.
+ตรวจวันเข้าพัก ราคา และส่วนลดก่อนบันทึก ระบบจะลงรายรับสุทธิและเปลี่ยนสถานะเป็นเข้าพัก	Review the dates, rates, and discount. Confirming records net income and marks the stay as checked in.
+ระบบบันทึกรายรับสุทธิตามวันที่บันทึก อัปเดตยอดเดิมเมื่อแก้ไขการเข้าพัก และปรับรายรับที่ระบบสร้างเป็นศูนย์เมื่อยกเลิก	The system records net income on the save date, updates it when the stay is edited, and sets it to zero if the stay is cancelled.
+บันทึกการจอง	Save booking
+ยืนยันเช็กอิน	Confirm check-in
+บันทึกการเข้าพัก	Save stay
+เช็กอินจากการจองนี้	Check in from this booking
+กลับไปการจอง	Back to bookings
+กลับไปรายการ	Back to stays
+ชื่อลูกค้า	Customer name
+ชื่อสุนัข	Dog name
+ขนาด	Size
+เล็ก	Small
+กลาง	Medium
+ใหญ่	Large
+บันทึก	Save
+นิสัย อาหาร ยา ฯลฯ	Temperament, diet, medication, etc.
+← กลับไปรายชื่อลูกค้า	← Back to customers
+ข้อมูลลูกค้า	Customer details
+นำออกจากรายชื่อลูกค้าแล้ว	Removed from the active customer list.
+ไม่มีข้อมูลติดต่อ	No contact details
+แก้ไขข้อมูลลูกค้า	Edit customer details
+ลบลูกค้า	Delete customer
+สุนัขของลูกค้า	Customer's dogs
+รูป	Photo of
+แก้ไขข้อมูลสุนัข	Edit dog details
+ลบสุนัขตัวนี้จากรายการใช้งาน?	Remove this dog from the active list?
+ลบสุนัข	Delete dog
+ยังไม่มีสุนัขในรายการใช้งาน	No active dogs on file.
+เพิ่มสุนัข	Add dog
+คืนที่คิดเงิน	Billable nights
+เปิดรายการเข้าพัก	Open stay
+เปิดรายการ	Open stay
+ลูกค้ารายนี้ยังไม่มีประวัติการเข้าพัก	This customer has no boarding history yet.
+จอง	Booked
+เสร็จสิ้น	Completed
+ยกเลิกแล้ว	Cancelled
+รายเดือน	Month
+รายสัปดาห์	Week
+รายวัน	Day
+ลิสต์	List
+จันทร์	Mon
+อังคาร	Tue
+พุธ	Wed
+พฤหัสบดี	Thu
+ศุกร์	Fri
+เสาร์	Sat
+อาทิตย์	Sun
+รายรับหลังคืนเงิน	Income after refunds
+พบ {count} รายชื่อ	{count} matching customer(s)
+ยังไม่มีสุนัขสำหรับลูกค้ารายนี้	No dogs are listed for this customer yet.
+ส่วนลดต้องไม่เกินยอดก่อนลด	The discount cannot exceed the subtotal.
+รอระบุราคา	Rates pending
+ชื่อสุนัข (ถ้ามี)	Dog name (optional)
+เพิ่มสุนัข {name} แล้ว	Added dog: {name}
+เพิ่มลูกค้า {name} แล้ว	Added customer: {name}
+เชื่อมต่อเพื่อบันทึกไม่ได้ กรุณาตรวจว่าข้อมูลขึ้นในรายการแล้วหรือยัง	Could not confirm the save. Check whether the new record appears in the list.
+กรุณาให้ลูกค้าเซ็นลายเซ็นในช่องที่กำหนด	Please ask the customer to sign in the box.
+กรุณาติ๊กรับทราบเงื่อนไขการฝากเลี้ยง	Please tick the box to acknowledge the boarding terms.
+กรุณาเลือกรูป JPG, PNG, WebP, HEIC หรือ HEIF ขนาดไม่เกิน 7 MB	Choose a JPG, PNG, WebP, HEIC, or HEIF image up to 7 MB.
+กรุณาเลือกหรือถ่ายรูปอย่างใดอย่างหนึ่ง	Choose a photo or take one with the camera.
+เปิดรูปนี้ไม่ได้ กรุณาลองเลือกรูปอื่น	Could not open this photo. Try a different one.
+กรุณาเลือกประเภทข้อมูล	Select a record type.
+กรุณากรอกชื่อลูกค้า	Enter a customer name.
+กรุณากรอกชื่อสุนัข	Enter a dog name.
+กรุณาเลือกขนาดสุนัข	Select the dog's size.
+กรุณากรอกชื่อสุนัขสำหรับรูปที่เลือก	Enter the name of the dog in the selected photo.
+กรุณาเลือกลูกค้าก่อนเพิ่มสุนัข	Select a customer before adding a dog.
+เพิ่มลูกค้าแล้ว	Customer added.
+บันทึกแล้ว	Saved.
+นำลูกค้าและสุนัขออกจากรายการใช้งานแล้ว ประวัติเดิมยังเปิดดูได้	Customer and dogs removed from the active list. Their history is still available.
+ลบลูกค้าและสุนัขของลูกค้าแล้ว	Customer and their dogs deleted.
+แก้ไขข้อมูลสุนัขแล้ว	Dog details updated.
+นำสุนัขออกจากรายการใช้งานแล้ว ประวัติเดิมยังเปิดดูได้	Dog removed from the active list. Its history is still available.
+ลบสุนัขแล้ว	Dog deleted.
+กรุณาเปิดแบบฟอร์มใหม่แล้วลองอีกครั้ง	Reopen the form and try again.
+บันทึกรายการนี้แล้ว	This record has already been saved.
+กรุณากรอกวันเข้าพัก จำนวนคืน และราคา/คืนให้ถูกต้อง	Enter valid stay dates, billable nights, and nightly rates.
+กรุณาตรวจวันที่ จำนวนคืน สถานะ และเลือกสุนัขอย่างน้อยหนึ่งตัว	Check the dates, nights, and status, and select at least one dog.
+วันเช็กอินจริงต้องเป็นวันนี้หรือก่อนหน้า	The actual check-in date must be today or earlier.
+กรุณาเลือกลูกค้าที่อยู่ในรายการใช้งาน	Select an active customer.
+กรุณาเลือกเฉพาะสุนัขของลูกค้ารายนี้	Select only dogs belonging to this customer.
+เงื่อนไขมีการอัปเดต กรุณาอ่านและเซ็นใหม่	The terms have changed. Read them again and sign the updated version.
+บันทึกการจองแล้ว	Booking saved.
+บันทึกการเข้าพักแล้ว	Stay saved.
+บันทึกการเข้าพักแล้ว รายรับที่เคยลงเองยังใช้ยอดเดิม	Stay saved. The manually recorded income keeps its original amount.
+ลบการเข้าพักแล้ว การจองเดิมกลับเป็นรอเช็กอิน	Stay deleted. The original booking is awaiting check-in again.
+ลบการเข้าพักแล้ว	Stay deleted.
+บันทึกรายการแล้ว	Transaction saved.
+แก้ไขแล้ว	Changes saved.
+ลบรายการแล้ว	Transaction deleted.
+แบบสรุปการรับฝากน้องหมา	Dog boarding summary
+สุนัขที่รับฝากและค่าบริการ	Boarding dogs and charges
+ราคา / คืน	Rate / night
+รวมตามจำนวนคืน	Total for billable nights
+หมายเหตุการเข้าพัก	Stay notes
+เงื่อนไขปัจจุบัน	Current terms
+การรับทราบของผู้ฝากและลายเซ็น	Customer acknowledgement and signature
+ผู้ฝากรับทราบเงื่อนไขการฝากเลี้ยงข้างต้นแล้ว	The customer acknowledged the boarding terms above.
+ชื่อผู้ฝาก	Customer name
+ลงลายเซ็นวันที่	Signed on
+รายการนี้ยังไม่มีข้อมูลการรับทราบหรือลายเซ็นที่บันทึกไว้	No acknowledgement or signature is on file for this stay.
+ภาษาที่ลงลายเซ็น	Language acknowledged
+เงื่อนไขการฝากเลี้ยงน้องหมา	Dog boarding terms
+บ้านพักน้องหมาสไตล์โฮมมี่ ดูแลใกล้ชิดเหมือนสมาชิกในครอบครัว	A homelike stay for dogs, with attentive care as part of the family.
+1. เงื่อนไขการรับฝาก	1. Boarding requirements
+น้องหมาต้องมีสุขภาพแข็งแรง ไม่มีโรคติดต่อ	Dogs must be in good health and free of contagious diseases.
+ได้รับวัคซีนพื้นฐานครบถ้วนและยังไม่หมดอายุ รวมถึงวัคซีนพิษสุนัขบ้า	Core vaccinations, including rabies, must be complete and up to date.
+ได้รับการป้องกันเห็บหมัดและถ่ายพยาธิตามความเหมาะสม	Dogs must have appropriate flea and tick prevention and deworming.
+ไม่รับน้องหมาที่มีพฤติกรรมก้าวร้าวหรือเสี่ยงทำอันตรายต่อตัวอื่น	Dogs showing aggressive behavior or posing a risk to other dogs are not accepted.
+ไม่รับน้องหมาเพศเมียที่กำลังอยู่ในช่วงติดสัด	Female dogs in heat are not accepted.
+น้องหมาที่มีโรคประจำตัวที่ไม่ติดต่อ สามารถสอบถามเพื่อประเมินการรับฝากเป็นรายกรณี	Please contact us about dogs with non-contagious chronic conditions so we can assess boarding on a case-by-case basis.
+เจ้าของต้องแจ้งประวัติสุขภาพ ยาประจำตัว อาการแพ้ และพฤติกรรมที่ควรระวังตามความเป็นจริง	Owners must accurately disclose their dog's health history, regular medications, allergies, and behaviors that require special attention.
+2. รูปแบบการดูแล	2. How we care for dogs
+ดูแลแบบ Cage-Free ไม่ขังกรง โดยจัดพื้นที่ให้เหมาะกับน้องหมาแต่ละตัว	We provide cage-free care and arrange spaces to suit each dog.
+มีห้องแอร์สำหรับพักผ่อนและสวนหญ้าสำหรับเดินเล่น	Dogs can rest in air-conditioned rooms and walk in a grass garden.
+แยกพื้นที่สำหรับน้องหมาที่ไม่เหมาะกับการอยู่รวมกัน	Separate areas are provided for dogs that are not suited to being housed together.
+การเล่นร่วมกับน้องหมาตัวอื่นต้องผ่านการประเมินนิสัยและความเข้ากันได้ก่อน	Dogs may play together only after we assess their temperament and compatibility.
+รับจำนวนจำกัดต่อวัน เพื่อให้ดูแลได้ทั่วถึง	We limit daily capacity so each dog receives attentive care.
+อัปเดตรูปภาพและวิดีโอให้เจ้าของทุกวัน	Owners receive photo and video updates every day.
+3. ความรับผิดชอบกรณีอุบัติเหตุและเจ็บป่วย	3. Responsibility for accidents and illness
+อุบัติเหตุ: ผู้รับฝากไม่รับผิดชอบต่ออุบัติเหตุหรือความเสียหายที่ไม่ได้เกิดจากความผิดหรือความประมาทของผู้รับฝาก	Accidents: The boarding provider is not liable for accidents or damage that do not result from its fault or negligence.
+การเจ็บป่วย: เจ้าของรับผิดชอบค่ารักษาพยาบาลที่ไม่ได้เกิดจากความผิดของผู้รับฝาก โดยผู้รับฝากจะแจ้งรายละเอียดและขอความยินยอมก่อนดำเนินการ	Illness: The owner is responsible for veterinary costs that do not arise from the boarding provider's fault. The provider will explain the details and seek consent before proceeding.
+กรณีฉุกเฉิน: หากไม่สามารถติดต่อเจ้าของได้ ผู้รับฝากสามารถนำส่งสัตวแพทย์ตามความจำเป็น และจะแจ้งเจ้าของโดยเร็วที่สุด	Emergencies: If the owner cannot be reached, the boarding provider may take the dog to a veterinarian as necessary and will notify the owner as soon as possible.
+ภาษา	Language
+บาท	THB
+ไทย	Thai
+อังกฤษ	English
+ลบการจอง	Delete booking
+ลบการจองแล้ว	Booking deleted.
+ลบการจองนี้ออกจากระบบ? หากเช็กอินแล้ว บิลการเข้าพักจะยังอยู่	Delete this booking? If already checked in, the boarding stay will be kept.
+การจองที่รอเช็กอินทั้งหมด	All bookings awaiting check-in
+ดูตามเดือน	View by month
+แสดงทั้งหมด	Show all
+กลับบ้านวันนี้	Going home today
+ใบยืนยันการจอง	Booking confirmation
+เลขจอง	Booking number
+สุนัขในการจอง	Dogs in this booking
+ยอดสุทธิโดยประมาณ	Estimated net total
+หมายเหตุการจอง	Booking notes
+กรุณาตรวจรายละเอียดการจองก่อนเข้าพัก ค่าฝากจะยืนยันเมื่อเช็กอิน	Please review these details before arrival. Boarding charges will be confirmed at check-in.
+ดาวน์โหลดใบจอง PDF	Download booking PDF
+สุนัขที่จอง	Dogs in this booking
+ดาวน์โหลดรูปใบจอง	Download booking image
+ข้อมูลการจองยาวเกินขนาดรูปภาพ กรุณาดาวน์โหลด PDF	This booking is too long for an image. Please download the PDF.
+เลขรายการเข้าพัก	Stay number
+ดาวน์โหลดรูปสรุป	Download stay summary image
+ข้อมูลยาวเกินขนาดรูปภาพ กรุณาดาวน์โหลด PDF	This summary is too long for an image. Please download the PDF.
+ดาวน์โหลด PDF	Download PDF
+ไม่ใช่	No
+ใช่	Yes
+ข้อมูลประจำตัวสุนัข	Dog profile
+สายพันธุ์	Breed
+เพศ	Sex
+เพศผู้	Male
+เพศเมีย	Female
+สถานะการทำหมัน	Spay / neuter status
+ทำหมันแล้ว	Spayed / neutered
+ยังไม่ทำหมัน	Not spayed / neutered
+น้ำหนัก (กก.)	Weight (kg)
+สุขภาพและการป้องกันโรค	Health and disease prevention
+วัคซีนพื้นฐานใน 1 ปีที่ผ่านมา	Core vaccination within the past year
+วัคซีนพิษสุนัขบ้าใน 1 ปีที่ผ่านมา	Rabies vaccination within the past year
+ป้องกันเห็บหมัดใน 1 เดือนที่ผ่านมา	Flea and tick prevention within the past month
+ประวัติสุขภาพ / แพ้อาหาร	Medical history / food allergies
+โรคประจำตัว / การดูแลที่ต้องการ	Existing conditions / care needs
+ยาประจำตัว (ชื่อยา ขนาดยา เวลา)	Current medications (name, dosage, time)
+ข้อมูลติดต่อและบริการ	Contact and service details
+เบอร์โทรเจ้าของ	Owner phone
+ที่อยู่กรณีฉุกเฉิน	Emergency address
+เวลาเข้าพัก	Check-in time
+เวลารับกลับ	Pickup time
+ประเภทบริการ	Service type
+ฝากค้างคืน	Overnight boarding
+ฝากระหว่างวัน	Daycare
+ของใช้ที่นำมาฝาก	Belongings and care items
+อาหาร (ยี่ห้อหรือประเภท)	Food (brand or type)
+ขนม	Treats
+ยา / อาหารเสริมที่นำมา	Medication / supplements brought in
+ที่นอน ผ้าห่ม หรือของเล่น	Bed, blanket, or toy
+ของใช้อื่น ๆ	Other belongings
+ตรวจสภาพก่อนรับฝาก	Pre-boarding health check
+ตา หู ผิวหนัง และขน	Eyes, ears, skin, and coat
+ปกติ	Normal
+พบความผิดปกติ	Abnormal
+รายละเอียดที่ตรวจพบ	Health check findings
+พฤติกรรมขณะรับฝาก	Temperament at intake
+เป็นมิตร	Friendly
+กังวล	Anxious
+ก้าวร้าว	Aggressive
+การอยู่ร่วมกับสุนัขตัวอื่น	Socializing with other dogs
+ต้องดูแลเป็นพิเศษ	Requires special care
+หมายเหตุจากผู้รับฝาก	Staff notes
+ชื่อผู้รับฝาก	Received by
+วันที่รับฝาก	Date received
+วันเกิด	Date of birth
+วันเกิดโดยประมาณ	Estimated date of birth
+อายุ	Age
+อายุ (ปี)	Age (years)
+อายุ (เดือน)	Age (months)
+ปี	yr
+เดือน	mo
+กรอกวันเกิดหรืออายุโดยประมาณ ระบบจะคำนวณให้อีกช่อง	Enter a birth date or estimated age to calculate the other.
+วันเกิดนี้คำนวณจากอายุโดยประมาณ	This date of birth is estimated from age.
+นิสัย / ข้อควรระวัง	Temperament / special precautions
+ยังไม่มีรายละเอียดเพิ่มเติมของสุนัข	No additional dog details are on file.
+รายละเอียดตอนเช็กอิน	Check-in details
+ไม่บังคับกรอก	Optional
+ปิด	Close
+กรุณาตรวจวันเกิด อายุ และข้อมูลสุนัข	Check the date of birth, age, and dog details.
+กรุณาตรวจชื่อและขนาดสุนัข	Check the dog's name and size.
+กรุณาตรวจข้อมูลรายละเอียดตอนเช็กอิน	Check the check-in details.
+กำลังโหลดข้อมูลสุนัข	Loading dog details
+เปิดข้อมูลสุนัขไม่ได้ กรุณาลองใหม่	Could not open the dog profile. Try again.
+บันทึกข้อมูลสุนัขไม่ได้ กรุณาลองใหม่	Could not save the dog profile. Try again.
+รายละเอียดเพิ่มเติม	Additional details
+รายการที่ตรวจแล้ว	Items checked
+ตา	Eyes
+หู	Ears
+ผิวหนัง	Skin
+ขน	Coat
+อาหาร	Food
+ไม่ระบุ	Not specified
+ตรวจร่างกาย	Physical examination
+รายละเอียดการจอง	Booking details
+การชำระเงิน	Payments
+ยอดมัดจำ (บาท)	Deposit amount (THB)
+วันที่รับมัดจำ	Deposit date
+มัดจำแล้ว	Deposit received
+มัดจำ	Deposit
+ยอดคงเหลือก่อนรับเพิ่ม	Balance before this payment
+ยอดรับเพิ่ม (บาท)	Additional amount received (THB)
+วันที่รับชำระ	Payment date
+ประวัติการชำระเงิน	Payment history
+ยังไม่มีการชำระเงิน	No payments recorded
+ชำระแล้ว	Paid
+ยอดคงเหลือ	Balance due
+ชำระวันเข้าพัก	Check-in payment
+ชำระเพิ่มเติม	Additional payment
+ใบรับมัดจำ	Deposit receipt
+เลขที่ใบรับมัดจำ	Receipt number
+ยอดมัดจำที่ได้รับ	Deposit received
+กรุณาตรวจยอดและวันที่ชำระเงิน	Check the payment amount and date.
+วันที่รับชำระต้องเป็นวันนี้หรือก่อนหน้า	The payment date must be today or earlier.
+ยอดชำระรวมต้องไม่เกินยอดสุทธิ	Total payments cannot exceed the net amount.
+กรุณาใช้ลูกค้าเดิมสำหรับรายการที่มีการชำระแล้ว	Keep the original customer on records with payments.
+กรุณาตรวจและแก้ยอดมัดจำก่อนลบการจอง	Review and correct the deposit before deleting this booking.
+ระบบลงรายรับตามยอดที่รับจริงในแต่ละวัน	Income is recorded on the date each payment is received.
+ยอดคงเหลือที่ต้องชำระวันเข้าพัก	Balance due at check-in
+ยอดมัดจำครั้งนี้ (บาท)	Deposit received this time (THB)
+จัดการรายการมัดจำ	Manage deposits
+รายการมัดจำ	Deposit records
+ลบรายการมัดจำ	Delete deposit
+ลบรายการมัดจำแล้ว	Deposit deleted.
+ลบรายการมัดจำและรายรับที่บันทึกไว้สำหรับรายการนี้?	Delete this deposit and its recorded income?
+เพิ่มรายการมัดจำ	Add deposit
+กลับหน้า Dashboard	Back to dashboard
+กลับไปดูรายละเอียดการจอง	Back to booking details
+กลับไปดูสรุปการเข้าพัก	Back to stay summary
+ดูรายการต้นทาง	View source record
+กลับไปรายรับ–รายจ่าย	Back to income and expenses
+ได้รับมัดจำแล้ว	Deposit received
+จำนวนวัน	Duration
+เหลือ {days} วัน	Days left: {days}
+ราคาเริ่มต้นตามขนาดสุนัข ปรับราคาแต่ละตัวได้	Rates start at the default for each dog size and can be edited.
+เคยติ๊กว่าตรวจแล้ว	Previously marked as checked
+ผลตรวจรวมที่บันทึกไว้	Previously recorded overall result
+เช็กเอาต์	Check out
+กลับบ้านแล้ว	Checked out
+ยืนยันเช็กเอาต์สุนัขทุกตัวในรายการนี้?	Confirm check-out for all dogs in this stay?
+เช็กเอาต์แล้ว สถานะกลับบ้านแล้ว	Check-out complete.
+เช็กเอาต์ได้เฉพาะรายการที่กำลังเข้าพัก	Only active stays can be checked out.
+อีก {days} วันจะเข้าพัก	Days until check-in: {days}
+เข้าพักวันนี้	Check-in today
+เลยวันเข้าพัก {days} วัน	Days past check-in: {days}
+ตั้งค่าระบบ	System settings
+ตั้งค่าราคา	Pricing
+วันหยุดร้าน	Shop closures
+ธีมของระบบ	Theme
+แก้ไขวันหยุดร้าน	Edit closure
+เพิ่มวันหยุดร้าน	Add closure
+ชื่อวันหยุด	Closure name
+ยกเลิกวันหยุดนี้?	Cancel this shop closure?
+ยกเลิกวันหยุด	Cancel closure
+ยังไม่มีวันหยุดร้าน	No shop closures
+กรุณาตรวจข้อมูลที่ตั้งค่า	Check the settings and try again.
+กรุณาเลือกประเภทบริการ	Select a service type.
+บาท/วัน	THB/day
+จำนวนวันที่คิดเงิน	Billable days
+ปรับจำนวนที่คิดเงินได้	The billable quantity can be adjusted.
+สุนัขและราคา	Dogs and rates
+คริสต์มาส	Christmas
+วาเลนไทน์	Valentine’s Day
+ฮาโลวีน	Halloween
+สงกรานต์	Songkran
+วันสำคัญทางพระพุทธศาสนา	Buddhist observances
+ญี่ปุ่น	Japan
+/ วัน	/ day
+ราคา / วัน	Rate / day
+รวมตามจำนวนวัน	Total for billable days
+จำนวนที่คิดเงิน	Billable quantity
+เวลารับมัดจำ	Deposit time
+คูปอง	Coupons
+สร้างคูปอง	Create coupon
+สร้างคูปองแล้ว	Coupon created
+ประเภทส่วนลด	Discount type
+เปอร์เซ็นต์ (%)	Percentage (%)
+จำนวนเงิน (บาท)	Amount (THB)
+มูลค่าส่วนลด	Discount value
+ยอดค่าฝากขั้นต่ำ (บาท)	Minimum boarding total (THB)
+วันหมดอายุ	Expiry date
+จำนวนครั้งที่ใช้ได้	Usage limit
+รายการคูปอง	Coupon list
+รหัสคูปอง	Coupon code
+ใช้แล้ว / ใช้ได้	Used / limit
+หมดอายุ	Expired
+ใช้ครบแล้ว	Used up
+พร้อมใช้	Available
+ยังไม่มีคูปอง	No coupons yet
+กรุณาตรวจข้อมูลคูปอง	Check the coupon details.
+ไม่พบรหัสคูปอง	Coupon code not found.
+คูปองหมดอายุแล้ว	This coupon has expired.
+คูปองถูกใช้ครบจำนวนครั้งแล้ว	This coupon has reached its usage limit.
+ยอดค่าฝากไม่ถึงขั้นต่ำของคูปอง	The boarding total is below the coupon minimum.
+ใช้คูปอง	Apply coupon
+กรุณากรอกรหัสคูปอง 6 หลัก	Enter the six-digit coupon code.
+กำลังตรวจคูปอง	Checking coupon…
+ตรวจคูปองไม่ได้ กรุณาลองอีกครั้ง	Could not check the coupon. Try again.
+ส่วนลดคูปอง {amount}	Coupon discount {amount}
+ดาวน์โหลดรูปคูปอง	Download coupon image
+คูปองส่วนลด	Discount coupon
+ลด {amount}	{amount} off
+เมื่อมีค่าบริการตั้งแต่ {amount} บาทขึ้นไป	With a service total of {amount} baht or more
+ใช้ได้ถึง {date}	Valid through {date}
+ดาวน์โหลด	Download
+สถานะคูปอง	Coupon status
+มีการใช้งานแล้ว	Used coupons
+ใช้ได้ {count} ครั้ง	Usage limit: {count}
+เหลือ {count} ครั้ง	Uses left: {count}
+แก้ไขคูปอง	Edit coupon
+ลบคูปอง	Delete coupon
+ลบคูปองแล้ว	Coupon deleted.
+ยืนยันลบคูปองนี้?	Delete this coupon?
+ยอดรับชำระครั้งนี้ (บาท)	Amount received now (THB)
+ยอดค้างหลังรับชำระครั้งนี้	Balance after this payment
+ค้างชำระ	Outstanding
+รับชำระยอดค้าง	Receive outstanding payment
+บันทึกรับชำระ	Record payment
+บันทึกรับชำระแล้ว	Payment recorded.
+ยอดรับชำระต้องไม่เกินยอดค้าง	The payment cannot exceed the balance due.
+ลบรายการชำระเงิน	Delete payment
+ยืนยันลบรายการชำระเงินนี้?	Delete this payment?
+เหตุผลที่ลบ	Reason for deletion
+ยืนยันการลบ	Confirm deletion
+กรุณาระบุเหตุผลการลบรายการชำระเงิน	Enter a reason for deleting the payment.
+ลบรายการชำระเงินแล้ว	Payment deleted.
+ประวัติการลบรายการชำระเงิน	Deleted payment history
+วันที่ลบ	Deleted on
+ชำระครบแล้ว	Paid in full
+รายงาน	Reports
+ช่วงเวลา	Date range
+ปี ค.ศ.	Year (CE)
+กำหนดช่วงเอง	Custom range
+กลุ่มลูกค้า	Customer segment
+ลูกค้าใหม่	New customers
+ลูกค้ากลับมา	Returning customers
+แสดงรายงาน	Show report
+แนวโน้มรายเดือน	Monthly trends
+รายการต้นทาง	Source record
+กรุณาระบุหมวด	Enter a category.
+บันทึกหมวด	Save category
+บันทึกหมวดแล้ว	Category saved.
+แก้ไขรายละเอียดรายการ	Edit transaction details
+ตัวอย่างรูปภาพ	Image preview
+แชร์รูปภาพ	Share image
+บันทึกรูปภาพ	Save image
+เปิดรูปในแท็บใหม่	Open image in new tab
+แตะค้างที่รูปเพื่อบันทึกหรือแชร์	Press and hold the image to save or share it
+กำลังเตรียมรูปภาพ…	Preparing image…
+โหลดรูปไม่ได้ กรุณาลองอีกครั้ง	Could not load the image. Try again.
+ฝากรายเดือน	Monthly boarding
+บาท/เดือน	THB/month
+จำนวนเดือนที่คิดเงิน	Billable months
+/ เดือน	/ month
+ราคา / เดือน	Rate / month
+รวมตามจำนวนเดือน	Total for billable months
+ปัดเศษสตางค์ทิ้ง	Satang discarded
+งานวันนี้	Today’s tasks
+เช็กอินวันนี้	Arrivals today
+เลยกำหนด	Overdue
+การดูแลวันนี้	Today’s care
+บันทึกกิจกรรมอื่น	Record another activity
+ทำอะไรไปบ้าง	What did you do?
+แก้ไขเวลา	Edit time
+เวลากิจกรรม	Activity time
+กรุณาระบุเวลากิจกรรมให้ถูกต้อง	Enter a valid activity time.
+แก้ไขเวลากิจกรรมแล้ว	Activity time updated.
+บันทึกให้อาหาร	Record feeding
+บันทึกให้ยา	Record medication
+ให้อาหารแล้ว	Fed
+ให้ยาแล้ว	Medication given
+ตรวจพบรายการที่ควรตรวจสอบก่อนบันทึก	Please review these warnings before saving
+ตรวจสอบแล้วและยืนยันบันทึกต่อ	I have reviewed the warnings and want to save
+ตรวจพบเงื่อนไขที่ควรตรวจสอบก่อนบันทึก	Please review the booking warnings
+ช่วงที่เลือกตรงกับวันหยุดร้าน	The selected dates overlap a shop closure
+มีสุนัขตัวเดิมในรายการที่ทับช่วงวันที่เลือก	A selected dog already has an overlapping booking or stay
+จำนวนสุนัขเกินความจุที่ตั้งไว้	The number of dogs exceeds the configured capacity
+ความจุร้าน	Boarding capacity
+จำนวนสุนัขสูงสุดต่อวัน	Maximum dogs per day
+ใส่ 0 เพื่อปิดการเตือนความจุ	Enter 0 to disable capacity warnings
+สำรองข้อมูล	Backups
+สำรองล่าสุด	Last backup created
+ดาวน์โหลด ZIP ฐานข้อมูลและใบเสร็จ	Download database and receipts ZIP
+ไฟล์สำรอง ZIP	Backup ZIP
+ทดสอบกู้คืนกับสำเนา	Test restore in a copy
+สร้างชุดสำรองไม่สำเร็จ กรุณาตรวจสอบไฟล์ใบเสร็จและพื้นที่จัดเก็บ	Could not create backup. Check receipt files and available disk space.
+ทดสอบกู้คืนสำเนาสำเร็จ พบไฟล์ใบเสร็จ {count} ไฟล์	Restore test passed. Verified {count} receipt files.
+ทดสอบกู้คืนไม่สำเร็จ กรุณาตรวจสอบไฟล์ ZIP	Restore test failed. Check the ZIP file.
+เช็กอินจริง	Actual check-in
+เช็กเอาต์จริง	Actual check-out
+ยกเลิกรายการเข้าพัก	Cancel stay
+เหตุผลการยกเลิก	Cancellation reason
+ยืนยันยกเลิกรายการเข้าพักหรือไม่?	Confirm cancellation of this stay?
+กรุณาระบุเหตุผลการยกเลิก	Enter a cancellation reason
+กรุณายกเลิกพร้อมเหตุผลจากหน้าสรุปการเข้าพัก	Cancel from the stay summary and provide a reason
+รายการที่ยกเลิกพร้อมเหตุผลแล้วไม่สามารถเปิดใหม่ได้	This cancelled stay is locked
+รายการที่ยกเลิกแล้วเก็บประวัติการชำระไว้	Payment history is retained on cancelled stays
+ประวัติการคืนเงิน	Refund history
+ยอดที่คืนได้	Available to refund
+ยอดคืนเงิน	Refund amount
+วันที่คืนเงิน	Refund date
+บันทึกคืนเงิน	Record refund
+ยอดคืนเงินต้องไม่เกินยอดที่รับจริงคงเหลือ	The refund exceeds the remaining amount received
+คืนเงินลูกค้า	Customer refund
+เพิ่มโปรไฟล์	Profile created
+จองครั้งแรก	First booking
+ประวัติการดูแล	Care history
+คู่มือ	Guide
+คู่มือการใช้งานและการสำรองข้อมูล	User guide and backups
+คู่มือการใช้งาน	User guide
+คู่มือสำรองและกู้คืน	Backup and restore guide
+เวลารับชำระ	Payment time
+ลบบันทึกการดูแล	Delete care record
+ลบบันทึกการดูแลแล้ว	Care record deleted
+ยืนยันลบบันทึกการดูแลรายการนี้?	Delete this care record?
+เพิ่มหมายเหตุ	Add a note
+ยังไม่มีข้อมูลการดูแลเพิ่มเติม	No additional care details recorded
+บันทึกกิจกรรม	Record activity
+ประเภทกิจกรรม	Activity type
+เลือกกิจกรรม	Choose an activity
+ทานอาหาร	Mealtime
+กินยา	Medication
+เดินเล่น	Walk
+เล่น	Play
+พักผ่อน	Rest
+กิจกรรมอื่น	Other activity
+รูปประกอบกิจกรรม	Activity photos
+เลือกได้สูงสุด 4 รูป รวมไม่เกิน 7 MB	Up to 4 photos, 7 MB combined
+แนบได้สูงสุด 4 รูปต่อกิจกรรม	Attach up to 4 photos per activity
+ดูไทม์ไลน์	View timeline
+ไทม์ไลน์กิจกรรม	Activity timeline
+ประเภทกิจกรรมเริ่มต้น	Default activity types
+ชื่อกิจกรรม	Activity name
+เพิ่มกิจกรรม	Add activity
+นำกิจกรรมนี้ออกจากรายการเลือก?	Remove this activity type from the menu?
+วันก่อนหน้า	Previous day
+วันถัดไป	Next day
+ยังไม่มีกิจกรรมในวันนี้	No activities recorded for this day
+ส่งสรุปกิจกรรมให้ลูกค้า	Share an activity update
+เฉพาะวันนี้	Today only
+ทุกวันที่เข้าพักครั้งนี้	All days in this stay
+สรุปกิจกรรมของน้อง	Your dog’s activity update
+ยังไม่มีบันทึกกิจกรรม	No activity recorded
+รูปภาพ	Image
+ล่าสุด	Latest
+นำออก	Remove
+วันที่กิจกรรม	Activity date
+กรุณาระบุวันเวลากิจกรรมให้ถูกต้องและไม่เกินปัจจุบัน	Enter a valid activity date and time that is not in the future.
+แก้ไขวันและเวลา	Edit date and time
+แก้ไขวันเวลากิจกรรมแล้ว	Activity date and time updated.
+แก้ไขกิจกรรม	Edit activity
+รูปที่แนบไว้	Attached photos
+นำรูปนี้ออก	Remove this photo
+แนบรูปเพิ่ม	Add photos
+กำลังเข้าพัก	Checked in
+เช็กเอาต์แล้ว	Checked out
+เข้าสู่ระบบ	Sign in
+ออกจากระบบ	Sign out
+ชื่อผู้ใช้	Username
+รหัสผ่าน	Password
+รหัสผ่านเดิม	Current password
+รหัสผ่านใหม่	New password
+ยืนยันรหัสผ่านใหม่	Confirm new password
+เปลี่ยนรหัสผ่าน	Change password
+กรุณาเปลี่ยนรหัสผ่านก่อนเริ่มใช้งาน	Change your password to continue.
+เปลี่ยนรหัสผ่านแล้ว	Password changed.
+ตรวจรหัสผ่านเดิมและรหัสใหม่ให้ถูกต้อง รหัสใหม่ต้องมีอย่างน้อย 8 ตัวอักษรและต่างจากรหัสเดิม	Check your current password. The new password must match its confirmation, contain at least 8 characters, and differ from the current one.
+ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง	Incorrect username or password.
+ลองเข้าสู่ระบบหลายครั้ง กรุณารอ 1 นาที	Too many sign-in attempts. Wait one minute.
+จัดการผู้ใช้	Manage users
+เพิ่มผู้ใช้	Add user
+แก้ไขผู้ใช้	Edit user
+บันทึกผู้ใช้แล้ว	User saved.
+ชื่อที่แสดง	Display name
+สิทธิ์ผู้ใช้	Role
+ผู้ใช้งาน	User
+แอดมิน	Admin
+รหัสผ่านชั่วคราว	Temporary password
+ตั้งรหัสผ่านใหม่	Reset password
+รอเปลี่ยนรหัสผ่าน	Password change required
+ปิดใช้งาน	Deactivate
+เปิดใช้งาน	Activate
+ยืนยันปิดใช้งานบัญชีนี้?	Deactivate this account?
+ใช้ A–Z, 0–9, จุด ขีดกลาง หรือขีดล่าง 3–32 ตัว	Use 3–32 letters, digits, dots, hyphens or underscores.
+รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร	The password must contain at least 8 characters.
+กรุณาตรวจชื่อผู้ใช้ ชื่อแสดง และสิทธิ์	Check the username, display name and role.
+ชื่อผู้ใช้นี้ถูกใช้แล้ว	This username is already taken.
+เปลี่ยนรหัสบัญชีของคุณจากเมนูเปลี่ยนรหัสผ่าน	Use Change password for your own account.
+ต้องมีแอดมินที่ใช้งานได้ และคุณไม่สามารถปิดหรือถอดสิทธิ์บัญชีที่กำลังใช้	Keep at least one active administrator. You cannot deactivate or demote your own account.
+เมนูบัญชี	Account menu
+แก้ไขโปรไฟล์	Edit profile
+รูปโปรไฟล์	Profile photo
+นำรูปออก	Remove photo
+กรุณาระบุชื่อที่แสดง	Enter a display name.
+บันทึกโปรไฟล์แล้ว	Profile saved.
+แสดงข้อความและรูปกิจกรรมนี้ให้ลูกค้าเห็น	Show this activity note and photos to the customer
+แชร์ให้ลูกค้าเห็น	Shared with customer
+แชร์ไทม์ไลน์ให้ลูกค้า	Share timeline with customer
+ลิงก์สำหรับลูกค้า	Customer link
+คัดลอกลิงก์	Copy link
+คัดลอกลิงก์แล้ว	Link copied
+แตะค้างที่ลิงก์เพื่อคัดลอก	Touch and hold the link to copy
+ดูแบบที่ลูกค้าเห็น	Preview as customer
+ลูกค้าเห็นเฉพาะกิจกรรมที่เลือกแชร์ ลิงก์ใช้ผ่าน Wi‑Fi เดียวกันและหมดอายุ 24 ชั่วโมงหลังเช็กเอาต์	Customers only see shared activities. The link works on the same Wi-Fi and expires 24 hours after check-out.
+ยกเลิกลิงก์นี้หรือไม่?	Revoke this link?
+ยกเลิกลิงก์	Revoke link
+สร้างลิงก์ให้ลูกค้า	Create customer link
+ยังไม่มีอัปเดตกิจกรรม	No activity updates yet
+ทุกวัน	All days
+ดูทุกวัน	View all days
+ยังไม่มีอัปเดตในวันที่เลือก	There are no updates for the selected day.
+แชร์กิจกรรมทั้งหมดของวันที่เลือก	Share all activities for the selected day
+แชร์ทุกกิจกรรมพร้อมข้อความและรูปของวันที่เลือกให้ลูกค้าเห็นหรือไม่?	Share all activities, notes and photos for the selected day?
+แชร์กิจกรรมของวันที่เลือกแล้ว	Activities for the selected day are now shared.
+อายุลิงก์ไทม์ไลน์หลังเช็กเอาต์ (ชั่วโมง)	Timeline link expiry after check-out (hours)
+ใส่ 0 เพื่อให้ลิงก์หมดอายุทันทีหลังเช็กเอาต์	Enter 0 to expire the link immediately at check-out.
+ลูกค้าเห็นเฉพาะกิจกรรมที่เลือกแชร์ ลิงก์ใช้ผ่าน Wi‑Fi เดียวกันและหมดอายุ {hours} ชั่วโมงหลังเช็กเอาต์	Customers only see shared activities. The link works on the same Wi-Fi and expires {hours} hours after check-out.
+ลิงก์นี้จะหมดอายุภายใน {hours} ชั่วโมงหลังเช็กเอาต์	This link expires within {hours} hours after check-out.
+เช็กอินอีกครั้ง	Check in again
+ยืนยันเช็กอินอีกครั้ง	Confirm re-check-in
+ยกเลิกการเช็กเอาต์ของสุนัขทุกตัวในรายการนี้	Undo check-out for all dogs in this stay.
+ใช้ปุ่มเช็กอินอีกครั้งเพื่อยกเลิกการเช็กเอาต์	Use Check in again to undo check-out.
+ชื่อผู้ใช้แอดมิน	Administrator username
+รหัสผ่านแอดมิน	Administrator password
+ชื่อผู้ใช้หรือรหัสผ่านแอดมินไม่ถูกต้อง	Incorrect administrator username or password.
+ยกเลิกการเช็กเอาต์แล้ว น้องกลับมาอยู่ในสถานะกำลังเข้าพัก	Check-out undone. The stay is checked in again.
+รายการนี้เช็กเอาต์แล้ว กรุณาเช็กอินอีกครั้งก่อนแก้ไข	This stay has checked out. Recheck in before making changes.
+ยืนยันยกเลิกรายการเข้าพักและรายการชำระเงินที่เกี่ยวข้องหรือไม่?	Cancel this stay and its associated payment records?
+จำนวนเดือน	Number of months
+ประมาณการรายรับจากการจองที่รอเช็กอิน	Forecast for bookings awaiting check-in
+ยอดจองรวม	Total booking value
+ยอดที่คาดว่าจะรับเพิ่ม	Expected remaining payments
+มี {count} รายการที่รอระบุราคา ยังไม่นับในยอดจองรวมและยอดที่คาดว่าจะรับเพิ่ม	Bookings awaiting pricing: {count}. Their value and remaining payments are excluded.
+หมายเลขการเข้าพัก	Stay number
+ค้นหา	Search
+ค้นหาการเข้าพัก	Search stays
+ค้นหาการจอง	Search bookings
+เลขเข้าพัก ชื่อลูกค้า หรือชื่อสุนัข	Stay number, customer, or dog
+เลขจอง ชื่อลูกค้า หรือชื่อสุนัข	Booking number, customer, or dog
+ล้างการค้นหา	Clear search
+ไม่พบรายการที่ตรงกับคำค้นหา	No results match your search.
+ตั้งรหัสผ่านชั่วคราวแล้ว กรุณาเข้าสู่ระบบอีกครั้ง	Temporary password set. Please sign in again.
+ตั้งรหัสผ่านชั่วคราวแล้ว	Temporary password set.
+รหัสผ่านที่กรอกทั้งสองช่องไม่ตรงกัน	The two passwords do not match.
+ผู้ใช้ต้องใช้รหัสชั่วคราวเข้าสู่ระบบและตั้งรหัสผ่านของตนเองอีกครั้ง	The user must sign in with the temporary password and choose a new password.

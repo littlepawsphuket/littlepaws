@@ -1,0 +1,21 @@
+{% from '_icons.html' import app_icon %}
+{% macro dog_avatar(dog_id, has_photo, fallback='🐾') %}
+<span class="dog-avatar" aria-hidden="true">
+  {% if has_photo %}<img src="{{url_for('dog_photo',dog_id=dog_id)}}" width="64" height="64" alt="" loading="lazy">{% else %}{{fallback}}{% endif %}
+</span>
+{% endmacro %}
+{% macro dog_photo_fields() %}
+<div class="dog-photo-fields">
+  <label>{{ _('เลือกรูปสุนัข') }}
+    <input type="file" name="dog_photo" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif">
+  </label>
+  <div class="dog-camera">
+    <label class="dog-camera-button">
+      {{app_icon('camera')}}<span>{{ _('ถ่ายรูปด้วยกล้อง') }}</span>
+      <input type="file" name="dog_camera" accept="image/*" capture="environment">
+    </label>
+    <small class="dog-camera-filename" role="status" hidden></small>
+  </div>
+  <small class="muted">{{ _('JPG, PNG, WebP, HEIC หรือ HEIF สูงสุด 7 MB') }}</small>
+</div>
+{% endmacro %}

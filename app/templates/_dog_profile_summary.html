@@ -1,0 +1,16 @@
+{% if dog.profile or dog.note %}
+<dl class="dog-profile-facts">
+  {% if dog.profile.get('birth_date') %}
+  <div><dt>{{ _('วันเกิดโดยประมาณ') if dog.profile.get('birth_estimated') else _('วันเกิด') }}</dt><dd>{{dog.profile.birth_date|thai_date}}</dd></div>
+  <div><dt>{{ _('อายุ') }}</dt><dd>{{dog.age_years}} {{ _('ปี') }} {{dog.age_months}} {{ _('เดือน') }}</dd></div>
+  {% endif %}
+  {% for _, fields in profile_groups %}
+    {% for key,title,kind in fields %}
+      {% if dog.profile.get(key) %}
+      <div><dt>{{title|tr}}</dt><dd>{{kind.get(dog.profile[key],dog.profile[key])|tr if kind is mapping else dog.profile[key]}}</dd></div>
+      {% endif %}
+    {% endfor %}
+  {% endfor %}
+  {% if dog.note %}<div><dt>{{ _('นิสัย / ข้อควรระวัง') }}</dt><dd>{{dog.note}}</dd></div>{% endif %}
+</dl>
+{% else %}<p class="muted">{{ _('ยังไม่มีรายละเอียดเพิ่มเติมของสุนัข') }}</p>{% endif %}

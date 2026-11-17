@@ -1,0 +1,15 @@
+{% extends 'base.html' %}
+{% block page_heading %}
+<h1>{{ _('เข้าสู่ระบบ') }}</h1>
+{% endblock %}
+{% block content %}
+<section class="card login">
+  
+  <form method="post">
+    <input type="hidden" name="_csrf" value="{{csrf}}">
+    <label>{{ _('ชื่อผู้ใช้') }}<input name="username" value="{{username}}" autocomplete="username" autocapitalize="none" maxlength="32" required autofocus></label>
+    <label>{{ _('รหัสผ่าน') }}<input name="password" type="password" autocomplete="current-password" maxlength="128" required></label>
+    <button>{{ _('เข้าสู่ระบบ') }}</button>
+  </form>
+</section>
+{% endblock %}

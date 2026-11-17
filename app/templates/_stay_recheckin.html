@@ -1,0 +1,21 @@
+{% from '_icons.html' import app_icon %}
+<button type="button" class="button secondary stay-checkout-button" data-care-dialog="recheckin-{{stay.id}}" aria-haspopup="dialog">
+  {{app_icon('checkin')}} {{ _('เช็กอินอีกครั้ง') }}
+</button>
+<dialog class="care-dialog" id="recheckin-{{stay.id}}" aria-labelledby="recheckin-title-{{stay.id}}">
+  <h2 id="recheckin-title-{{stay.id}}">{{ _('เช็กอินอีกครั้ง') }}</h2>
+  <p>{{ _('ยกเลิกการเช็กเอาต์ของสุนัขทุกตัวในรายการนี้') }}</p>
+  <form class="form" method="post" action="{{url_for('stay_recheckin',sid=stay.id,status=request.args.get('status'),**period)}}">
+    <input type="hidden" name="_csrf" value="{{csrf}}">
+    <label>{{ _('ชื่อผู้ใช้แอดมิน') }}
+      <input name="admin_username" autocomplete="username" autocapitalize="none" value="{{g.user.username if g.user.is_admin else ''}}" required>
+    </label>
+    <label>{{ _('รหัสผ่านแอดมิน') }}
+      <input name="admin_password" type="password" autocomplete="current-password" maxlength="128" required>
+    </label>
+    <div class="actions">
+      <button type="button" class="button secondary" data-care-close>{{ _('ยกเลิก') }}</button>
+      <button>{{ _('ยืนยันเช็กอินอีกครั้ง') }}</button>
+    </div>
+  </form>
+</dialog>

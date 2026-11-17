@@ -1,0 +1,40 @@
+{% set editing = tx is defined and tx %}
+<section class="card" id="transaction-entry">
+  {% if not editing %}<h2>{{ _('เพิ่มรายการ') }}</h2>{% endif %}
+  <form method="post" enctype="multipart/form-data" class="form">
+    <input type="hidden" name="_csrf" value="{{csrf}}">
+    <div class="formgrid">
+      <label>{{ _('ประเภท') }}<select name="kind" required>
+        {% for key,label in [('income','รับเงิน'),('refund','คืนเงินลูกค้า'),('expense','รายจ่าย')] %}
+        <option value="{{key}}" {% if editing and tx.kind==key %}selected{% endif %}>{{label|tr}}</option>
+        {% endfor %}
+      </select></label>
+      <label>{{ _('วันที่รับ/จ่ายจริง') }}<input type="date" name="occurred_on" value="{{tx.occurred_on if editing else today}}" required></label>
+      {% set defaults = ['ค่าฝากเลี้ยง','อาหารและขนม','อุปกรณ์','ทำความสะอาด','ค่าน้ำไฟ','การตลาด','ค่ารักษาพยาบาล','เอกสาร','อื่นๆ'] %}
+      <label>{{ _('หมวดหมู่') }}<select name="category" required>
+        {% if editing and tx.category and tx.category not in defaults %}<option selected value="{{tx.category}}">{{tx.category|tr}}</option>{% endif %}
+        {% for category in defaults %}<option value="{{category}}" {% if editing and tx.category==category %}selected{% endif %}>{{category|tr}}</option>{% endfor %}
+      </select></label>
+      <label>{{ _('จำนวนเงิน (บาท)') }}<input type="number" name="amount" min="0" step="0.01" required value="{{'%.2f'|format(tx.amount) if editing else ''}}"></label>
+      <label>{{ _('รายละเอียด') }}<input name="description" required value="{{tx.description if editing else ''}}"></label>
+      <label>{{ _('ร้านค้า / ผู้รับเงิน') }}<input name="merchant" value="{{tx.merchant or '' if editing else ''}}"></label>
+      <label>{{ _('ลูกค้า (ถ้ามี)') }}<select name="customer_id"><option value="">—</option>
+        {% for c in customers %}<option value="{{c.id}}" {% if editing and tx.customer_id==c.id %}selected{% endif %}>{{c.name}}</option>{% endfor %}
+      </select></label>
+      <label>{{ _('เชื่อมการเข้าพัก (ถ้ามี)') }}<select name="stay_id"><option value="">—</option>
+        {% for s in stays %}<option value="{{s.id}}" {% if editing and tx.stay_id==s.id %}selected{% endif %}>#{{s.id}} • {{s.customer}} • {{s.checkin|thai_date}}</option>{% endfor %}
+      </select></label>
+      {% set methods = {'transfer':'โอน','cash':'เงินสด','qr':'QR','card':'บัตร','other':'อื่นๆ'} %}
+      <label>{{ _('ช่องทางชำระ') }}<select name="payment_method">
+        {% if editing and tx.payment_method not in methods %}<option selected value="{{tx.payment_method or ''}}">{{tx.payment_method or '—'}}</option>{% endif %}
+        {% for key,label in methods.items() %}<option value="{{key}}" {% if editing and tx.payment_method==key %}selected{% endif %}>{{label|tr}}</option>{% endfor %}
+      </select></label>
+      <div><label>{{ _('ใบเสร็จ / สลิป (JPG PNG WEBP PDF)') }}<input type="file" name="receipt" accept=".jpg,.jpeg,.png,.webp,.pdf"></label>
+        {% if editing and tx.receipt %}<a href="{{url_for('receipt',filename=tx.receipt)}}">{{ _('เปิดไฟล์') }}</a>{% endif %}
+      </div>
+      <label>{{ _('เลขอ้างอิง') }}<input name="reference" value="{{tx.reference or '' if editing else ''}}"></label>
+      <label>{{ _('หมายเหตุ') }}<input name="note" value="{{tx.note or '' if editing else ''}}"></label>
+    </div>
+    <button>{{ _('บันทึกการแก้ไข') if editing else _('บันทึกรายการ') }}</button>
+  </form>
+</section>

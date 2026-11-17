@@ -1,0 +1,101 @@
+{% extends 'base.html' %}
+{% from '_dog_profile_fields.html' import dog_fields %}
+{% from '_customer_fields.html' import customer_details %}
+{% block page_heading %}
+<h1>{{customer.name}}</h1>
+{% endblock %}
+{% block content %}
+<a href="{{url_for('customers')}}">{{ _('← กลับไปรายชื่อลูกค้า') }}</a>
+
+{% if outstanding %}
+<section class="card customer-outstanding">
+  <h2>{{ _('ค้างชำระ') }} <span class="count">฿{{fmt((outstanding|sum(attribute='due_cents'))/100)}}</span></h2>
+  <ul class="customer-outstanding-list">
+    {% for stay in outstanding %}
+    <li><a href="{{url_for('stay_summary',sid=stay.id,_anchor='stay-payment-history')}}">
+      <strong>{{stay.dog_names or '—'}}</strong>
+      <small>{{ _('รายการ #') }}{{stay.id}} · {{stay.checkin|thai_date}} {{ _('ถึง') }} {{stay.checkout|thai_date}}</small>
+      <span>{{ _('ค้างชำระ') }} ฿{{fmt(stay.due_cents/100)}}</span>
+    </a></li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+<div class="two">
+  <section class="card">
+    {% if customer.archived %}
+    <h2>{{ _('ข้อมูลลูกค้า') }}</h2>
+    <p class="muted">{{ _('นำออกจากรายชื่อลูกค้าแล้ว') }}</p>
+    <p>{{ ([customer.owner_phone,customer.line_id]|select|join(" / ")) or customer.contact or _('ไม่มีข้อมูลติดต่อ') }}</p>
+    {% if customer.emergency_address %}<p>{{customer.emergency_address}}</p>{% endif %}
+    {% if customer.note %}<p>{{customer.note}}</p>{% endif %}
+    {% else %}
+    <h2>{{ _('แก้ไขข้อมูลลูกค้า') }}</h2>
+    <form method="post" class="form">
+      <input type="hidden" name="_csrf" value="{{csrf}}">
+      <label>{{ _('ชื่อ') }}<input name="name" value="{{customer.name}}" required></label>
+      {{customer_details(customer)}}
+      <label>{{ _('หมายเหตุ') }}<textarea name="note">{{customer.note or ''}}</textarea></label>
+      <button>{{ _('บันทึกการแก้ไข') }}</button>
+    </form>
+    <form class="actions" method="post" action="{{url_for('customer_delete',cid=customer.id)}}" onsubmit="return confirm({{ _('ลบลูกค้าและสุนัขของลูกค้ารายนี้จากรายการใช้งาน?')|tojson|forceescape }})">
+      <input type="hidden" name="_csrf" value="{{csrf}}"><button class="danger small">{{ _('ลบลูกค้า') }}</button>
+    </form>
+    {% endif %}
+  </section>
+  <section class="card">
+    <h2>{{ _('สุนัขของลูกค้า') }}</h2>
+    {% for d in dogs %}
+    <article class="customer-dog">
+      {% if d.has_photo %}
+      <a href="{{url_for('dog_photo',dog_id=d.id)}}"><img class="customer-dog-photo" src="{{url_for('dog_photo',dog_id=d.id)}}" width="92" height="92" alt="{{ _('รูป') }} {{d.name}}" loading="lazy"></a>
+      {% endif %}
+      <strong>{{d.name}}</strong>
+      <small class="muted">{{sizes.get(d.size, d.size)|tr}}</small>
+      {% with dog=d %}{% include '_dog_profile_summary.html' %}{% endwith %}
+      {% if not customer.archived %}
+      <details>
+        <summary>{{ _('แก้ไขข้อมูลสุนัข') }}</summary>
+        <form method="post" action="{{url_for('manage_dog',cid=customer.id,dog_id=d.id,action='edit')}}" class="form" enctype="multipart/form-data">
+          <input type="hidden" name="_csrf" value="{{csrf}}">
+          {{dog_fields(sizes, profile_groups, today, d)}}
+          <button>{{ _('บันทึกการแก้ไข') }}</button>
+        </form>
+      </details>
+      <form method="post" action="{{url_for('manage_dog',cid=customer.id,dog_id=d.id,action='delete')}}" onsubmit="return confirm({{ _('ลบสุนัขตัวนี้จากรายการใช้งาน?')|tojson|forceescape }})">
+        <input type="hidden" name="_csrf" value="{{csrf}}"><button class="danger small">{{ _('ลบสุนัข') }}</button>
+      </form>
+      {% endif %}
+    </article>
+    {% else %}<p class="muted">{{ _('ยังไม่มีสุนัขในรายการใช้งาน') }}</p>{% endfor %}
+    {% if not customer.archived %}
+    <h3>{{ _('เพิ่มสุนัข') }}</h3>
+    <form method="post" class="form" enctype="multipart/form-data">
+      <input type="hidden" name="_csrf" value="{{csrf}}">
+      <input type="hidden" name="action" value="dog">
+      {{dog_fields(sizes, profile_groups, today)}}
+      <button>{{ _('เพิ่มสุนัข') }}</button>
+    </form>
+    {% endif %}
+  </section>
+</div>
+<section class="card">
+  <h2>{{ _('ประวัติการเข้าพัก') }}</h2>
+  {% if history %}
+  <div class="scroll"><table>
+    <thead><tr><th>{{ _('สุนัข') }}</th><th>{{ _('วันเข้าพัก') }}</th><th>{{ _('วันรับกลับ') }}</th><th>{{ _('จำนวนที่คิดเงิน') }}</th><th>{{ _('สถานะ') }}</th><th class="right">{{ _('ยอดสุทธิ') }}</th><th>{{ _('รายละเอียด') }}</th></tr></thead>
+    <tbody>{% for stay in history %}
+      <tr>
+        <td>{{stay.dog_names or '—'}}{% if stay.stay_number %}<br><small>{{ _('หมายเลขการเข้าพัก') }} {{stay.stay_number}}</small>{% endif %}</td>
+        <td>{{stay.checkin|thai_date}}</td><td>{{stay.checkout|thai_date}}</td><td>{{stay_duration(stay.charged_nights,stay.service_type)}}</td>
+        <td>{{stay_statuses.get(stay.status, stay.status)|tr}}
+          {% if stay.due_cents %}<br><a class="outstanding-link" href="{{url_for('stay_summary',sid=stay.id,_anchor='stay-payment-history')}}">{{ _('ค้างชำระ') }} ฿{{fmt(stay.due_cents/100)}}</a>{% endif %}
+        </td>
+        <td class="right">฿{{fmt(stay.agreed_total)}}</td>
+        <td><a href="{{url_for('stay_summary',sid=stay.id,start=stay.checkin,end=stay.checkout)}}" aria-label="{{ _('เปิดรายการเข้าพัก') }} {{stay.id}}">{{ _('เปิดรายการ') }}</a></td>
+      </tr>
+    {% endfor %}</tbody>
+  </table></div>
+  {% else %}<p class="muted">{{ _('ลูกค้ารายนี้ยังไม่มีประวัติการเข้าพัก') }}</p>{% endif %}
+</section>
+{% endblock %}

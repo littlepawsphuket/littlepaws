@@ -1,0 +1,15 @@
+{% macro optional_field(key, title, kind, values) %}
+<label>{{title|tr}}
+  {% if kind is mapping %}
+  <select name="{{key}}">
+    <option value="">—</option>
+    {% for value, label in kind.items() %}<option value="{{value}}" {% if values.get(key)==value %}selected{% endif %}>{{label|tr}}</option>{% endfor %}
+  </select>
+  {% elif kind == 'textarea' %}
+  <textarea name="{{key}}" rows="2">{{values.get(key, '')}}</textarea>
+  {% else %}
+  <input name="{{key}}" type="{{'number' if kind=='weight' else kind}}" value="{{values.get(key,'')}}"
+         {% if kind=='weight' %}min="0.01" max="999" step="0.01"{% endif %}>
+  {% endif %}
+</label>
+{% endmacro %}

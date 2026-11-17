@@ -1,0 +1,62 @@
+{% from '_intake_fields.html' import optional_field %}
+<details class="stay-intake" open>
+  <summary>{{ _('รายละเอียดตอนเช็กอิน') }} <small>{{ _('ไม่บังคับกรอก') }}</small></summary>
+  {% set heading, fields = intake_groups[1] %}
+  <fieldset class="intake-group">
+    <legend>{{heading|tr}}</legend>
+    <div class="intake-options">
+      {% for key,title,kind in fields if kind == 'item' %}
+      {% set packed = key ~ '_packed' %}
+      <div class="intake-item">
+        <label class="intake-option check-tile"><input type="checkbox" name="{{packed}}" value="1"
+          {% if intake.get(packed) or (not intake.get('intake_checklists') and intake.get(key)) %}checked{% endif %}><span class="check-mark" aria-hidden="true"></span>{{title|tr}}</label>
+        <label class="intake-item-detail">{{ _('รายละเอียดเพิ่มเติม') }}
+          <input type="text" name="{{key}}" value="{{intake.get(key,'')}}">
+        </label>
+      </div>
+      {% endfor %}
+    </div>
+    {{optional_field(*fields[-1], values=intake)}}
+  </fieldset>
+  {% set heading, fields = intake_groups[2] %}
+  <fieldset class="intake-group">
+    <legend>{{heading|tr}}</legend>
+    <div class="exam-grid">
+      {% for key,title,kind in fields if kind == 'exam' %}
+      <fieldset class="exam-card" data-exam-item>
+        <legend>{{title|tr}}</legend>
+        <div class="exam-results">
+          {% for value, label in [('normal','ปกติ'), ('abnormal','พบความผิดปกติ')] %}
+          <label class="intake-option exam-option exam-{{value}} check-tile">
+            <input type="checkbox" name="{{key}}" value="{{value}}" {% if intake.get(key)==value %}checked{% endif %}><span class="check-mark" aria-hidden="true"></span>
+            {{label|tr}}
+          </label>
+          {% endfor %}
+        </div>
+        {% if intake.get(key) == '1' %}
+        <input type="hidden" name="{{key}}" value="1" data-exam-legacy>
+        <small data-exam-legacy>{{ _('เคยติ๊กว่าตรวจแล้ว') }}</small>
+        {% endif %}
+      </fieldset>
+      {% endfor %}
+    </div>
+    {% if intake.get('health') %}
+    <input type="hidden" name="health" value="{{intake.get('health')}}">
+    <p class="muted">{{ _('ผลตรวจรวมที่บันทึกไว้') }} · {{dict(normal='ปกติ', abnormal='พบความผิดปกติ').get(intake.get('health'), 'ไม่ระบุ')|tr}}</p>
+    {% endif %}
+    {% for key,title,kind in fields if kind is mapping and key != 'health' %}
+    <fieldset class="intake-choices">
+      <legend>{{title|tr}}</legend>
+      <div class="intake-options">
+        {% for value,label in kind.items() %}
+        <label class="intake-option"><input type="radio" name="{{key}}" value="{{value}}" {% if intake.get(key)==value %}checked{% endif %}>{{label|tr}}</label>
+        {% endfor %}
+        <label class="intake-option"><input type="radio" name="{{key}}" value="" {% if not intake.get(key) %}checked{% endif %}>{{ _('ไม่ระบุ') }}</label>
+      </div>
+    </fieldset>
+    {% endfor %}
+    <div class="formgrid">
+      {% for key,title,kind in fields if kind != 'exam' and kind is not mapping %}{{optional_field(key,title,kind,intake)}}{% endfor %}
+    </div>
+  </fieldset>
+</details>
