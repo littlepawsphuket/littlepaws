@@ -62,7 +62,7 @@ Walk-in check-in reuses the booking form's rate and dog selection, then collects
 Administrators can create, edit and archive coupons, and switch between active, used and expired listings. The coupon preview renders a shareable PNG in the browser with the six-digit code and a numeric QR, expiration, use limit and optional minimum spend. The Cloudflare preview currently uses the Little Paws green palette.
 
 
-The public timeline records successful HTML page openings against the share link. Photo and PDF routes and speculative prefetches do not increment the counter. Stay summaries expose counts to authorized staff. The staff finance overview attributes linked refunds back to their original receipt months in receipt order. The cash-flow total keeps actual transaction dates.
+The public timeline records successful HTML page openings against the share link. Photo and PDF routes and speculative prefetches do not increment the counter. The timeline and PDF use the linked dog's profile photo when available, with the same expiration and revocation checks as activity photos. Stay summaries expose counts to authorized staff. The staff finance overview attributes linked refunds back to their original receipt months in receipt order. The cash-flow total keeps actual transaction dates.
 
 
 When updating the Worker in the dashboard editor, copy source from a UTF-8-aware editor or use an ASCII transport with JavaScript Unicode escapes. Browsers can use a legacy encoding for plain text served without a charset, corrupting Thai strings before upload. After deployment, open the synthetic timeline in both languages and verify the Thai title, activity labels and expiry text on the served page.

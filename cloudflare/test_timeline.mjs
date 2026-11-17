@@ -61,10 +61,19 @@ assert.equal(all.headers.get("Content-Language"), "en");
 assert.equal(all.headers.get("Cache-Control"), "private, no-store");
 const html = await all.text();
 assert.match(html, /&lt;script&gt;Fixture dog/);
+assert.ok(html.includes(`src="${path("a")}/profile.jpg"`));
 assert.match(html, /&lt;b&gt;Visible&lt;\/b&gt;/);
 assert.doesNotMatch(html, /private note|other dog note/);
 assert.equal(await (await get(path("a")+"/photos/1")).text(), "fixture-photo");
-for (const route of [path("a")+"/photos/2",path("a")+"/photos/3",path("b")+"/photos/1",path("c"),path("c")+"/photos/1",path("z"),"/settings","/login"]) {
+const profile = await get(path("a")+"/profile.jpg");
+assert.equal(profile.headers.get("Content-Type"),"image/jpeg");
+assert.deepEqual(Buffer.from(await profile.arrayBuffer()),await readFile(join(media,"dogs/1.jpg")));
+const originalKey = sqlite.prepare("SELECT object_key FROM dog_photos WHERE dog_id=1").get().object_key;
+sqlite.exec("UPDATE dog_photos SET object_key='dogs/2.jpg' WHERE dog_id=1");
+assert.equal((await get(path("a")+"/profile.jpg")).status,404);
+sqlite.prepare("UPDATE dog_photos SET object_key=? WHERE dog_id=1").run(originalKey);
+for (const route of [path("a")+"/photos/2",path("a")+"/photos/3",path("b")+"/photos/1",
+  path("c"),path("c")+"/photos/1",path("c")+"/profile.jpg",path("z")+"/profile.jpg","/settings","/login"]) {
   assert.equal((await get(route)).status, 404, route);
 }
 let pdfCalls = 0;
@@ -72,9 +81,11 @@ const pdfEnv = {...env, PUBLIC_ORIGIN:"https://example.test", BROWSER: {
   async quickAction(action, options) {
     pdfCalls++;
     assert.equal(action,"pdf");
+    assert.equal(options.pdfOptions.format,"a4");
     assert.match(options.html,/&lt;b&gt;Visible&lt;\/b&gt;/);
     assert.doesNotMatch(options.html,/private note|other dog note|Download PDF|<a href=/);
     assert.match(options.html,/loading="eager" src="https:\/\/example\.test\/updates\/a+\/photos\/1"/);
+    assert.ok(options.html.includes(`src="https://example.test${path("a")}/profile.jpg"`));
     return new Response("%PDF-fixture",{headers:{"Content-Type":"application/pdf"}});
   },
 }};
@@ -93,7 +104,7 @@ assert.equal(viewCount(),1); // Includes one HTML render, with no photo or PDF i
 const thaiTimeline = await get(path("a")+"?day=all&lang=th");
 assert.equal(thaiTimeline.headers.get("Content-Type"),"text/html; charset=utf-8");
 const thaiHtml = await thaiTimeline.text();
-assert.match(thaiHtml, /<h1>ไทม์ไลน์กิจกรรม · /);
+assert.match(thaiHtml, />ไทม์ไลน์กิจกรรม<\/span>/);
 assert.match(thaiHtml, />ทั้งหมด<\/a>/);
 assert.match(thaiHtml, /ให้อาหารแล้ว/);
 assert.match(thaiHtml, /ลิงก์นี้จะหมดอายุภายใน 48 ชั่วโมงหลังเช็กเอาต์/);
@@ -109,6 +120,7 @@ sqlite.exec("DELETE FROM care_share_links WHERE dog_id=1");
 assert.equal((await pdfGet(pdfPath)).status,404);
 assert.equal((await get(path("a"))).status, 404);
 assert.equal((await get(path("a")+"/photos/1")).status, 404);
+assert.equal((await get(path("a")+"/profile.jpg")).status, 404);
 sqlite.exec("UPDATE stays SET status='completed', agreed_total=1000, payment_tracking=1 WHERE id=1");
 sqlite.exec(await readFile(new URL("./staff_access.sql", import.meta.url), "utf8"));
 sqlite.exec(await readFile(new URL("./booking_deposits.sql", import.meta.url), "utf8"));

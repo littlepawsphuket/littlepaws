@@ -1,13 +1,10 @@
 import {authorizedStaff} from "./stay_payments.mjs";
+import {validDogPhotoKey} from "./timeline.mjs";
 
 export const photoLimit = 512 * 1024;
 export const photoEdge = 1024;
 const activeDog = `FROM dogs d JOIN customers c ON c.id=d.customer_id
   WHERE c.id=? AND d.id=? AND c.archived=0 AND d.archived=0`;
-
-function validKey(key, dogId) {
-  return typeof key === "string" && new RegExp(`^dogs/${dogId}(?:/[a-f0-9-]{36})?\\.jpg$`).test(key);
-}
 
 function jpegDimensions(bytes) {
   if (bytes.length < 8 || bytes[0] !== 255 || bytes[1] !== 216 ||
@@ -35,7 +32,7 @@ export async function dogPhoto(db, media, customerId, dogId) {
   const row = await db.prepare(`SELECT p.object_key FROM dog_photos p JOIN dogs d ON d.id=p.dog_id
     JOIN customers c ON c.id=d.customer_id
     WHERE c.id=? AND d.id=? AND c.archived=0 AND d.archived=0`).bind(customerId, dogId).first();
-  return validKey(row?.object_key, dogId) ? media.get(row.object_key) : null;
+  return validDogPhotoKey(row?.object_key, dogId) ? media.get(row.object_key) : null;
 }
 
 export async function saveDogPhoto(db, media, customerId, dogId, bytes, actor) {
@@ -58,7 +55,7 @@ export async function saveDogPhoto(db, media, customerId, dogId, bytes, actor) {
     return "not_found";
   }
   const oldKey = previous.results[0]?.object_key;
-  if (validKey(oldKey, dogId)) {
+  if (validDogPhotoKey(oldKey, dogId)) {
     try { await media.delete(oldKey); } catch {}
   }
   return "saved";

@@ -1,7 +1,7 @@
-import {documentAssets,validDogPhotoKey} from "./document_data.mjs";
+import {documentAssets} from "./document_data.mjs";
 import {dogIcon,escape,palette,picture} from "./document_layout.mjs";
 import {privateDocumentHeaders,renderExport} from "./document_exports.mjs";
-import {careActivityName,validCarePhotoKey} from "./timeline.mjs";
+import {careActivityName,validCarePhotoKey,validDogPhotoKey} from "./timeline.mjs";
 
 const dateFormat = (lang) => new Intl.DateTimeFormat(lang === "en" ? "en-GB" : "th-TH",{
   dateStyle:"medium",timeZone:"Asia/Bangkok",

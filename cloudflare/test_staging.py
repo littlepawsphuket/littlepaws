@@ -27,7 +27,8 @@ with TemporaryDirectory() as folder:
         db.execute("UPDATE customers SET owner_phone='0810000000' WHERE id=1")
         photo = io.BytesIO()
         Image.new('RGB', (32, 24), 'white').save(photo, format='JPEG')
-        db.execute("INSERT INTO dog_photos(dog_id,photo) VALUES(2,?)", (photo.getvalue(),))
+        db.executemany("INSERT INTO dog_photos(dog_id,photo) VALUES(?,?)",
+                       [(1, photo.getvalue()), (2, photo.getvalue())])
         db.execute("""INSERT INTO stays(id,customer_id,checkin,checkout,status,actual_checkout_at)
                       VALUES(1,1,'2026-01-01','2026-01-03','checked_in',NULL),
                             (2,1,'2026-01-01','2026-01-03','completed','2026-01-03T00:00:00+07:00')""")

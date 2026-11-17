@@ -1,5 +1,6 @@
 import {bookingDetails} from "./bookings.mjs";
 import {staySummary} from "./stay_summary.mjs";
+import {validDogPhotoKey} from "./timeline.mjs";
 
 function base64(bytes) {
   let text = "";
@@ -40,10 +41,6 @@ export async function documentAssets(env) {
   const logo = await asset("brand/little-paws-logo.png","image/png",512*1024);
   const mascot = theme === "classic" ? null : await asset("brand/mascot-"+theme+".webp","image/webp",768*1024);
   return {theme,font,logo,mascot,asset};
-}
-
-export function validDogPhotoKey(key,id) {
-  return typeof key === "string" && new RegExp(`^dogs/${id}(?:/[a-f0-9-]{36})?\\.jpg$`).test(key);
 }
 
 export async function documentData(env, kind, id, paymentId, format, lang) {

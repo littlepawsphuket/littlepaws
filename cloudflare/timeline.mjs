@@ -29,6 +29,7 @@ const activeLink = `FROM care_share_links l
   JOIN dogs d ON d.id=l.dog_id
   LEFT JOIN system_settings cfg ON cfg.key='care_link_hours'`;
 const activeCondition = `l.token=? AND ${shareActive}`;
+const profileJoin = "LEFT JOIN dog_photos dp ON dp.dog_id=d.id";
 
 const escape = (value) => String(value ?? "").replace(/[&<>"']/g, (character) => ({
   "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
@@ -45,6 +46,10 @@ export function careActivityName(event,lang) {
   return lang === "en" ? labels[label] || label : label;
 }
 
+export function validDogPhotoKey(key, id) {
+  return typeof key === "string" && new RegExp(`^dogs/${id}(?:/[a-f0-9-]{36})?\\.jpg$`).test(key);
+}
+
 async function timeline(env, token, url, printable = false) {
   const today = thaiToday.format(new Date());
   const day = url.searchParams.get("day") || today;
@@ -52,7 +57,8 @@ async function timeline(env, token, url, printable = false) {
   const lang = url.searchParams.get("lang") === "en" ? "en" : "th";
   const en = lang === "en";
   const [links, days, activities] = await env.DB.batch([
-    env.DB.prepare(`SELECT d.name, cfg.value AS expiry_hours ${activeLink} WHERE ${activeCondition}`).bind(token),
+    env.DB.prepare(`SELECT d.id AS dog_id,d.name,dp.object_key,cfg.value AS expiry_hours
+      ${activeLink} ${profileJoin} WHERE ${activeCondition}`).bind(token),
     env.DB.prepare(`SELECT DISTINCT substr(e.recorded_at,1,10) AS day ${activeLink}
       JOIN care_events e ON e.stay_id=l.stay_id AND e.dog_id=l.dog_id
       WHERE ${activeCondition} AND e.customer_visible=1 ORDER BY day DESC`).bind(token),
@@ -68,6 +74,7 @@ async function timeline(env, token, url, printable = false) {
   if (!link || (day !== "all" && day !== today && !visibleDays.includes(day))) return missing();
 
   const route = `/updates/${token}`;
+  const photoPath = printable ? url.origin + route : route;
   const dateLabel = (value) => new Intl.DateTimeFormat(en ? "en-GB" : "th-TH", {
     dateStyle: "medium", timeZone: "UTC",
   }).format(new Date(value + "T00:00:00Z"));
@@ -81,7 +88,6 @@ async function timeline(env, token, url, printable = false) {
     lastDay = eventDay;
     const label = careActivityName(event,lang);
     const photos = (event.photos || "").split(",").filter((id) => /^\d+$/.test(id));
-    const photoPath = printable ? url.origin + route : route;
     return `${heading}<article><h3><time>${escape(event.recorded_at.slice(11, 16))}</time>
       ${escape(label)}</h3><p>${escape(event.note)}</p>
       <div class="photos">${photos.map((id) => `<img loading="${printable ? "eager" : "lazy"}" src="${photoPath}/photos/${id}"
@@ -90,6 +96,8 @@ async function timeline(env, token, url, printable = false) {
   const expiryHours = link.expiry_hours === null ? 48 : Number(link.expiry_hours);
   const hours = Number.isInteger(expiryHours) ? expiryHours : 48;
   const title = en ? "Activity timeline" : "ไทม์ไลน์กิจกรรม";
+  const profile = validDogPhotoKey(link.object_key,link.dog_id)
+    ? `<img class="profile" src="${photoPath}/profile.jpg" alt="" width="80" height="80">` : "";
   const pdf = env.BROWSER && env.PUBLIC_ORIGIN === url.origin
     ? `<a href="${route}/timeline.pdf?day=${encodeURIComponent(day)}&amp;lang=${lang}">${en ? "Download PDF" : "ดาวน์โหลด PDF"}</a>` : "";
   const controls = printable ? "" : `<nav aria-label="${en ? "Choose a day" : "เลือกวัน"}">
@@ -102,16 +110,25 @@ async function timeline(env, token, url, printable = false) {
     <style>
     body{margin:0;background:#f2f7f3;color:#203c30;font:1rem/1.5 "Sukhumvit Set",system-ui,sans-serif}
     main{max-width:52rem;margin:auto;padding:1.15rem}header,article{background:#fff;border:1px solid #c9ded2;border-radius:1rem;padding:1rem}
-    h1,h3{margin:.25rem 0}nav{display:flex;gap:.4rem;overflow:auto;padding:.65rem 0}
+    .profile-heading{display:flex;align-items:center;gap:.85rem;margin-top:.65rem}
+    .profile{flex:none;width:5rem;height:5rem;object-fit:cover;border-radius:1rem}
+    h1,h3{margin:.25rem 0;overflow-wrap:anywhere}nav{display:flex;gap:.4rem;overflow:auto;padding:.65rem 0}
+    h1{font-size:clamp(1.5rem,5vw,2rem);line-height:1.25}.section-label{color:#155747}
     a{color:#155747}nav a{flex:none;padding:.45rem .75rem;border-radius:2rem;background:#fff;text-decoration:none}
     a[aria-current]{color:#fff;background:#155747}article{margin-bottom:.6rem}
     time{background:#e3f2e9;padding:.2rem .5rem;border-radius:.75rem}
     article p{white-space:pre-wrap;overflow-wrap:anywhere}.photos{display:flex;gap:.5rem;flex-wrap:wrap}
-    img{width:min(100%,20rem);height:auto;border-radius:.8rem}footer{padding:1rem 0}
-    .viewer-links{display:flex;gap:1rem}
-    @page{size:A4;margin:14mm}
-    @media print{main{padding:0}article{break-inside:avoid}img{max-height:145mm;object-fit:contain}}
-    </style><main><header><strong>Little Paws Homestay Phuket</strong><h1>${title} · ${escape(link.name)}</h1>
+    .photos img{width:min(100%,22rem);height:auto;border-radius:.9rem;object-fit:contain}footer{padding:1rem 0}
+    .viewer-links{display:flex;flex-wrap:wrap;gap:1rem;margin-top:.6rem}
+    @page{size:A4;margin:10mm}
+    @media print{
+      body{font-size:16pt;print-color-adjust:exact}
+      main{padding:0}header,article{break-inside:avoid-page}
+      h2{break-after:avoid-page}h1{font-size:26pt}
+      .photos img{width:auto;max-width:100%;height:auto;max-height:115mm}
+    }
+    </style><main><header><strong>Little Paws Homestay Phuket</strong>
+    <div class="profile-heading">${profile}<div><span class="section-label">${title}</span><h1>${escape(link.name)}</h1></div></div>
     ${viewerLinks}</header>${controls}
     ${cards || `<p>${en ? "No activities yet." : "ยังไม่มีกิจกรรม"}</p>`}
     <footer>${en ? `This link expires within ${hours} hours after check-out.` : `ลิงก์นี้จะหมดอายุภายใน ${hours} ชั่วโมงหลังเช็กเอาต์`}</footer>
@@ -125,7 +142,7 @@ async function timelinePdf(env, token, url) {
   if (view.status !== 200) return view;
   const pdf = await env.BROWSER.quickAction("pdf", {
     html: await view.text(),
-    pdfOptions: {format:"A4", printBackground:true, preferCSSPageSize:true, displayHeaderFooter:false},
+    pdfOptions: {format:"a4", printBackground:true, preferCSSPageSize:true, displayHeaderFooter:false},
   });
   if (!pdf.ok || !pdf.headers.get("Content-Type")?.toLowerCase().startsWith("application/pdf")) {
     await pdf.body?.cancel();
@@ -158,6 +175,14 @@ async function photo(env, token, id) {
   return object ? respond(object.body, 200, {"Content-Type": "image/jpeg"}) : missing();
 }
 
+async function profilePhoto(env, token) {
+  const row = await env.DB.prepare(`SELECT d.id AS dog_id,dp.object_key
+    ${activeLink} ${profileJoin} WHERE ${activeCondition}`).bind(token).first();
+  if (!validDogPhotoKey(row?.object_key,row?.dog_id)) return missing();
+  const object = await env.MEDIA.get(row.object_key);
+  return object ? respond(object.body, 200, {"Content-Type": "image/jpeg"}) : missing();
+}
+
 export default {
   async fetch(request, env) {
     if (request.method !== "GET") return respond("Method not allowed", 405, {Allow:"GET"});
@@ -177,6 +202,7 @@ export default {
         return page;
       }
       if (path.length === 4 && path[3] === "timeline.pdf") return await timelinePdf(env, token, url);
+      if (path.length === 4 && path[3] === "profile.jpg") return await profilePhoto(env, token);
       if (path.length === 5 && path[3] === "photos" && /^\d+$/.test(path[4])) {
         const id = Number(path[4]);
         if (Number.isSafeInteger(id) && id > 0) return await photo(env, token, id);

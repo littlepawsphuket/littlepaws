@@ -21,7 +21,7 @@ export async function renderExport(env,{html,format,lang,filename}) {
   if (!env.BROWSER) return new Response(null,{status:503,headers:privateDocumentHeaders});
   const output = format === "pdf"
     ? await env.BROWSER.quickAction("pdf",{html,
-      pdfOptions:{format:"A4",printBackground:true,preferCSSPageSize:true,displayHeaderFooter:false}})
+      pdfOptions:{format:"a4",printBackground:true,preferCSSPageSize:true,displayHeaderFooter:false}})
     : await env.BROWSER.quickAction("screenshot",{html,viewport:{width:780,height:1000,deviceScaleFactor:1.5},
       screenshotOptions:{type:"png",fullPage:true},gotoOptions:{waitUntil:"networkidle0"}});
   const type = format === "pdf" ? pdf : png;
