@@ -33,6 +33,7 @@ const css = `
   .signature-canvas{display:block;width:100%;height:auto;border:1px solid #a7cbb9;border-radius:.55rem;background:white;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
   .booking-warnings{flex-basis:100%;border:1px solid #d8ad6f;background:#fff7e9;color:#604119;border-radius:.7rem;padding:.55rem .65rem .55rem 2rem;margin:0}
   .photo-actions{display:flex;flex-wrap:wrap;gap:.5rem;margin:.6rem 0}
+  .care-timeline-photo{width:min(100%,20rem);height:auto;border-radius:.85rem}
   .customer-dog-photo{width:6rem;height:6rem;object-fit:cover;border-radius:1rem}
   .delete-deposit{margin-inline-start:.75rem;background:#fff1ed;color:#8b3225;border-color:#e6a99b}
   dialog::backdrop{background:#203c3066}
@@ -1333,6 +1334,228 @@ function main(intakeGroups,couponScreen) {
     });
   }
 
+  function showCareTimeline(stayId, dog) {
+    bookingRequest?.abort();
+    const controller = bookingRequest = new AbortController();
+    const endpoint = "/api/stays/" + stayId + "/dogs/" + dog.id + "/timeline";
+    const title = node("h3","ไทม์ไลน์ · " + dog.name);
+    const toolbar = node("div");
+    toolbar.className = "photo-actions";
+    const back = Object.assign(node("button","กลับหน้าสรุป"),{type:"button"});
+    back.onclick = () => showStay(stayId);
+    const day = node("select");
+    day.setAttribute("aria-label","วันที่ของกิจกรรม");
+    const today = parts.format(new Date());
+    day.append(new Option("วันนี้",today),new Option("ทุกวัน",""));
+    const preview = Object.assign(node("button","ดูเฉพาะที่ลูกค้าเห็น"),{type:"button"});
+    preview.setAttribute("aria-pressed","false");
+    toolbar.append(back,day,preview);
+    const sharing = node("section");
+    sharing.className = "intake-details";
+    const editor = node("section");
+    const feed = node("section");
+    const more = Object.assign(node("button","โหลดกิจกรรมเพิ่มเติม"),{type:"button",hidden:true});
+    const status = node("p","กำลังโหลด…");
+    status.setAttribute("role","status");
+    bookingContent.replaceChildren(title,toolbar,sharing,status,editor,feed,more);
+    let showingPublic = false;
+    let next;
+    let pending = false;
+    let requestNumber = 0;
+    function renderSharing(data) {
+      sharing.replaceChildren(node("h4","แชร์ไทม์ไลน์ให้ลูกค้า"));
+      if (data.has_link) sharing.append(node("p","จำนวนครั้งที่เปิดไทม์ไลน์ " +
+        data.view_count.toLocaleString("th-TH") + " ครั้ง"));
+      sharing.append(node("p","ลิงก์หมดอายุภายใน " + data.expiry_hours + " ชั่วโมงหลังเช็กเอาต์"));
+      const controls = node("div");
+      controls.className = "photo-actions";
+      if (data.share_url) {
+        const url = Object.assign(node("input"),{type:"url",value:data.share_url,readOnly:true});
+        const label = node("label","ลิงก์สำหรับลูกค้า");
+        label.append(url);
+        sharing.append(label);
+        const copy = Object.assign(node("button","คัดลอกลิงก์"),{type:"button"});
+        copy.onclick = async () => {
+          try {
+            await navigator.clipboard.writeText(url.value);
+            status.textContent = "คัดลอกลิงก์แล้ว";
+          } catch {
+            url.select();
+            status.textContent = "เลือกข้อความลิงก์แล้ว แตะค้างเพื่อคัดลอก";
+          }
+        };
+        controls.append(copy);
+      } else if (!data.can_configure_link) {
+        sharing.append(node("p","ยังไม่ได้ตั้งค่าที่อยู่ไทม์ไลน์ลูกค้า"));
+      } else if (data.has_link && !data.can_share) sharing.append(node("p","ลิงก์หมดอายุหรือการเข้าพักถูกปิด"));
+      function action(label,value,question,extra={}) {
+        const button = Object.assign(node("button",label),{type:"button"});
+        button.disabled = pending;
+        button.onclick = async () => {
+          if (pending || (question && !confirm(question))) return;
+          pending = true;
+          for (const item of controls.querySelectorAll("button")) item.disabled = true;
+          try {
+            const response = await fetch(endpoint,{method:"POST",headers:{"Content-Type":"application/json"},
+              body:JSON.stringify({action:value,...extra})});
+            if (!response.ok) throw Error();
+            await loadTimeline(true);
+            status.textContent = value === "publish-day" ? "แชร์กิจกรรมของวันที่เลือกแล้ว" : "อัปเดตลิงก์แล้ว";
+          } catch { status.textContent = "อัปเดตลิงก์ไม่ได้ กรุณาตรวจสถานะแล้วลองใหม่"; }
+          finally {
+            pending = false;
+            for (const item of sharing.querySelectorAll("button")) item.disabled = false;
+          }
+        };
+        return button;
+      }
+      if (!data.has_link && data.can_share && data.can_configure_link) controls.append(action("สร้างลิงก์","create"));
+      if (data.has_link) controls.append(action("ยกเลิกลิงก์","revoke","ยกเลิกลิงก์นี้หรือไม่?"));
+      if (data.share_url && data.status === "checked_in" && day.value) {
+        controls.append(action("แชร์กิจกรรมทั้งหมดของวันที่เลือก","publish-day",
+          "แชร์ข้อความและรูปทั้งหมดของวันที่เลือกให้ลูกค้าเห็นหรือไม่?",{day:day.value}));
+      }
+      const refresh = Object.assign(node("button","อัปเดตยอดเปิด"),{type:"button"});
+      refresh.onclick = () => loadTimeline(true);
+      controls.append(refresh);
+      sharing.append(controls);
+    }
+    async function submitCare(body) {
+      const response = await fetch(endpoint,{method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify(body)});
+      if (!response.ok) throw Error(response.status === 409
+        ? "รายการหรือสถานะเปลี่ยนแล้ว กรุณาโหลดข้อมูลใหม่" : "บันทึกไม่ได้ กรุณาตรวจวัน เวลา และรายละเอียด");
+    }
+    function openEditor(options,event) {
+      const form = node("form");
+      const activity = node("select");
+      activity.append(...Object.entries(options).map(([id,label]) => new Option(label,id)));
+      if (event) {
+        const known = Object.keys(options).find((id) => options[id] === event.activity_label);
+        if (!known && event.activity_label) activity.append(new Option(event.activity_label,"existing-activity"));
+        activity.value = known || (event.activity_label ? "existing-activity" : event.kind);
+      }
+      const now = new Date();
+      const recorded = event?.recorded_at;
+      const date = Object.assign(node("input"),{type:"date",required:true,max:today,value:recorded?.slice(0,10) || today});
+      const time = Object.assign(node("input"),{type:"time",required:true,value:recorded?.slice(11,16) || bangkokTime.format(now)});
+      const note = Object.assign(node("textarea"),{rows:2,maxLength:500,value:event?.note || ""});
+      const visible = Object.assign(node("input"),{type:"checkbox",checked:event ? Boolean(event.customer_visible) : true});
+      for (const [caption,input] of [["กิจกรรม",activity],["วันที่",date],["เวลา",time],["ข้อความ",note],
+        ["แชร์ให้ลูกค้าเห็น",visible]]) {
+        const label = node("label",caption);
+        label.append(input);
+        form.append(label);
+      }
+      const submit = node("button","บันทึกกิจกรรม");
+      const cancel = Object.assign(node("button","ปิดฟอร์ม"),{type:"button"});
+      cancel.onclick = () => editor.replaceChildren();
+      const outcome = node("p","");
+      outcome.setAttribute("role","status");
+      form.append(submit,cancel,outcome);
+      editor.replaceChildren(node("h4",event ? "แก้ไขกิจกรรม" : "เพิ่มกิจกรรม"),form);
+      activity.focus();
+      const createKey = key();
+      form.onsubmit = async (action) => {
+        action.preventDefault();
+        submit.disabled = true;
+        try {
+          await submitCare({action:event ? "edit-event" : "add-event",eventId:event?.id,
+            revision:event?.revision,activity:activity.value,note:note.value,day:date.value,time:time.value,
+            visible:visible.checked,key:createKey});
+          if (form.isConnected && !controller.signal.aborted) {
+            editor.replaceChildren();
+            if (day.value !== "" && day.value !== date.value) {
+              if (![...day.options].some((entry) => entry.value === date.value)) {
+                day.append(new Option(bookingDate.format(new Date(date.value)),date.value));
+              }
+              day.value = date.value;
+            }
+            await loadTimeline(true);
+            status.textContent = "บันทึกกิจกรรมแล้ว";
+          }
+        } catch (error) {
+          outcome.textContent = error.message;
+        } finally { submit.disabled = false; }
+      };
+    }
+    async function loadTimeline(reset) {
+      const loading = ++requestNumber;
+      const selectedDay = day.value;
+      const query = new URLSearchParams();
+      if (selectedDay) query.set("day",selectedDay);
+      if (showingPublic) query.set("preview","1");
+      if (!reset && next) {
+        query.set("before_at",next.recordedAt);
+        query.set("before_id",next.id);
+      }
+      if (reset) { feed.replaceChildren(); editor.replaceChildren(); next = null; }
+      more.disabled = true;
+      status.textContent = "กำลังโหลด…";
+      try {
+        const response = await fetch(endpoint+"?"+query,{signal:controller.signal});
+        if (!response.ok) throw Error();
+        const data = await response.json();
+        if (loading !== requestNumber || controller.signal.aborted) return;
+        renderSharing(data);
+        if (reset && !showingPublic && data.status === "checked_in") {
+          const add = Object.assign(node("button","เพิ่มกิจกรรม"),{type:"button"});
+          add.onclick = () => openEditor(data.options);
+          feed.append(add);
+        }
+        const extraDays = [...new Set([selectedDay,...data.days])].filter((value) => value && value !== today).sort().reverse();
+        day.replaceChildren(new Option("วันนี้",today),new Option("ทุกวัน",""),
+          ...extraDays.map((value) => new Option(bookingDate.format(new Date(value)),value)));
+        day.value = selectedDay;
+        for (const event of data.events) {
+          const card = node("article");
+          const moment = new Date(event.recorded_at);
+          const local = Number.isFinite(moment.valueOf()) ? bangkokTime.format(moment) : "";
+          const label = event.activity_label || {food:"ให้อาหารแล้ว",medicine:"ให้ยาแล้ว",custom:"กิจกรรมอื่น"}[event.kind] || "กิจกรรม";
+          card.append(node("h4",[local,label].filter(Boolean).join(" · ")));
+          if (!selectedDay) card.append(node("p",bookingDate.format(new Date(event.recorded_at.slice(0,10)))));
+          if (!showingPublic) card.append(node("p",event.customer_visible ? "ลูกค้าเห็นกิจกรรมนี้" : "สำหรับพนักงาน"));
+          if (event.note) card.append(node("p",event.note));
+          for (const id of event.photo_ids) card.append(Object.assign(node("img"),{
+            src:endpoint+"/photos/"+id,alt:"รูปกิจกรรม",loading:"lazy",className:"care-timeline-photo",
+          }));
+          if (!showingPublic && data.status === "checked_in") {
+            const edit = Object.assign(node("button","แก้ไขกิจกรรม"),{type:"button"});
+            const remove = Object.assign(node("button","ลบกิจกรรม"),{type:"button",className:"delete-deposit"});
+            edit.onclick = () => openEditor(data.options,event);
+            remove.onclick = async () => {
+              if (!confirm("ลบกิจกรรมนี้หรือไม่?")) return;
+              remove.disabled = true;
+              try {
+                await submitCare({action:"remove-event",eventId:event.id,revision:event.revision});
+                if (card.isConnected && !controller.signal.aborted) await loadTimeline(true);
+              } catch (error) { status.textContent = error.message; }
+              finally { remove.disabled = false; }
+            };
+            card.append(edit,remove);
+          }
+          feed.append(card);
+        }
+        status.textContent = feed.querySelector("article") ? "" : "ยังไม่มีกิจกรรมในช่วงนี้";
+        next = data.next;
+        more.hidden = !next;
+      } catch {
+        if (loading === requestNumber && !controller.signal.aborted) status.textContent = "โหลดไทม์ไลน์ไม่ได้ กรุณาลองใหม่";
+      } finally {
+        if (loading === requestNumber) more.disabled = false;
+      }
+    }
+    preview.onclick = () => {
+      showingPublic = !showingPublic;
+      preview.setAttribute("aria-pressed",showingPublic);
+      preview.textContent = showingPublic ? "กลับไปดูกิจกรรมทั้งหมด" : "ดูเฉพาะที่ลูกค้าเห็น";
+      loadTimeline(true);
+    };
+    day.onchange = () => loadTimeline(true);
+    more.onclick = () => loadTimeline(false);
+    loadTimeline(true);
+  }
+
   async function showStay(id) {
     bookingRequest?.abort();
     const controller = bookingRequest = new AbortController();
@@ -1363,8 +1586,14 @@ function main(intakeGroups,couponScreen) {
       }
       if (stay.due_cents !== null) bookingContent.append(node("strong","ยอดคงเหลือ " + money(stay.due_cents)));
       const dogs = node("ul");
-      for (const dog of stay.dogs) dogs.append(node("li",dog.name + " · " +
-        (dog.nightly_rate_cents === null ? "—" : money(dog.nightly_rate_cents) + " / " + unit)));
+      for (const dog of stay.dogs) {
+        const item = node("li",dog.name + " · " +
+          (dog.nightly_rate_cents === null ? "—" : money(dog.nightly_rate_cents) + " / " + unit));
+        const timeline = Object.assign(node("button","จัดการไทม์ไลน์"),{type:"button"});
+        timeline.onclick = () => showCareTimeline(stay.id,dog);
+        item.append(timeline);
+        dogs.append(item);
+      }
       bookingContent.append(node("h4","สุนัขที่เข้าพัก"),dogs);
       const intake = showIntake(stay.intake);
       if (intake) bookingContent.append(intake);

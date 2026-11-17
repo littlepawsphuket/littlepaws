@@ -117,6 +117,7 @@ sqlite.exec(await readFile(new URL("./dog_writes.sql", import.meta.url), "utf8")
 sqlite.exec(await readFile(new URL("./booking_writes.sql", import.meta.url), "utf8"));
 sqlite.exec(await readFile(new URL("./direct_checkin.sql", import.meta.url), "utf8"));
 sqlite.exec(await readFile(new URL("./coupon_admin.sql", import.meta.url), "utf8"));
+sqlite.exec(await readFile(new URL("./care_writes.sql", import.meta.url), "utf8"));
 sqlite.exec("INSERT INTO staff_access_identities (email,user_id) VALUES ('admin@example.test',1)");
 const actor = {id:1,email:"admin@example.test"};
 const now = new Date("2026-11-17T06:30:00Z");
@@ -141,7 +142,7 @@ assert.equal(await receiveStayPayment(env.DB, 9999, payment, actor, now), "not_f
 sqlite.exec("UPDATE stays SET status='cancelled' WHERE id=1");
 assert.equal(await receiveStayPayment(env.DB, 1, {...payment, amountCents: 1, key: "3".repeat(32)}, actor, now), "balance_exceeded");
 sqlite.exec("UPDATE stays SET status='completed' WHERE id=1");
-const staffEnv = {...env, ACCESS_AUDIENCE: "fixture-audience"};
+const staffEnv = {...env, ACCESS_AUDIENCE:"fixture-audience",TIMELINE_ORIGIN:"https://customer.example.test"};
 const context = {access: {aud: "fixture-audience",
   getIdentity: async () => ({email: "ADMIN@example.test"})}};
 const staffCall = (path, options, identity) =>
@@ -171,6 +172,62 @@ assert.equal((await staffCall("/api/dashboard/finance?from=2002-13&to=2002-04",{
 sqlite.exec("DELETE FROM transactions WHERE description='dashboard finance fixture'");
 const summaryWithViews = await (await staffCall("/api/stays/1",{},context)).json();
 assert.ok(summaryWithViews.timeline_views.some((link) => link.view_count === viewCount("b")));
+const staffCarePath = "/api/stays/1/dogs/1/timeline";
+const timelineEdit = (action,data={},origin="https://staff.example.test") => ({
+  method:"POST",headers:{Origin:origin,"Content-Type":"application/json"},body:JSON.stringify({action,...data}),
+});
+assert.equal((await staffCall(staffCarePath)).status,403);
+assert.equal((await get(staffCarePath)).status,404);
+assert.equal((await staffCall("/api/stays/2/dogs/2/timeline",{},context)).status,404);
+assert.equal((await staffCall(staffCarePath+"?day=2026-02-31",{},context)).status,400);
+const staffActivities = await (await staffCall(staffCarePath+"?day=2026-01-02",{},context)).json();
+assert.equal(staffActivities.events.length,2);
+const staffPreview = await (await staffCall(staffCarePath+"?day=2026-01-02&preview=1",{},context)).json();
+assert.equal(staffPreview.events.length,1);
+assert.equal(staffPreview.events[0].note,"<b>Visible</b>");
+assert.equal((await staffCall(staffCarePath+"/photos/2",{},context)).status,200);
+assert.equal((await staffCall(staffCarePath+"/photos/3",{},context)).status,404);
+sqlite.exec("UPDATE stays SET status='checked_in',actual_checkout_at=NULL WHERE id=1");
+assert.equal((await staffCall(staffCarePath,timelineEdit("create",{},"https://other.example.test"),context)).status,403);
+assert.equal((await staff.fetch(new Request("https://staff.example.test"+staffCarePath,timelineEdit("create")),
+  {...staffEnv,TIMELINE_ORIGIN:"https://customer.example.test/wrong"},context)).status,503);
+assert.equal((await staffCall(staffCarePath,timelineEdit("create"),context)).status,200);
+const sharedCare = await (await staffCall(staffCarePath,{},context)).json();
+assert.equal(sharedCare.view_count,0);
+assert.match(sharedCare.share_url,/^https:\/\/customer\.example\.test\/updates\/[A-Za-z0-9_-]{43}$/);
+assert.equal((await staffCall(staffCarePath,timelineEdit("create"),context)).status,200);
+assert.equal((await (await staffCall(staffCarePath,{},context)).json()).share_url,sharedCare.share_url);
+const newLinkPath = new URL(sharedCare.share_url).pathname;
+assert.equal((await get(newLinkPath+"/photos/2")).status,404);
+assert.equal((await get(newLinkPath+"?day=all")).status,200);
+const staffPreviewAfterView = await (await staffCall(staffCarePath+"?preview=1",{},context)).json();
+assert.equal(staffPreviewAfterView.view_count,1);
+assert.equal(staffPreviewAfterView.events.length,1);
+const eventBody = {activity:"walk",note:"Private activity fixture",day:"2026-01-02",time:"08:15",
+  visible:false,key:"5".repeat(32)};
+assert.equal((await staffCall(staffCarePath,timelineEdit("add-event",{...eventBody,time:"24:00"}),context)).status,400);
+const eventWrites = await Promise.all([0,1].map(() => staffCall(staffCarePath,timelineEdit("add-event",eventBody),context)));
+assert.deepEqual(eventWrites.map((response) => response.status),[200,200]);
+const eventList = await (await staffCall(staffCarePath+"?day=2026-01-02",{},context)).json();
+const [createdEvent] = eventList.events.filter((event) => event.note === eventBody.note);
+assert.equal(eventList.events.filter((event) => event.note === eventBody.note).length,1);
+assert.doesNotMatch(await (await get(newLinkPath+"?day=all")).text(),/Private activity fixture/);
+const editEvent = {...eventBody,eventId:createdEvent.id,revision:createdEvent.revision,activity:"play",
+  note:"Published activity fixture",day:"2026-01-01",visible:true};
+assert.equal((await staffCall("/api/stays/1/dogs/2/timeline",timelineEdit("edit-event",editEvent),context)).status,409);
+assert.equal((await staffCall(staffCarePath,timelineEdit("edit-event",editEvent),context)).status,200);
+assert.equal((await staffCall(staffCarePath,timelineEdit("edit-event",editEvent),context)).status,409);
+assert.match(await (await get(newLinkPath+"?day=2026-01-01")).text(),/Published activity fixture/);
+const editedEvent = (await (await staffCall(staffCarePath+"?day=2026-01-01",{},context)).json()).events[0];
+assert.equal((await staffCall(staffCarePath,timelineEdit("remove-event",{eventId:editedEvent.id,revision:editedEvent.revision}),context)).status,200);
+assert.doesNotMatch(await (await get(newLinkPath+"?day=all")).text(),/Published activity fixture/);
+assert.equal((await staffCall(staffCarePath,timelineEdit("publish-day",{day:"2026-01-02"}),context)).status,200);
+assert.equal((await get(newLinkPath+"/photos/2")).status,200);
+sqlite.exec("UPDATE stays SET status='completed' WHERE id=1");
+assert.equal((await staffCall(staffCarePath,timelineEdit("add-event",{...eventBody,key:"6".repeat(32)}),context)).status,409);
+assert.equal((await staffCall(staffCarePath,timelineEdit("publish-day",{day:"2026-01-02"}),context)).status,409);
+assert.equal((await staffCall(staffCarePath,timelineEdit("revoke"),context)).status,200);
+assert.equal((await get(newLinkPath)).status,404);
 const customersPath = "/api/customers";
 const customerPath = customersPath + "/1";
 const customerDogPhoto = customerPath + "/dogs/2/photo";

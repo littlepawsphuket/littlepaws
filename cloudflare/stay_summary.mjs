@@ -13,7 +13,7 @@ export async function staySummary(db, id) {
       FROM stays s JOIN customers c ON c.id=s.customer_id LEFT JOIN appointments b ON b.stay_id=s.id
       LEFT JOIN coupon_uses used ON used.stay_id=s.id LEFT JOIN coupons coupon ON coupon.id=used.coupon_id
       WHERE s.id=?`).bind(id),
-    db.prepare(`SELECT d.name,sd.nightly_rate_cents FROM stay_dogs sd JOIN dogs d ON d.id=sd.dog_id
+    db.prepare(`SELECT d.id,d.name,sd.nightly_rate_cents FROM stay_dogs sd JOIN dogs d ON d.id=sd.dog_id
       WHERE sd.stay_id=? ORDER BY d.name,d.id`).bind(id),
     db.prepare(`SELECT occurred_on,received_time,payment_type,ROUND(amount*100) AS amount_cents FROM transactions
       WHERE stay_id=? AND payment_type!='' ORDER BY occurred_on,received_time,id`).bind(id),

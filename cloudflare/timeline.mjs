@@ -17,17 +17,18 @@ function respond(body, status, moreHeaders = {}) {
 }
 
 const missing = () => respond("Not found", 404);
-const expiry = `(julianday(s.actual_checkout_at) + CASE
+export const shareExpiryHours = `CASE
   WHEN json_valid(cfg.value) AND json_type(cfg.value) = 'integer'
     THEN CAST(cfg.value AS INTEGER)
-  ELSE 48 END / 24.0 > julianday('now'))`;
+  ELSE 48 END`;
+export const shareActive = `s.cancelled_at IS NULL AND (s.status='checked_in' OR
+  (s.status='completed' AND julianday(s.actual_checkout_at) + (${shareExpiryHours}) / 24.0 > julianday('now')))`;
 const activeLink = `FROM care_share_links l
   JOIN stays s ON s.id=l.stay_id
   JOIN stay_dogs sd ON sd.stay_id=l.stay_id AND sd.dog_id=l.dog_id
   JOIN dogs d ON d.id=l.dog_id
   LEFT JOIN system_settings cfg ON cfg.key='care_link_hours'`;
-const activeCondition = `l.token=? AND s.cancelled_at IS NULL
-  AND (s.status='checked_in' OR (s.status='completed' AND ${expiry}))`;
+const activeCondition = `l.token=? AND ${shareActive}`;
 
 const escape = (value) => String(value ?? "").replace(/[&<>"']/g, (character) => ({
   "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",

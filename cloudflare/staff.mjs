@@ -1,6 +1,7 @@
 import { receiveStayPayment, stayBalance, authorizedStaff } from "./stay_payments.mjs";
-import { pendingBookings, bookingCalendar, bookingDetails, receiveBookingDeposit, deleteBookingDeposit } from "./bookings.mjs";
+import { validDay, pendingBookings, bookingCalendar, bookingDetails, receiveBookingDeposit, deleteBookingDeposit } from "./bookings.mjs";
 import { listCoupons, couponDetails, saveCoupon, archiveCoupon } from "./coupon_admin.mjs";
+import { staffTimeline, staffCarePhoto, manageTimelineLink, writeCareEvent, timelineOrigin } from "./care_staff.mjs";
 import { dashboardFinance } from "./dashboard_finance.mjs";
 import { staySummary } from "./stay_summary.mjs";
 import { checkInBooking, checkInDirect, previewDirectStay, previewCheckInCoupon, checkInTerms } from "./check_in.mjs";
@@ -116,6 +117,7 @@ export default {
     const depositMatch = /^\/api\/bookings\/(\d+)\/deposits(?:\/(\d+))?$/.exec(url.pathname);
     const dogMatch = /^\/api\/customers\/(\d+)\/dogs(?:\/(\d+))?$/.exec(url.pathname);
     const customerMatch = /^\/api\/customers\/(\d+)(?:\/dogs\/(\d+)\/photo)?$/.exec(url.pathname);
+    const timelineMatch = /^\/api\/stays\/(\d+)\/dogs\/(\d+)\/timeline(?:\/photos\/(\d+))?$/.exec(url.pathname);
     const staySummaryMatch = /^\/api\/stays\/(\d+)$/.exec(url.pathname);
     const couponMatch = /^\/api\/coupons(?:\/(\d+))?$/.exec(url.pathname);
     const directCheckIn = url.pathname === "/api/stays/check-in";
@@ -125,11 +127,47 @@ export default {
     const bookingMatch = /^\/api\/bookings\/(\d+)$/.exec(url.pathname);
     const receiptMatch = /^\/api\/receipts\/(\d+)$/.exec(url.pathname);
     const isFile = receiptMatch || url.pathname === "/api/payment-qr.jpg";
-    if (!match && !depositMatch && !dogMatch && !customerMatch && !bookingMatch && !checkInMatch && !couponMatch && !directCheckIn && !directPreview && !couponPreview && !staySummaryMatch && !isFile && !["/", "/api/account", "/api/dashboard/finance", "/api/customers", "/api/bookings", "/api/bookings/rates", "/api/bookings/calendar", "/api/bookings/pending", "/api/stays/outstanding", "/api/stays/current"].includes(url.pathname)) return json({error: "not_found"}, 404);
+    if (!match && !depositMatch && !dogMatch && !customerMatch && !bookingMatch && !checkInMatch && !couponMatch && !directCheckIn && !directPreview && !couponPreview && !staySummaryMatch && !timelineMatch && !isFile && !["/", "/api/account", "/api/dashboard/finance", "/api/customers", "/api/bookings", "/api/bookings/rates", "/api/bookings/calendar", "/api/bookings/pending", "/api/stays/outstanding", "/api/stays/current"].includes(url.pathname)) return json({error: "not_found"}, 404);
     try {
       const user = await authorizedUser(env, ctx);
       if (!user) return json({error: "access_required"}, 403);
       if (isFile) return await privateFile(request, env, receiptMatch);
+      if (timelineMatch) {
+        const [stayId,dogId,photoId] = timelineMatch.slice(1).map((value) => value === undefined ? null : Number(value));
+        if (![stayId,dogId,photoId ?? 1].every((value) => Number.isSafeInteger(value) && value > 0)) {
+          return json({error:"not_found"},404);
+        }
+        const origin = timelineOrigin(env.TIMELINE_ORIGIN);
+        if (request.method === "GET") {
+          if (photoId !== null) {
+            if (!env.MEDIA) return json({error:"temporarily_unavailable"},503);
+            const photo = await staffCarePhoto(env.DB,env.MEDIA,stayId,dogId,photoId);
+            return photo ? new Response(photo.body,{headers:{...JSON_HEADERS,"Content-Type":"image/jpeg"}})
+              : json({error:"not_found"},404);
+          }
+          const day = url.searchParams.get("day");
+          const beforeAt = url.searchParams.get("before_at");
+          const beforeId = Number(url.searchParams.get("before_id"));
+          if ((day !== null && !validDay(day)) ||
+              (beforeAt !== null && (beforeAt.length > 60 || !Number.isFinite(Date.parse(beforeAt)) ||
+                !Number.isSafeInteger(beforeId) || beforeId < 1))) return json({error:"invalid_search"},400);
+          const timeline = await staffTimeline(env.DB,stayId,dogId,day,
+            beforeAt === null ? null : {recordedAt:beforeAt,id:beforeId},origin,Number(url.searchParams.get("preview") === "1"));
+          return timeline ? json(timeline) : json({error:"not_found"},404);
+        }
+        if (request.method !== "POST" || photoId !== null) return json({error:"method_not_allowed"},405);
+        if (request.headers.get("Origin") !== url.origin) return json({error:"invalid_origin"},403);
+        if (request.headers.get("Content-Type")?.split(";",1)[0].trim().toLowerCase() !== "application/json") {
+          return json({error:"invalid_content_type"},415);
+        }
+        const form = await smallJson(request);
+        if (!form) return json({error:"invalid"},400);
+        if (form.action === "create" && !origin) return json({status:"origin_missing"},503);
+        const status = ["add-event","edit-event","remove-event"].includes(form.action)
+          ? await writeCareEvent(env.DB,env.MEDIA,stayId,dogId,form,user)
+          : await manageTimelineLink(env.DB,stayId,dogId,form,user);
+        return json({status},{saved:200,invalid:400,conflict:409}[status]);
+      }
       if (couponMatch) {
         if (!user.is_admin) return json({error:"admin_required"},403);
         const id = couponMatch[1] ? Number(couponMatch[1]) : null;
