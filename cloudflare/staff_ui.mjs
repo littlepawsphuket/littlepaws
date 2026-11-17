@@ -2,6 +2,8 @@ const css = `
   body{font:1rem/1.5 "Sukhumvit Set",system-ui,sans-serif;background:#f2f7f3;color:#203c30;margin:0}
   main{margin:auto;max-width:52rem;padding:1rem}h1{margin:.2rem 0 1rem}
   article{background:#fff;border:1px solid #c8ded4;border-radius:1rem;margin:.6rem 0;padding:1rem}
+  dialog{width:min(34rem,calc(100% - 4rem));max-height:80vh;padding:1rem;border:1px solid #a7cbb9;border-radius:1rem;color:inherit}
+  dialog::backdrop{background:#203c3066}
   h2,p{margin:.15rem 0 .6rem}form{display:flex;flex-wrap:wrap;align-items:end;gap:.7rem}
   label{display:grid;gap:.2rem}input,button{font:inherit;padding:.55rem .7rem;border:1px solid #a7cbb9;border-radius:.6rem}
   button{background:#155747;color:#fff;cursor:pointer}button:disabled{opacity:.65} [hidden]{display:none}
@@ -69,6 +71,53 @@ function main() {
   }
 
   const bookingDate = new Intl.DateTimeFormat("th-TH", {dateStyle:"medium", timeZone:"UTC"});
+  const bookingDialog = document.getElementById("booking-detail");
+  const bookingContent = document.getElementById("booking-content");
+  const services = {overnight:["ฝากค้างคืน","คืน"], daycare:["ฝากระหว่างวัน","วัน"], monthly:["ฝากรายเดือน","เดือน"]};
+  const paymentLabels = {deposit:"มัดจำ", checkin:"ชำระวันเข้าพัก", additional:"ชำระเพิ่มเติม"};
+  async function showBooking(id) {
+    bookingContent.replaceChildren(node("p", "กำลังโหลด…"));
+    bookingDialog.showModal();
+    const controller = new AbortController();
+    bookingDialog.addEventListener("close", () => controller.abort(), {once:true});
+    try {
+      const response = await fetch("/api/bookings/" + id, {signal:controller.signal});
+      if (!response.ok) throw Error();
+      const data = await response.json();
+      if (controller.signal.aborted) return;
+      const [service, unit] = services[data.service_type] || [data.service_type, "วัน"];
+      const state = data.stay_id ? "เช็กอินแล้ว" : data.status === "cancelled" ? "ยกเลิกแล้ว" : "รอเช็กอิน";
+      const money = (cents) => baht.format(cents / 100);
+      bookingContent.replaceChildren(
+        node("h3", [data.booking_number || "#" + data.id, state].join(" · ")),
+        node("p", [data.customer, data.contact].filter(Boolean).join(" · ")),
+        node("p", [data.checkin, data.checkout].map((day) => bookingDate.format(new Date(day))).join(" – ")),
+        node("p", service + " · " + data.charged_nights + " " + unit),
+      );
+      if (data.note) bookingContent.append(node("p", data.note));
+      bookingContent.append(node("h3", "สุนัขที่จอง"));
+      const dogs = node("ul");
+      for (const dog of data.dogs) {
+        dogs.append(node("li", dog.name + " · " + (dog.nightly_rate_cents === null
+          ? "รอระบุราคา" : money(dog.nightly_rate_cents) + " / " + unit)));
+      }
+      bookingContent.append(dogs, node("h3", "การชำระเงิน"));
+      if (!data.payments.length) bookingContent.append(node("p", "ยังไม่มีรายการชำระ"));
+      for (const payment of data.payments) {
+        const date = bookingDate.format(new Date(payment.occurred_on));
+        bookingContent.append(node("p", [date, payment.received_time, paymentLabels[payment.payment_type] || payment.payment_type,
+          money(payment.amount_cents)].filter(Boolean).join(" · ")));
+      }
+      bookingContent.append(node("p", "รับชำระแล้ว " + money(data.paid_cents)));
+      if (data.balance_cents !== null) {
+        bookingContent.append(node("p", "ยอดรวม " + money(data.total_cents)),
+          node("p", "ยอดคงเหลือ " + money(data.balance_cents)));
+      }
+    } catch {
+      if (!controller.signal.aborted) bookingContent.replaceChildren(node("p", "โหลดข้อมูลการจองไม่ได้ กรุณาลองใหม่"));
+    }
+  }
+
   function bookingCard(booking) {
     const article = node("article");
     article.append(node("h2", booking.customer),
@@ -80,6 +129,10 @@ function main() {
     if (!booking.quote_pending) {
       article.append(node("p", "ยอดคงเหลือ " + baht.format(Math.max(0, booking.total_cents - booking.deposit_cents) / 100)));
     }
+    const details = node("button", "ดูการจอง");
+    details.type = "button";
+    details.addEventListener("click", () => showBooking(booking.id));
+    article.append(details);
     return article;
   }
 
@@ -162,6 +215,7 @@ function main() {
       load(true);
     });
   }
+  document.getElementById("close-booking").addEventListener("click", () => bookingDialog.close());
   bookingSearch.addEventListener("submit", (event) => {
     event.preventDefault();
     activeBookingQuery = bookingQuery.value;
@@ -190,6 +244,10 @@ export function outstandingPage() {
     <p><a id="payment-qr" href="/api/payment-qr.jpg" target="_blank" rel="noopener" hidden>เปิด QR สำหรับชำระเงิน</a></p>
     <p id="message" role="status"></p><div id="stays"></div>
     <button id="more" type="button" hidden>โหลดเพิ่มเติม</button></main>
+    <dialog id="booking-detail" aria-labelledby="booking-title">
+      <h2 id="booking-title">รายละเอียดการจอง</h2><button type="button" id="close-booking" autofocus>ปิด</button>
+      <div id="booking-content" aria-live="polite"></div>
+    </dialog>
     <script nonce="${nonce}">(${main.toString()})()</script></html>`, {
     headers: {
       "Content-Type":"text/html; charset=utf-8", "Cache-Control":"private, no-store",

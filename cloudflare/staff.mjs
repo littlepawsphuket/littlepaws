@@ -1,5 +1,5 @@
 import { receiveStayPayment, stayBalance, authorizedStaff } from "./stay_payments.mjs";
-import { pendingBookings } from "./bookings.mjs";
+import { pendingBookings, bookingDetails } from "./bookings.mjs";
 import { outstandingPage } from "./staff_ui.mjs";
 
 const JSON_HEADERS = {
@@ -95,9 +95,10 @@ export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const match = /^\/api\/stays\/(\d+)\/(payments|check-out)$/.exec(url.pathname);
+    const bookingMatch = /^\/api\/bookings\/(\d+)$/.exec(url.pathname);
     const receiptMatch = /^\/api\/receipts\/(\d+)$/.exec(url.pathname);
     const isFile = receiptMatch || url.pathname === "/api/payment-qr.jpg";
-    if (!match && !isFile && !["/", "/api/account", "/api/bookings/pending", "/api/stays/outstanding", "/api/stays/current"].includes(url.pathname)) return json({error: "not_found"}, 404);
+    if (!match && !bookingMatch && !isFile && !["/", "/api/account", "/api/bookings/pending", "/api/stays/outstanding", "/api/stays/current"].includes(url.pathname)) return json({error: "not_found"}, 404);
     try {
       const user = await authorizedUser(env, ctx);
       if (!user) return json({error: "access_required"}, 403);
@@ -107,6 +108,12 @@ export default {
         if (url.pathname === "/") return outstandingPage();
         if (url.pathname === "/api/account") {
           return json({id: user.id, displayName: user.display_name, isAdmin: !!user.is_admin});
+        }
+        if (bookingMatch) {
+          const id = Number(bookingMatch[1]);
+          if (!Number.isSafeInteger(id) || id < 1) return json({error: "not_found"}, 404);
+          const details = await bookingDetails(env.DB, id);
+          return details ? json(details) : json({error: "not_found"}, 404);
         }
         if (url.pathname === "/api/bookings/pending") {
           const after = Number(url.searchParams.get("after") || 0);

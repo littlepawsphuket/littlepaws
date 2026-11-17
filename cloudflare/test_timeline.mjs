@@ -130,6 +130,19 @@ for (const search of ["", "ab12cd", "Fixture owner", "Other dog"]) {
 }
 const noBookings = await staffCall(bookingPath + "?q=EF34GH", {}, context);
 assert.deepEqual((await noBookings.json()).bookings, []);
+assert.equal((await staffCall("/api/bookings/1")).status, 403);
+assert.equal((await get("/api/bookings/1")).status, 404);
+assert.equal((await staffCall("/api/bookings/9999", {}, context)).status, 404);
+const bookingDetails = await staffCall("/api/bookings/1", {}, context);
+assert.equal(bookingDetails.headers.get("Cache-Control"), "private, no-store");
+const detail = await bookingDetails.json();
+assert.deepEqual(detail.dogs, [{name:"Other dog", nightly_rate_cents:60000}]);
+assert.deepEqual(detail.payments, [{occurred_on:"2026-01-02", received_time:null, payment_type:"deposit", amount_cents:35000}]);
+assert.equal(detail.balance_cents, 85000);
+assert.equal(detail.charged_nights, 2);
+const linkedBooking = await (await staffCall("/api/bookings/3", {}, context)).json();
+assert.equal(linkedBooking.stay_id, 1);
+assert.equal(linkedBooking.balance_cents, null);
 const qrPath = "/api/payment-qr.jpg";
 const receiptPath = "/api/receipts/1";
 for (const filePath of [qrPath, receiptPath]) {

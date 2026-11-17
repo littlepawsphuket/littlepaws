@@ -40,7 +40,7 @@ D1 transactions use batches. Port staff write operations individually so checks 
 
 ## Staff preview
 
-`staff.mjs` is a separate Worker for authenticated staff. It lists current stays and pending bookings, supports check-out, and records payments for outstanding stays with the D1 balance check and duplicate protection in `stay_payments.mjs`. This preview does not replace the full Mac staff application.
+`staff.mjs` is a separate Worker for authenticated staff. It lists current stays and pending bookings with their details and payment history, supports check-out, and records payments for outstanding stays with the D1 balance check and duplicate protection in `stay_payments.mjs`. This preview does not replace the full Mac staff application.
 
 The sample `wrangler.staff.toml` disables public and preview URLs. To set up a private staging instance, use a separate hostname protected by Cloudflare Access, point `DB` to the staging database and `MEDIA` to the staging private bucket, apply `staff_access.sql`, and set `ACCESS_AUDIENCE` to that app's audience. Provision the authorized email-to-existing-user mapping in `staff_access_identities` using lowercase email addresses. Never infer staff identities from customer emails. Requests without trusted Access context, a matching audience, and an active mapped account are denied. Keep the staff Worker separate from the customer link Worker.
 
