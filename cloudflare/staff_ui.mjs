@@ -1,5 +1,7 @@
 import {couponScreen} from "./coupon_ui.mjs";
 import {settingsScreen} from "./settings_ui.mjs";
+import {ledgerScreen} from "./ledger_ui.mjs";
+import {ledgerKinds,ledgerCategories} from "./ledger.mjs";
 import {themes,themeName} from "./system_settings.mjs";
 import {intakeGroups} from "./stay_terms.mjs";
 
@@ -69,10 +71,18 @@ const css = `
   .payment-correction{margin:.6rem 0;padding:.6rem;border:1px solid var(--line);border-radius:.65rem}
   .payment-correction label{min-width:0}
   .payment-correction textarea{box-sizing:border-box;width:100%}
+  .ledger-sheet{overflow:auto;background:white;border:1px solid var(--line);border-radius:.75rem}
+  .ledger-sheet table{border-collapse:collapse;width:100%;min-width:34rem;text-align:start}
+  .ledger-sheet th,.ledger-sheet td{padding:.65rem;vertical-align:top;text-align:start;border-bottom:1px solid var(--line)}
+  .ledger-sheet th{background:var(--page)}.ledger-sheet p{margin:.2rem 0 .3rem;overflow-wrap:anywhere}
+  .ledger-sheet tr:last-child td{border-bottom:0}
+  .ledger-fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,14rem),1fr));gap:.6rem;padding:0;margin:0;border:0;flex-basis:100%;min-width:0}
+  .ledger-fields :is(input,select){width:100%;min-width:0;box-sizing:border-box}
+  #ledger-editor{width:min(42rem,calc(100% - 3rem))}
   #stays>article>button{margin-top:1rem}
 `;
 
-function main(intakeGroups,couponScreen,settingsScreen,themeLabels,canExport) {
+function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,themeLabels,ledgerKinds,ledgerCategories,canExport) {
   const results = document.getElementById("stays");
   const message = document.getElementById("message");
   const more = document.getElementById("more");
@@ -265,6 +275,16 @@ function main(intakeGroups,couponScreen,settingsScreen,themeLabels,canExport) {
         if (!response.ok) throw Error();
         const data = await response.json();
         if (requestId === requestNumber) settingsAdmin.render(data);
+        return;
+      }
+      if (selected === "ledger") {
+        const response = await fetch("/api/transactions?" + ledger.query(cursor));
+        if (!response.ok) throw Error();
+        const data = await response.json();
+        if (requestId !== requestNumber) return;
+        cursor = data.nextBefore;
+        ledger.render(data);
+        more.hidden = !cursor;
         return;
       }
       if (selected === "calendar") {
@@ -2157,25 +2177,32 @@ function main(intakeGroups,couponScreen,settingsScreen,themeLabels,canExport) {
   const couponAdmin = couponScreen({node,key,baht,results,message,thaiDate:bookingDate,
     reload:() => { message.textContent = ""; return load(true); },isActive:() => selected === "coupons"});
   const settingsAdmin = settingsScreen({node,results,message,themeLabels,thaiDate:bookingDate,
-    reload:() => load(true),isActive:() => selected === "settings"});
-  for (const mode of modes) {
-    mode.addEventListener("click", () => {
-      if (selected === mode.dataset.mode) return;
-      selected = mode.dataset.mode;
-      couponAdmin.visible(selected === "coupons");
-      financeToolbar.hidden = selected !== "finance";
-      historyToolbar.hidden = selected !== "history";
-      addBooking.hidden = selected !== "bookings" && selected !== "calendar";
-      calendarToolbar.hidden = selected !== "calendar";
-      addCustomer.hidden = selected !== "customers";
-      bookingSearch.hidden = selected !== "bookings" && selected !== "customers";
-      searchLabel.textContent = selected === "customers" ? "ชื่อลูกค้าหรือชื่อสุนัข" : "เลขจอง ชื่อลูกค้า หรือชื่อสุนัข";
-      bookingQuery.value = queries[selected] || "";
-      for (const option of modes) option.setAttribute("aria-pressed", option === mode);
-      message.textContent = "";
-      load(true);
-    });
+    reload:() => load(true),isActive:() => selected === "settings",openLedger:() => setMode("ledger")});
+  const ledger = ledgerScreen({node,results,message,reload:() => load(true),isActive:() => selected === "ledger",
+    today:() => parts.format(new Date()),dateLabel:(day) => bookingDate.format(new Date(day)),key,baht,
+    openStay:showStay,openBooking:showBooking,labels:ledgerKinds,categories:ledgerCategories});
+  function setMode(mode) {
+    if (selected === mode) return;
+    selected = mode;
+    couponAdmin.visible(selected === "coupons");
+    ledger.visible(selected === "ledger");
+    financeToolbar.hidden = selected !== "finance";
+    historyToolbar.hidden = selected !== "history";
+    addBooking.hidden = selected !== "bookings" && selected !== "calendar";
+    calendarToolbar.hidden = selected !== "calendar";
+    addCustomer.hidden = selected !== "customers";
+    bookingSearch.hidden = selected !== "bookings" && selected !== "customers";
+    searchLabel.textContent = selected === "customers" ? "ชื่อลูกค้าหรือชื่อสุนัข" : "เลขจอง ชื่อลูกค้า หรือชื่อสุนัข";
+    bookingQuery.value = queries[selected] || "";
+    const activeMode = mode === "ledger" ? (document.getElementById("ledger-back").hidden ? "finance" : "settings") : mode;
+    for (const option of modes) option.setAttribute("aria-pressed",String(option.dataset.mode === activeMode));
+    message.textContent = "";
+    load(true);
   }
+  for (const mode of modes) mode.addEventListener("click",() => setMode(mode.dataset.mode));
+  document.getElementById("ledger-back").onclick = () => setMode("settings");
+  const openStaffLedger = document.getElementById("open-staff-ledger");
+  if (openStaffLedger) openStaffLedger.onclick = () => setMode("ledger");
   bookingDialog.addEventListener("close", () => bookingRequest?.abort());
   document.getElementById("close-booking").addEventListener("click", () => bookingDialog.close());
   bookingSearch.addEventListener("submit", (event) => {
@@ -2224,7 +2251,24 @@ export function outstandingPage(isAdmin = false,canExport = false,theme = "class
       <label>ตั้งแต่เดือน<input id="finance-from" type="month" required></label>
       <label>ถึงเดือน<input id="finance-to" type="month" required></label>
       <button>แสดงผล</button>
+      ${isAdmin ? "" : '<button type="button" id="open-staff-ledger">รายรับ–รายจ่าย</button>'}
     </form>
+    <section id="ledger-toolbar" hidden>
+      <h2>รายรับ–รายจ่าย</h2>
+      <div class="workspace-menu">
+        <button type="button" id="ledger-back" ${isAdmin ? "" : "hidden"}>กลับไปหน้าตั้งค่า</button>
+        <button type="button" id="ledger-add">เพิ่มรายการ</button>
+        <button type="button" id="ledger-export">Export CSV ทั้งหมด</button>
+      </div>
+      <form id="ledger-filters">
+        <label>ประเภท<select id="ledger-kind"><option value="all">ทั้งหมด</option><option value="income">รายรับ</option>
+          <option value="expense">รายจ่าย</option><option value="refund">คืนเงิน</option></select></label>
+        <label>ตั้งแต่<input id="ledger-start" type="date" required></label>
+        <label>ถึง<input id="ledger-end" type="date" required></label>
+        <button>แสดงรายการ</button>
+        <button type="button" id="ledger-reset">เดือนปัจจุบัน</button>
+      </form>
+    </section>
     <form id="history-toolbar" hidden>
       <div class="history-status workspace-menu" role="group" aria-label="สถานะการเข้าพัก">
         <button type="button" data-status="all" aria-pressed="true">ทั้งหมด</button>
@@ -2257,7 +2301,11 @@ export function outstandingPage(isAdmin = false,canExport = false,theme = "class
       <h2 id="coupon-title">จัดการคูปอง</h2><button type="button" id="coupon-close" autofocus>ปิด</button>
       <p id="coupon-status" role="status"></p><div id="coupon-content"></div>
     </dialog>
-    <script nonce="${nonce}">(${main.toString()})(${JSON.stringify(intakeGroups)},${couponScreen.toString()},${settingsScreen.toString()},${JSON.stringify(themes)},${canExport})</script></html>`, {
+    <dialog id="ledger-editor" aria-labelledby="ledger-title">
+      <h2 id="ledger-title">รายรับ–รายจ่าย</h2><button type="button" id="ledger-close" autofocus>ปิด</button>
+      <div id="ledger-content" aria-live="polite"></div>
+    </dialog>
+    <script nonce="${nonce}">(${main.toString()})(${JSON.stringify(intakeGroups)},${couponScreen.toString()},${settingsScreen.toString()},${ledgerScreen.toString()},${JSON.stringify(themes)},${JSON.stringify(ledgerKinds)},${JSON.stringify(ledgerCategories)},${canExport})</script></html>`, {
     headers: {
       "Content-Type":"text/html; charset=utf-8", "Cache-Control":"private, no-store",
       "X-Content-Type-Options":"nosniff",

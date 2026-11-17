@@ -1,6 +1,6 @@
 # 🐾 Little Paws Finance Manager
 
-Cloudflare migration status and test commands are in [cloudflare/README.md](cloudflare/README.md). The Workers implementation currently covers customer timelines and a staff payment preview. The full application continues to run via Flask on macOS.
+Cloudflare migration status and test commands are in [cloudflare/README.md](cloudflare/README.md). The Cloudflare staging deployment includes customer timelines and an Access-protected staff workspace. The full application continues to run via Flask on macOS.
 
 For installations from GitHub, copy the original payment QR privately to `data/payment-qr.jpg` (or the configured `LITTLE_PAWS_DATA` location). The app serves it to signed-in users. Guide screenshots are optional installation files and the text guide works without them.
 

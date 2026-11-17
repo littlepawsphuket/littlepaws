@@ -20,7 +20,8 @@ const env = {
         all: async () => ({results: stmt.all(...args)}),
         run: () => {
           if (/^\s*(?:SELECT|WITH)\b/i.test(sql)) return {results: stmt.all(...args)};
-          return {results: [], meta: {changes: stmt.run(...args).changes}};
+          const result = stmt.run(...args);
+          return {results:[],meta:{changes:result.changes,last_row_id:result.lastInsertRowid}};
         },
       })};
     },
@@ -43,7 +44,9 @@ const env = {
       try { return {body: await readFile(join(media, key))}; }
       catch (error) { if (error.code !== "ENOENT") throw error; return null; }
     },
-    async put(key, bytes) { updatedMedia.set(key, Uint8Array.from(bytes)); },
+    async put(key, bytes) {
+      updatedMedia.set(key,bytes instanceof Blob ? new Uint8Array(await bytes.arrayBuffer()) : Uint8Array.from(bytes));
+    },
     async delete(key) { updatedMedia.delete(key); removedMedia.add(key); },
     head: (key) => stat(join(media, key)),
   },
@@ -132,6 +135,7 @@ sqlite.exec(await readFile(new URL("./coupon_admin.sql", import.meta.url), "utf8
 sqlite.exec(await readFile(new URL("./care_writes.sql", import.meta.url), "utf8"));
 sqlite.exec(await readFile(new URL("./care_photo_writes.sql", import.meta.url), "utf8"));
 sqlite.exec(await readFile(new URL("./stay_payment_writes.sql", import.meta.url), "utf8"));
+sqlite.exec(await readFile(new URL("./ledger_writes.sql", import.meta.url), "utf8"));
 sqlite.exec("INSERT INTO staff_access_identities (email,user_id) VALUES ('admin@example.test',1)");
 const actor = {id:1,email:"admin@example.test"};
 const now = new Date("2026-11-17T06:30:00Z");
@@ -956,6 +960,49 @@ assert.equal(refundSummary.refundable_cents,20000);
 assert.equal(refundSummary.refunds.length,1);
 assert.equal(refundSummary.refunds[0].amount,300);
 assert.equal(refundSummary.refunds[0].received_time,"10:40");
+const ledgerPath = "/api/transactions";
+const ledgerRange = ledgerPath+"?start=2026-01-01&end=2026-01-31&kind=expense";
+const ledgerEntry = {occurredOn:"2026-01-02",kind:"expense",category:"ค่าน้ำไฟ",description:"รายการนำเข้าทดสอบ",
+  amountCents:41775,customerId:null,stayId:null,merchant:"ร้านทดสอบ",paymentMethod:"",reference:"",note:"",
+  revision:null,key:"a".repeat(32)};
+assert.equal((await get(ledgerRange)).status,404);
+assert.equal((await staffCall(ledgerRange)).status,403);
+assert.equal((await staffCall(ledgerPath+"?start=2026-02-30",{},context)).status,400);
+assert.equal((await staffCall(ledgerPath,customerWrite("POST",ledgerEntry,"https://other.example.test"),context)).status,403);
+sqlite.exec(`INSERT INTO transactions(id,occurred_on,kind,category,description,amount,receipt)
+  VALUES(2100,'2026-01-02','expense','อุปกรณ์','Imported fixture expense',417.75,'fixture.pdf')`);
+const ledgerDetails = async (id) => (await staffCall(ledgerPath+"/"+id,{},context)).json();
+const paymentsLocked = (await ledgerDetails(2004)).transaction;
+assert.equal(paymentsLocked.managed,1);
+assert.equal((await staffCall(ledgerPath+"/2004",customerWrite("DELETE",{revision:null}),context)).status,409);
+assert.equal((await staffCall(ledgerPath+"/2100",customerWrite("PUT",ledgerEntry),context)).status,200);
+const updatedLedger = (await ledgerDetails(2100)).transaction;
+assert.equal(updatedLedger.category,"ค่าน้ำไฟ");
+assert.equal(updatedLedger.amount_cents,41775);
+assert.equal(updatedLedger.has_receipt,1);
+assert.equal((await staffCall(ledgerPath+"/2100",customerWrite("PUT",ledgerEntry),context)).status,409);
+assert.equal((await staffCall(ledgerPath+"/2100",customerWrite("DELETE",{revision:null}),context)).status,409);
+const receiptBytes = "%PDF-1.4\nsynthetic ledger receipt";
+const addLedgerWithReceipt = (type,bytes = receiptBytes) => {
+  const body = new FormData();
+  body.set("entry",JSON.stringify(ledgerEntry));
+  body.set("receipt",new File([bytes],"fixture."+type,{type:"application/pdf"}));
+  return staffCall(ledgerPath,{method:"POST",headers:{Origin:"https://staff.example.test"},body},context);
+};
+assert.equal((await addLedgerWithReceipt("pdf","this is not a PDF")).status,400);
+const ledgerCreates = await Promise.all([addLedgerWithReceipt("pdf"),addLedgerWithReceipt("pdf")]);
+assert.deepEqual(ledgerCreates.map((response) => response.status).sort(),[200,201]);
+const [createdLedger,replayedLedger] = await Promise.all(ledgerCreates.map((response) => response.json()));
+assert.equal(createdLedger.id,replayedLedger.id);
+const uploadedReceipt = await staffCall("/api/receipts/"+createdLedger.id,{},context);
+assert.equal(await uploadedReceipt.text(),receiptBytes);
+const ledgerPage = await (await staffCall(ledgerRange,{},context)).json();
+assert.ok(ledgerPage.transactions.every((row) => row.kind === "expense"));
+assert.ok(ledgerPage.transactions.some((row) => row.id === createdLedger.id));
+const createdRevision = (await ledgerDetails(createdLedger.id)).transaction.revision;
+assert.equal((await staffCall(ledgerPath+"/"+createdLedger.id,customerWrite("DELETE",{revision:createdRevision}),context)).status,200);
+assert.equal((await staffCall("/api/receipts/"+createdLedger.id,{},context)).status,404);
+assert.equal((await staffCall("/api/receipts/2100",{},context)).status,200);
 sqlite.exec("UPDATE app_users SET active=0 WHERE id=1");
 assert.equal((await staffCall(paymentPath, staffOptions, context)).status, 403);
 assert.equal(await receiveStayPayment(env.DB, 1, {...payment, key: "5".repeat(32)}, actor, now), "forbidden");

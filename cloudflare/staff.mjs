@@ -6,6 +6,7 @@ import { staffTimeline, staffCarePhoto, manageTimelineLink, writeCareEvent, time
 import { exportCare } from "./care_exports.mjs";
 import { exportDocument } from "./document_exports.mjs";
 import { dashboardFinance } from "./dashboard_finance.mjs";
+import { ledgerBodyLimit, ledgerChoices, ledgerList, saveLedgerEntry, deleteLedgerEntry } from "./ledger.mjs";
 import { staySummary } from "./stay_summary.mjs";
 import { stayHistory } from "./stay_history.mjs";
 import { removeStayPayment, cancelStay, recordStayRefund } from "./stay_payments.mjs";
@@ -140,10 +141,46 @@ export default {
     const holidayMatch = /^\/api\/settings\/holidays(?:\/(\d+))?$/.exec(url.pathname);
     const history = url.pathname === "/api/stays/history";
     const stayChangeMatch = /^\/api\/stays\/(\d+)\/(cancel|refund|payments\/(\d+))$/.exec(url.pathname);
-    if (!match && !stayChangeMatch && !depositMatch && !dogMatch && !customerMatch && !bookingMatch && !checkInMatch && !couponMatch && !documentMatch && !directCheckIn && !directPreview && !couponPreview && !staySummaryMatch && !timelineMatch && !careMediaMatch && !careExportMatch && !isFile && !settings && !holidayMatch && !history && !["/", "/api/account", "/api/dashboard/finance", "/api/customers", "/api/bookings", "/api/bookings/rates", "/api/bookings/calendar", "/api/bookings/pending", "/api/stays/outstanding", "/api/stays/current"].includes(url.pathname)) return json({error: "not_found"}, 404);
+    const ledgerMatch = /^\/api\/transactions(?:\/(new|\d+))?$/.exec(url.pathname);
+    if (!match && !stayChangeMatch && !depositMatch && !dogMatch && !customerMatch && !bookingMatch && !checkInMatch && !couponMatch && !documentMatch && !directCheckIn && !directPreview && !couponPreview && !staySummaryMatch && !timelineMatch && !careMediaMatch && !careExportMatch && !isFile && !settings && !holidayMatch && !history && !ledgerMatch && !["/", "/api/account", "/api/dashboard/finance", "/api/customers", "/api/bookings", "/api/bookings/rates", "/api/bookings/calendar", "/api/bookings/pending", "/api/stays/outstanding", "/api/stays/current"].includes(url.pathname)) return json({error: "not_found"}, 404);
     try {
       const user = await authorizedUser(env, ctx);
       if (!user) return json({error: "access_required"}, 403);
+      if (ledgerMatch) {
+        const raw = ledgerMatch[1];
+        const id = raw && raw !== "new" ? Number(raw) : null;
+        if (id !== null && (!Number.isSafeInteger(id) || id<1)) return json({error:"not_found"},404);
+        if (request.method === "GET") {
+          const page = raw ? await ledgerChoices(env.DB,id) : await ledgerList(env.DB,url.searchParams);
+          return page ? json(page) : json({error:raw ? "not_found" : "invalid_search"},raw ? 404 : 400);
+        }
+        if (!(id === null ? raw !== "new" && request.method === "POST" : ["PUT","DELETE"].includes(request.method))) {
+          return json({error:"method_not_allowed"},405);
+        }
+        if (request.headers.get("Origin") !== url.origin) return json({error:"invalid_origin"},403);
+        const contentType = request.headers.get("Content-Type") || "";
+        let result;
+        if (contentType.split(";",1)[0].trim().toLowerCase() === "application/json") {
+          const form = await smallJson(request,16384);
+          if (!form) return json({status:"invalid"},400);
+          result = request.method === "DELETE" ? await deleteLedgerEntry(env,id,form.revision,user)
+            : await saveLedgerEntry(env,id,form,null,user);
+        } else if (request.method !== "DELETE" && /^multipart\/form-data;/i.test(contentType)) {
+          const bytes = await boundedBody(request,ledgerBodyLimit);
+          if (!bytes) return json({status:"invalid_size"},413);
+          let data, form;
+          try {
+            data = await new Response(bytes,{headers:{"Content-Type":contentType}}).formData();
+            const rawEntry = data.get("entry");
+            if (typeof rawEntry !== "string" || rawEntry.length>16384) return json({status:"invalid"},400);
+            form = JSON.parse(rawEntry);
+          } catch { return json({status:"invalid"},400); }
+          if (!form || Array.isArray(form) || typeof form !== "object") return json({status:"invalid"},400);
+          result = await saveLedgerEntry(env,id,form,data.get("receipt"),user);
+        } else return json({error:"invalid_content_type"},415);
+        return json(result,{created:201,saved:200,deleted:200,invalid:400,invalid_receipt:400,
+          not_found:404,conflict:409,storage_unavailable:503}[result.status]);
+      }
       if (stayChangeMatch) {
         const stayId = Number(stayChangeMatch[1]);
         const action = stayChangeMatch[2];
