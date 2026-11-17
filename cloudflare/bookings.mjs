@@ -38,7 +38,7 @@ export async function bookingDetails(db, id) {
     db.prepare(`SELECT d.name,ad.nightly_rate_cents
       FROM appointment_dogs ad JOIN dogs d ON d.id=ad.dog_id
       WHERE ad.appointment_id=? ORDER BY d.name,d.id`).bind(id),
-    db.prepare(`SELECT t.occurred_on,t.received_time,t.payment_type,ROUND(t.amount*100) AS amount_cents
+    db.prepare(`SELECT t.id,t.payment_key,t.occurred_on,t.received_time,t.payment_type,ROUND(t.amount*100) AS amount_cents
       FROM appointments a JOIN transactions t
         ON (a.stay_id IS NOT NULL AND t.stay_id=a.stay_id)
         OR (a.stay_id IS NULL AND t.deposit_appointment_id=a.id)
@@ -60,7 +60,9 @@ export async function receiveBookingDeposit(db, bookingId, payment, actor) {
   if (!Number.isSafeInteger(bookingId) || bookingId < 1 || !normalized) return "invalid";
   const {amountCents, paymentDate, key, paidAt} = normalized;
   const recorded = `EXISTS (SELECT 1 FROM transactions t
-    WHERE t.deposit_appointment_id=a.id AND t.payment_key=?)`;
+    WHERE t.deposit_appointment_id=a.id AND t.payment_key=?)
+    OR EXISTS (SELECT 1 FROM booking_deposit_deletions d
+      WHERE d.appointment_id=a.id AND d.payment_key=?)`;
   const pending = "a.status='pending' AND a.stay_id IS NULL";
   const [insert, lookup] = await db.batch([
     db.prepare(`INSERT INTO transactions
@@ -70,10 +72,10 @@ export async function receiveBookingDeposit(db, bookingId, payment, actor) {
       WHERE a.id=? AND ${authorizedStaff} AND ${pending}
         AND NOT (${recorded})
         AND (${quotePending} OR ${deposited}+? <= ROUND(a.agreed_total*100))`)
-      .bind(paymentDate, amountCents, key, paidAt, bookingId, actor.id, actor.email, key, amountCents),
-    db.prepare(`SELECT (${authorizedStaff}) AS authorized, (${recorded}) AS recorded,
+      .bind(paymentDate, amountCents, key, paidAt, bookingId, actor.id, actor.email, key, key, amountCents),
+    db.prepare(`SELECT (${recorded}) AS recorded, (${authorizedStaff}) AS authorized,
       (${pending}) AS pending FROM appointments a WHERE a.id=?`)
-      .bind(actor.id, actor.email, key, bookingId),
+      .bind(key, key, actor.id, actor.email, bookingId),
   ]);
   if (insert.meta.changes === 1) return "saved";
   const booking = lookup.results[0];
@@ -81,4 +83,38 @@ export async function receiveBookingDeposit(db, bookingId, payment, actor) {
   if (!booking.authorized) return "forbidden";
   if (booking.recorded) return "duplicate";
   return booking.pending ? "balance_exceeded" : "booking_closed";
+}
+
+export async function deleteBookingDeposit(db, bookingId, transactionId, {key}, actor) {
+  if (![bookingId, transactionId].every((id) => Number.isSafeInteger(id) && id > 0) ||
+      typeof key !== "string" || !key || key.length > 128) return "invalid";
+  const match = `t.id=? AND t.deposit_appointment_id=? AND t.payment_key=?
+    AND t.payment_type='deposit' AND t.stay_id IS NULL`;
+  const identity = [actor.id, actor.email];
+  const identifiers = [transactionId, bookingId, key];
+  const [archive, , lookup] = await db.batch([
+    db.prepare(`INSERT INTO booking_deposit_deletions
+      (appointment_id,transaction_id,payment_key,amount,occurred_on,received_time,deleted_at,deleted_by)
+      SELECT t.deposit_appointment_id,t.id,t.payment_key,t.amount,t.occurred_on,t.received_time,?,?
+      FROM transactions t JOIN appointments a ON a.id=t.deposit_appointment_id
+      WHERE ${match} AND a.stay_id IS NULL AND ${authorizedStaff}
+      ON CONFLICT (appointment_id,payment_key) DO NOTHING`)
+      .bind(new Date().toISOString(), actor.id, ...identifiers, ...identity),
+    db.prepare(`DELETE FROM transactions AS t WHERE ${match} AND ${authorizedStaff}
+      AND EXISTS (SELECT 1 FROM booking_deposit_deletions d
+        WHERE d.appointment_id=t.deposit_appointment_id AND d.payment_key=t.payment_key
+          AND d.transaction_id=t.id)
+      AND EXISTS (SELECT 1 FROM appointments a WHERE a.id=t.deposit_appointment_id AND a.stay_id IS NULL)`)
+      .bind(...identifiers, ...identity),
+    db.prepare(`SELECT (${authorizedStaff}) AS authorized,
+      a.stay_id IS NOT NULL AS checked_in,
+      EXISTS(SELECT 1 FROM booking_deposit_deletions d
+        WHERE d.transaction_id=? AND d.appointment_id=? AND d.payment_key=?) AS deleted
+      FROM appointments a WHERE a.id=?`).bind(...identity, ...identifiers, bookingId),
+  ]);
+  const booking = lookup.results[0];
+  if (!booking) return "not_found";
+  if (!booking.authorized) return "forbidden";
+  if (archive.meta.changes === 1 || booking.deleted) return "deleted";
+  return booking.checked_in ? "booking_closed" : "not_found";
 }

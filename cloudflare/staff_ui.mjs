@@ -3,6 +3,7 @@ const css = `
   main{margin:auto;max-width:52rem;padding:1rem}h1{margin:.2rem 0 1rem}
   article{background:#fff;border:1px solid #c8ded4;border-radius:1rem;margin:.6rem 0;padding:1rem}
   dialog{width:min(34rem,calc(100% - 4rem));max-height:80vh;padding:1rem;border:1px solid #a7cbb9;border-radius:1rem;color:inherit}
+  .delete-deposit{margin-inline-start:.75rem;background:#fff1ed;color:#8b3225;border-color:#e6a99b}
   dialog::backdrop{background:#203c3066}
   h2,p{margin:.15rem 0 .6rem}form{display:flex;flex-wrap:wrap;align-items:end;gap:.7rem}
   label{display:grid;gap:.2rem}input,button{font:inherit;padding:.55rem .7rem;border:1px solid #a7cbb9;border-radius:.6rem}
@@ -135,8 +136,38 @@ function main() {
     return form;
   }
 
+  function depositDeleteButton(bookingId, payment) {
+    const label = "ลบรายการมัดจำ " + baht.format(payment.amount_cents / 100);
+    const button = Object.assign(node("button", "🗑"), {type:"button", title:label});
+    button.setAttribute("aria-label", label);
+    button.className = "delete-deposit";
+    button.addEventListener("click", async () => {
+      if (!confirm("ยืนยัน" + label + " หรือไม่?")) return;
+      button.disabled = true;
+      const status = document.getElementById("booking-status");
+      try {
+        const response = await fetch("/api/bookings/" + bookingId + "/deposits/" + payment.id, {
+          method:"DELETE", headers:{"Content-Type":"application/json"},
+          body:JSON.stringify({key:payment.payment_key}),
+        });
+        if (!response.ok) throw Error();
+        if (button.isConnected && bookingDialog.open) {
+          await showBooking(bookingId);
+          status.textContent = "ลบรายการมัดจำแล้ว";
+        }
+        if (selected === "bookings") await load(true);
+      } catch {
+        if (button.isConnected) status.textContent = "ยังยืนยันการลบไม่ได้ กรุณาตรวจรายการแล้วลองใหม่";
+      } finally {
+        button.disabled = false;
+      }
+    });
+    return button;
+  }
+
   let bookingRequest;
   async function showBooking(id) {
+    document.getElementById("booking-status").textContent = "";
     bookingContent.replaceChildren(node("p", "กำลังโหลด…"));
     if (!bookingDialog.open) bookingDialog.showModal();
     bookingRequest?.abort();
@@ -166,8 +197,12 @@ function main() {
       if (!data.payments.length) bookingContent.append(node("p", "ยังไม่มีรายการชำระ"));
       for (const payment of data.payments) {
         const date = bookingDate.format(new Date(payment.occurred_on));
-        bookingContent.append(node("p", [date, payment.received_time, paymentLabels[payment.payment_type] || payment.payment_type,
-          money(payment.amount_cents)].filter(Boolean).join(" · ")));
+        const row = node("p", [date, payment.received_time, paymentLabels[payment.payment_type] || payment.payment_type,
+          money(payment.amount_cents)].filter(Boolean).join(" · "));
+        if (!data.stay_id && payment.payment_type === "deposit" && payment.payment_key) {
+          row.append(depositDeleteButton(data.id, payment));
+        }
+        bookingContent.append(row);
       }
       bookingContent.append(node("p", "รับชำระแล้ว " + money(data.paid_cents)));
       if (data.balance_cents !== null) {
@@ -311,6 +346,7 @@ export function outstandingPage() {
     <button id="more" type="button" hidden>โหลดเพิ่มเติม</button></main>
     <dialog id="booking-detail" aria-labelledby="booking-title">
       <h2 id="booking-title">รายละเอียดการจอง</h2><button type="button" id="close-booking" autofocus>ปิด</button>
+      <p id="booking-status" role="status"></p>
       <div id="booking-content" aria-live="polite"></div>
     </dialog>
     <script nonce="${nonce}">(${main.toString()})()</script></html>`, {

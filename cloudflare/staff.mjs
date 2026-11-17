@@ -1,5 +1,5 @@
 import { receiveStayPayment, stayBalance, authorizedStaff } from "./stay_payments.mjs";
-import { pendingBookings, bookingDetails, receiveBookingDeposit } from "./bookings.mjs";
+import { pendingBookings, bookingDetails, receiveBookingDeposit, deleteBookingDeposit } from "./bookings.mjs";
 import { outstandingPage } from "./staff_ui.mjs";
 
 const JSON_HEADERS = {
@@ -95,7 +95,7 @@ export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const match = /^\/api\/stays\/(\d+)\/(payments|check-out)$/.exec(url.pathname);
-    const depositMatch = /^\/api\/bookings\/(\d+)\/deposits$/.exec(url.pathname);
+    const depositMatch = /^\/api\/bookings\/(\d+)\/deposits(?:\/(\d+))?$/.exec(url.pathname);
     const bookingMatch = /^\/api\/bookings\/(\d+)$/.exec(url.pathname);
     const receiptMatch = /^\/api\/receipts\/(\d+)$/.exec(url.pathname);
     const isFile = receiptMatch || url.pathname === "/api/payment-qr.jpg";
@@ -141,7 +141,7 @@ export default {
         const stays = results.slice(0, 25);
         return json({stays, nextBefore: results.length > stays.length ? stays.at(-1).id : null});
       }
-      if (request.method !== "POST") return json({error: "method_not_allowed"}, 405);
+      if (request.method !== (depositMatch?.[2] ? "DELETE" : "POST")) return json({error: "method_not_allowed"}, 405);
       if (request.headers.get("Origin") !== url.origin) return json({error: "invalid_origin"}, 403);
       if (match?.[2] === "check-out") return checkout(env.DB, Number(match[1]), user);
       if (request.headers.get("Content-Type")?.split(";", 1)[0].trim().toLowerCase() !== "application/json") {
@@ -149,6 +149,10 @@ export default {
       }
       const payment = await smallJson(request);
       if (!payment) return json({error: "invalid"}, 400);
+      if (depositMatch?.[2]) {
+        const status = await deleteBookingDeposit(env.DB, Number(depositMatch[1]), Number(depositMatch[2]), payment, user);
+        return json({status}, {deleted:200, invalid:400, forbidden:403, not_found:404, booking_closed:409}[status]);
+      }
       const status = depositMatch
         ? await receiveBookingDeposit(env.DB, Number(depositMatch[1]), payment, user)
         : await receiveStayPayment(env.DB, Number(match[1]), payment, user);

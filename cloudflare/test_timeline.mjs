@@ -83,6 +83,7 @@ assert.equal((await get(path("a"))).status, 404);
 assert.equal((await get(path("a")+"/photos/1")).status, 404);
 sqlite.exec("UPDATE stays SET status='completed', agreed_total=1000, payment_tracking=1 WHERE id=1");
 sqlite.exec(await readFile(new URL("./staff_access.sql", import.meta.url), "utf8"));
+sqlite.exec(await readFile(new URL("./booking_deposits.sql", import.meta.url), "utf8"));
 sqlite.exec("INSERT INTO staff_access_identities (email,user_id) VALUES ('admin@example.test',1)");
 const actor = {id:1,email:"admin@example.test"};
 const now = new Date("2026-11-17T06:30:00Z");
@@ -137,7 +138,9 @@ const bookingDetails = await staffCall("/api/bookings/1", {}, context);
 assert.equal(bookingDetails.headers.get("Cache-Control"), "private, no-store");
 const detail = await bookingDetails.json();
 assert.deepEqual(detail.dogs, [{name:"Other dog", nightly_rate_cents:60000}]);
-assert.deepEqual(detail.payments, [{occurred_on:"2026-01-02", received_time:null, payment_type:"deposit", amount_cents:35000}]);
+assert.equal(detail.payments.length, 1);
+assert.equal(detail.payments[0].amount_cents, 35000);
+assert.match(detail.payments[0].payment_key, /^[a-f0-9]{32}$/);
 assert.equal(detail.balance_cents, 85000);
 assert.equal(detail.charged_nights, 2);
 const linkedBooking = await (await staffCall("/api/bookings/3", {}, context)).json();
@@ -165,6 +168,26 @@ for (const id of [2, 3]) {
   assert.equal(closed.status, 409);
   assert.equal((await closed.json()).status, "booking_closed");
 }
+const lastDeposit = updatedBooking.payments[1];
+const deletePath = depositPath + "/" + lastDeposit.id;
+const deleteRequest = {...depositRequest({key:lastDeposit.payment_key}), method:"DELETE"};
+assert.equal((await staffCall(deletePath, deleteRequest)).status, 403);
+assert.equal((await staffCall("/api/bookings/2/deposits/" + lastDeposit.id, deleteRequest, context)).status, 404);
+assert.equal((await staffCall(deletePath, deleteRequest, context)).status, 200);
+assert.equal((await staffCall(deletePath, deleteRequest, context)).status, 200);
+assert.equal((await staffCall(depositPath, depositRequest(depositPayload), context)).status, 200);
+const afterDelete = await (await staffCall("/api/bookings/1", {}, context)).json();
+assert.equal(afterDelete.balance_cents, 85000);
+assert.equal(afterDelete.payments.length, 1);
+assert.equal(sqlite.prepare("SELECT deleted_by FROM booking_deposit_deletions WHERE transaction_id=?").get(lastDeposit.id).deleted_by, 1);
+// SQLite can reuse the last row ID after deletion. An old request must not delete its replacement.
+const newDeposit = {...depositPayload, key:"c".repeat(32)};
+assert.equal((await staffCall(depositPath, depositRequest(newDeposit), context)).status, 201);
+assert.equal((await staffCall(deletePath, deleteRequest, context)).status, 200);
+const replaced = await (await staffCall("/api/bookings/1", {}, context)).json();
+assert.equal(replaced.payments[1].id, lastDeposit.id);
+assert.equal(replaced.payments[1].payment_key, newDeposit.key);
+assert.equal(replaced.balance_cents, 60000);
 const qrPath = "/api/payment-qr.jpg";
 const receiptPath = "/api/receipts/1";
 for (const filePath of [qrPath, receiptPath]) {
