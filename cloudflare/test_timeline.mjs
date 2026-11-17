@@ -51,7 +51,30 @@ assert.equal(await (await get(path("a")+"/photos/1")).text(), "fixture-photo");
 for (const route of [path("a")+"/photos/2",path("a")+"/photos/3",path("b")+"/photos/1",path("c"),path("c")+"/photos/1",path("z"),"/settings","/login"]) {
   assert.equal((await get(route)).status, 404, route);
 }
+let pdfCalls = 0;
+const pdfEnv = {...env, PUBLIC_ORIGIN:"https://example.test", BROWSER: {
+  async quickAction(action, options) {
+    pdfCalls++;
+    assert.equal(action,"pdf");
+    assert.match(options.html,/&lt;b&gt;Visible&lt;\/b&gt;/);
+    assert.doesNotMatch(options.html,/private note|other dog note|Download PDF|<a href=/);
+    assert.match(options.html,/loading="eager" src="https:\/\/example\.test\/updates\/a+\/photos\/1"/);
+    return new Response("%PDF-fixture",{headers:{"Content-Type":"application/pdf"}});
+  },
+}};
+const pdfPath = path("a")+"/timeline.pdf?day=all&lang=en";
+assert.equal((await get(pdfPath)).status,404);
+const pdfGet = (route, origin="https://example.test") => worker.fetch(new Request(origin + route),pdfEnv);
+const rendered = await pdfGet(pdfPath);
+assert.equal(rendered.status,200);
+assert.equal(rendered.headers.get("Content-Language"),"en");
+assert.equal(rendered.headers.get("Cache-Control"),"private, no-store");
+assert.equal(await rendered.text(),"%PDF-fixture");
+assert.equal((await pdfGet(pdfPath,"https://unexpected.example.test")).status,404);
+assert.equal((await pdfGet(path("c")+"/timeline.pdf")).status,404);
+assert.equal(pdfCalls,1);
 sqlite.exec("DELETE FROM care_share_links WHERE dog_id=1");
+assert.equal((await pdfGet(pdfPath)).status,404);
 assert.equal((await get(path("a"))).status, 404);
 assert.equal((await get(path("a")+"/photos/1")).status, 404);
 sqlite.exec("UPDATE stays SET status='completed', agreed_total=1000, payment_tracking=1 WHERE id=1");

@@ -39,7 +39,7 @@ const labels = {
 };
 const defaultLabels = {food: "ให้อาหารแล้ว", medicine: "ให้ยาแล้ว", custom: "กิจกรรมอื่น"};
 
-async function timeline(env, token, url) {
+async function timeline(env, token, url, printable = false) {
   const today = thaiToday.format(new Date());
   const day = url.searchParams.get("day") || today;
   if (day !== "all" && !datePattern.test(day)) return respond("Invalid date", 400);
@@ -75,14 +75,22 @@ async function timeline(env, token, url) {
     lastDay = eventDay;
     const label = event.activity_label || defaultLabels[event.kind] || defaultLabels.custom;
     const photos = (event.photos || "").split(",").filter((id) => /^\d+$/.test(id));
+    const photoPath = printable ? url.origin + route : route;
     return `${heading}<article><h3><time>${escape(event.recorded_at.slice(11, 16))}</time>
       ${escape(en ? labels[label] || label : label)}</h3><p>${escape(event.note)}</p>
-      <div class="photos">${photos.map((id) => `<img loading="lazy" src="${route}/photos/${id}"
+      <div class="photos">${photos.map((id) => `<img loading="${printable ? "eager" : "lazy"}" src="${photoPath}/photos/${id}"
       alt="${en ? "Activity photo" : "รูปกิจกรรม"}">`).join("")}</div></article>`;
   }).join("");
   const expiryHours = link.expiry_hours === null ? 48 : Number(link.expiry_hours);
   const hours = Number.isInteger(expiryHours) ? expiryHours : 48;
   const title = en ? "Activity timeline" : "ไทม์ไลน์กิจกรรม";
+  const pdf = env.BROWSER && env.PUBLIC_ORIGIN === url.origin
+    ? `<a href="${route}/timeline.pdf?day=${encodeURIComponent(day)}&amp;lang=${lang}">${en ? "Download PDF" : "ดาวน์โหลด PDF"}</a>` : "";
+  const controls = printable ? "" : `<nav aria-label="${en ? "Choose a day" : "เลือกวัน"}">
+    ${dayLink("all", en ? "All days" : "ทั้งหมด")}
+    ${availableDays.map((value) => dayLink(value, value === today ? (en ? "Today" : "วันนี้") : dateLabel(value))).join("")}</nav>`;
+  const viewerLinks = printable ? "" : `<div class="viewer-links">
+    <a href="${route}?day=${encodeURIComponent(day)}&amp;lang=${en ? "th" : "en"}">${en ? "ไทย" : "English"}</a>${pdf}</div>`;
   const html = `<!doctype html><html lang="${lang}"><meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1"><title>${title} · Little Paws</title>
     <style>
@@ -94,14 +102,39 @@ async function timeline(env, token, url) {
     time{background:#e3f2e9;padding:.2rem .5rem;border-radius:.75rem}
     article p{white-space:pre-wrap;overflow-wrap:anywhere}.photos{display:flex;gap:.5rem;flex-wrap:wrap}
     img{width:min(100%,20rem);height:auto;border-radius:.8rem}footer{padding:1rem 0}
+    .viewer-links{display:flex;gap:1rem}
+    @page{size:A4;margin:14mm}
+    @media print{main{padding:0}article{break-inside:avoid}img{max-height:145mm;object-fit:contain}}
     </style><main><header><strong>Little Paws Homestay Phuket</strong><h1>${title} · ${escape(link.name)}</h1>
-    <a href="${route}?day=${encodeURIComponent(day)}&amp;lang=${en ? "th" : "en"}">${en ? "ไทย" : "English"}</a></header>
-    <nav aria-label="${en ? "Choose a day" : "เลือกวัน"}">${dayLink("all", en ? "All days" : "ทั้งหมด")}
-    ${availableDays.map((value) => dayLink(value, value === today ? (en ? "Today" : "วันนี้") : dateLabel(value))).join("")}</nav>
+    ${viewerLinks}</header>${controls}
     ${cards || `<p>${en ? "No activities yet." : "ยังไม่มีกิจกรรม"}</p>`}
     <footer>${en ? `This link expires within ${hours} hours after check-out.` : `ลิงก์นี้จะหมดอายุภายใน ${hours} ชั่วโมงหลังเช็กเอาต์`}</footer>
     </main></html>`;
   return respond(html, 200, {"Content-Type": "text/html; charset=utf-8", "Content-Language": lang});
+}
+
+async function timelinePdf(env, token, url) {
+  if (!env.BROWSER || env.PUBLIC_ORIGIN !== url.origin || url.protocol !== "https:") return missing();
+  const view = await timeline(env, token, url, true);
+  if (view.status !== 200) return view;
+  const pdf = await env.BROWSER.quickAction("pdf", {
+    html: await view.text(),
+    pdfOptions: {format:"A4", printBackground:true, preferCSSPageSize:true, displayHeaderFooter:false},
+  });
+  if (!pdf.ok || !pdf.headers.get("Content-Type")?.toLowerCase().startsWith("application/pdf")) {
+    await pdf.body?.cancel();
+    return respond("PDF temporarily unavailable", 503);
+  }
+  const active = await env.DB.prepare(`SELECT 1 ${activeLink} WHERE ${activeCondition}`).bind(token).first();
+  if (!active) {
+    await pdf.body?.cancel();
+    return missing();
+  }
+  return respond(pdf.body, 200, {
+    "Content-Type":"application/pdf",
+    "Content-Disposition":'attachment; filename="little-paws-timeline.pdf"',
+    "Content-Language": view.headers.get("Content-Language"),
+  });
 }
 
 async function photo(env, token, id) {
@@ -123,6 +156,7 @@ export default {
     if (path[1] !== "updates" || !tokenPattern.test(token || "")) return missing();
     try {
       if (path.length === 3) return await timeline(env, token, url);
+      if (path.length === 4 && path[3] === "timeline.pdf") return await timelinePdf(env, token, url);
       if (path.length === 5 && path[3] === "photos" && /^\d+$/.test(path[4])) {
         const id = Number(path[4]);
         if (Number.isSafeInteger(id) && id > 0) return await photo(env, token, id);

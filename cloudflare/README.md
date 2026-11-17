@@ -1,6 +1,6 @@
 # Cloudflare staging — customer timeline
 
-This Worker is a read-only migration milestone. It serves shared customer timelines and private activity photos on Cloudflare Workers, D1 and R2. The Mac application remains the full application. The Worker does not implement staff sign-in, writes or document exports. A snapshot stays unchanged until a new import, so it is unsuitable for customer production links.
+This Worker is a read-only migration milestone. It serves shared customer timelines and private activity photos on Cloudflare Workers, D1 and R2. The Mac application remains the full application. The timeline Worker can export PDF when Browser Run and the trusted `PUBLIC_ORIGIN` are configured. It does not implement staff sign-in or writes. A snapshot stays unchanged until a new import, so it is unsuitable for customer production links.
 
 ## Test locally
 
@@ -25,9 +25,9 @@ The bundle contains `data.sql`, `objects.json` (key, size and SHA-256), and the 
 ## Cloudflare configuration
 
 1. Create a dedicated staging D1 database and private R2 bucket if the Cloudflare account supports them. Do not enable public R2 access.
-2. Copy `wrangler.toml` to a private configuration file beside it or provide environment-specific configuration in deployment. Replace the example UUID and resource names with your staging bindings. Preserve binding names `DB` and `MEDIA`.
+2. Copy `wrangler.toml` to a private configuration file beside it or provide environment-specific configuration in deployment. Replace the example UUID and resource names with your staging bindings. Preserve binding names `DB` and `MEDIA`. To enable timeline PDF, bind `BROWSER` and set `PUBLIC_ORIGIN` to the exact HTTPS origin of this Worker. The PDF endpoint uses only the already-authorized view and R2 image routes, and checks link activity again before returning the file.
 3. Use `wrangler d1 execute <staging-db> --remote --file <private-directory>/data.sql` against an empty staging D1 database. Upload the files under `objects/` to the matching private R2 keys, without the local `objects/` prefix. Verify counts and checksums before inviting staging testers.
-4. From `cloudflare/`, deploy with `npx wrangler deploy --config <staging-config>`. Test a synthetic token, a different dog's photo ID, and an expired/revoked token. Only the timeline and its scoped photo routes are exposed.
+4. From `cloudflare/`, deploy with `npx wrangler deploy --config <staging-config>`. Test a synthetic token, a different dog's photo ID, and an expired/revoked token. Only the timeline, optional PDF, and scoped photo routes are exposed.
 5. Production deployment also needs the staff application port, write parity, export parity and source-to-cloud migration rehearsal. See the project handoff.
 
 D1 transactions use batches. Port staff write operations individually so checks and writes stay atomic, including concurrent checkout, deposits, balances and coupon redemption. Reuse the existing business rules and test duplicate submissions. Port authentication/session controls and move PDF/PNG rendering to a route that fits the target plan's CPU and rendering limits. A browser staging deployment does not migrate or start serving the Mac's database.
@@ -45,3 +45,5 @@ The sample `wrangler.staff.toml` disables public and preview URLs. To set up a p
 For local development only, Wrangler's `[access.dev]` and `[access.dev.identity]` blocks can simulate the audience and a fixture staff identity. Use a synthetic D1 import and remove those test settings from deployment configuration.
 
 [Cloudflare Access integration for Workers](https://developers.cloudflare.com/workers/configuration/cloudflare-access/)
+
+[Cloudflare Browser Run PDF endpoint](https://developers.cloudflare.com/browser-run/quick-actions/pdf-endpoint/) · [Browser Run Free and Paid usage limits](https://developers.cloudflare.com/browser-run/pricing/)
