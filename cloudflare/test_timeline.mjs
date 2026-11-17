@@ -143,6 +143,28 @@ assert.equal(detail.charged_nights, 2);
 const linkedBooking = await (await staffCall("/api/bookings/3", {}, context)).json();
 assert.equal(linkedBooking.stay_id, 1);
 assert.equal(linkedBooking.balance_cents, null);
+const depositPath = "/api/bookings/1/deposits";
+const depositPayload = {amountCents:25000, paymentDate:"2026-01-02", receivedTime:"10:15", key:"a".repeat(32)};
+const depositRequest = (body, origin = "https://staff.example.test") => ({
+  method:"POST", headers:{Origin:origin,"Content-Type":"application/json"}, body:JSON.stringify(body),
+});
+assert.equal((await staffCall(depositPath, depositRequest(depositPayload))).status, 403);
+assert.equal((await staffCall(depositPath, depositRequest(depositPayload, "https://other.example.test"), context)).status, 403);
+assert.equal((await staffCall(depositPath, depositRequest({...depositPayload,receivedTime:"25:00"}), context)).status, 400);
+const replays = await Promise.all([0, 1].map(() => staffCall(depositPath, depositRequest(depositPayload), context)));
+assert.deepEqual(replays.map((result) => result.status).sort(), [200, 201]);
+const updatedBooking = await (await staffCall("/api/bookings/1", {}, context)).json();
+assert.equal(updatedBooking.balance_cents, 60000);
+assert.equal(updatedBooking.payments.length, 2);
+assert.equal(updatedBooking.payments[1].received_time, "10:15");
+const over = await staffCall(depositPath, depositRequest({...depositPayload,amountCents:60001,key:"b".repeat(32)}), context);
+assert.equal(over.status, 409);
+assert.equal((await over.json()).status, "balance_exceeded");
+for (const id of [2, 3]) {
+  const closed = await staffCall("/api/bookings/" + id + "/deposits", depositRequest(depositPayload), context);
+  assert.equal(closed.status, 409);
+  assert.equal((await closed.json()).status, "booking_closed");
+}
 const qrPath = "/api/payment-qr.jpg";
 const receiptPath = "/api/receipts/1";
 for (const filePath of [qrPath, receiptPath]) {

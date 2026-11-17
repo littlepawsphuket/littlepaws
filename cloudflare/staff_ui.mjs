@@ -75,11 +75,72 @@ function main() {
   const bookingContent = document.getElementById("booking-content");
   const services = {overnight:["ฝากค้างคืน","คืน"], daycare:["ฝากระหว่างวัน","วัน"], monthly:["ฝากรายเดือน","เดือน"]};
   const paymentLabels = {deposit:"มัดจำ", checkin:"ชำระวันเข้าพัก", additional:"ชำระเพิ่มเติม"};
+  const bangkokTime = new Intl.DateTimeFormat("en-GB", {
+    timeZone:"Asia/Bangkok", hour:"2-digit", minute:"2-digit", hourCycle:"h23",
+  });
+  const pendingDeposits = new Map();
+  function depositForm(booking) {
+    const savedAttempt = pendingDeposits.get(booking.id);
+    const form = node("form");
+    const amount = Object.assign(node("input"), {type:"number", step:"0.01", min:"0.01", required:true,
+      value:savedAttempt ? String(savedAttempt.amountCents / 100) : ""});
+    if (!savedAttempt && booking.balance_cents !== null) amount.max = (booking.balance_cents / 100).toFixed(2);
+    const now = new Date();
+    const date = Object.assign(node("input"), {type:"date", required:true,
+      value:savedAttempt?.paymentDate || parts.format(now), max:parts.format(now)});
+    const time = Object.assign(node("input"), {type:"time", required:true,
+      value:savedAttempt?.receivedTime || bangkokTime.format(now)});
+    for (const [label, input] of [["ยอดมัดจำ (บาท)", amount], ["วันที่รับมัดจำ", date], ["เวลารับมัดจำ", time]]) {
+      const field = node("label", label);
+      field.append(input);
+      form.append(field);
+    }
+    const submit = node("button", "บันทึกรับมัดจำ");
+    const status = node("p", savedAttempt ? "กรุณาส่งรายการเดิมอีกครั้งเพื่อยืนยันผล" : "");
+    status.setAttribute("role", "status");
+    form.append(submit, status);
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const entry = {amountCents:Math.round(Number(amount.value) * 100), paymentDate:date.value, receivedTime:time.value};
+      const pending = pendingDeposits.get(booking.id);
+      if (pending && Object.keys(entry).some((field) => pending[field] !== entry[field])) {
+        status.textContent = "กรุณาส่งยอด วันที่ และเวลาเดิมเพื่อยืนยันผลครั้งก่อน";
+        return;
+      }
+      const payload = pending || {...entry, key:key()};
+      pendingDeposits.set(booking.id, payload);
+      submit.disabled = true;
+      try {
+        const response = await fetch("/api/bookings/" + booking.id + "/deposits", {
+          method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(payload),
+        });
+        if (response.ok) {
+          pendingDeposits.delete(booking.id);
+          if (submit.isConnected && bookingDialog.open) await showBooking(booking.id);
+          if (selected === "bookings") await load(true);
+          message.textContent = "บันทึกรับมัดจำแล้ว";
+        } else {
+          const result = await response.json();
+          if (response.status < 500) pendingDeposits.delete(booking.id);
+          status.textContent = {
+            balance_exceeded:"ยอดมัดจำเกินยอดคงเหลือ", booking_closed:"รายการนี้ปิดรับมัดจำแล้ว",
+          }[result.status] || "บันทึกไม่ได้ กรุณาตรวจสอบข้อมูล";
+        }
+      } catch {
+        status.textContent = "ยังยืนยันผลไม่ได้ กรุณาส่งรายการเดิมอีกครั้ง";
+      } finally {
+        submit.disabled = false;
+      }
+    });
+    return form;
+  }
+
+  let bookingRequest;
   async function showBooking(id) {
     bookingContent.replaceChildren(node("p", "กำลังโหลด…"));
-    bookingDialog.showModal();
-    const controller = new AbortController();
-    bookingDialog.addEventListener("close", () => controller.abort(), {once:true});
+    if (!bookingDialog.open) bookingDialog.showModal();
+    bookingRequest?.abort();
+    const controller = bookingRequest = new AbortController();
     try {
       const response = await fetch("/api/bookings/" + id, {signal:controller.signal});
       if (!response.ok) throw Error();
@@ -112,6 +173,9 @@ function main() {
       if (data.balance_cents !== null) {
         bookingContent.append(node("p", "ยอดรวม " + money(data.total_cents)),
           node("p", "ยอดคงเหลือ " + money(data.balance_cents)));
+      }
+      if (pendingDeposits.has(data.id) || (!data.stay_id && data.status === "pending" && data.balance_cents !== 0)) {
+        bookingContent.append(depositForm(data));
       }
     } catch {
       if (!controller.signal.aborted) bookingContent.replaceChildren(node("p", "โหลดข้อมูลการจองไม่ได้ กรุณาลองใหม่"));
@@ -215,6 +279,7 @@ function main() {
       load(true);
     });
   }
+  bookingDialog.addEventListener("close", () => bookingRequest?.abort());
   document.getElementById("close-booking").addEventListener("click", () => bookingDialog.close());
   bookingSearch.addEventListener("submit", (event) => {
     event.preventDefault();

@@ -1,5 +1,5 @@
 import { receiveStayPayment, stayBalance, authorizedStaff } from "./stay_payments.mjs";
-import { pendingBookings, bookingDetails } from "./bookings.mjs";
+import { pendingBookings, bookingDetails, receiveBookingDeposit } from "./bookings.mjs";
 import { outstandingPage } from "./staff_ui.mjs";
 
 const JSON_HEADERS = {
@@ -95,15 +95,16 @@ export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const match = /^\/api\/stays\/(\d+)\/(payments|check-out)$/.exec(url.pathname);
+    const depositMatch = /^\/api\/bookings\/(\d+)\/deposits$/.exec(url.pathname);
     const bookingMatch = /^\/api\/bookings\/(\d+)$/.exec(url.pathname);
     const receiptMatch = /^\/api\/receipts\/(\d+)$/.exec(url.pathname);
     const isFile = receiptMatch || url.pathname === "/api/payment-qr.jpg";
-    if (!match && !bookingMatch && !isFile && !["/", "/api/account", "/api/bookings/pending", "/api/stays/outstanding", "/api/stays/current"].includes(url.pathname)) return json({error: "not_found"}, 404);
+    if (!match && !depositMatch && !bookingMatch && !isFile && !["/", "/api/account", "/api/bookings/pending", "/api/stays/outstanding", "/api/stays/current"].includes(url.pathname)) return json({error: "not_found"}, 404);
     try {
       const user = await authorizedUser(env, ctx);
       if (!user) return json({error: "access_required"}, 403);
       if (isFile) return await privateFile(request, env, receiptMatch);
-      if (!match) {
+      if (!match && !depositMatch) {
         if (request.method !== "GET") return json({error: "method_not_allowed"}, 405);
         if (url.pathname === "/") return outstandingPage();
         if (url.pathname === "/api/account") {
@@ -142,15 +143,17 @@ export default {
       }
       if (request.method !== "POST") return json({error: "method_not_allowed"}, 405);
       if (request.headers.get("Origin") !== url.origin) return json({error: "invalid_origin"}, 403);
-      if (match[2] === "check-out") return checkout(env.DB, Number(match[1]), user);
+      if (match?.[2] === "check-out") return checkout(env.DB, Number(match[1]), user);
       if (request.headers.get("Content-Type")?.split(";", 1)[0].trim().toLowerCase() !== "application/json") {
         return json({error: "invalid_content_type"}, 415);
       }
       const payment = await smallJson(request);
       if (!payment) return json({error: "invalid"}, 400);
-      const status = await receiveStayPayment(env.DB, Number(match[1]), payment, user);
+      const status = depositMatch
+        ? await receiveBookingDeposit(env.DB, Number(depositMatch[1]), payment, user)
+        : await receiveStayPayment(env.DB, Number(match[1]), payment, user);
       return json({status}, {saved: 201, duplicate: 200, invalid: 400, forbidden: 403,
-        not_found: 404, balance_exceeded: 409}[status]);
+        not_found: 404, balance_exceeded: 409, booking_closed: 409}[status]);
     } catch {
       return json({error: "temporarily_unavailable"}, 503);
     }

@@ -18,20 +18,25 @@ export const stayBalance = `MAX(0, ROUND(s.agreed_total*100) - COALESCE((
 export const authorizedStaff = `EXISTS (SELECT 1 FROM app_users u JOIN staff_access_identities a ON a.user_id=u.id
   WHERE u.id=? AND u.active=1 AND a.email=?)`;
 
-export async function receiveStayPayment(db, stayId, payment, actor, now = new Date()) {
-  if (!Number.isSafeInteger(actor?.id) || typeof actor?.email !== "string" || !actor.email) return "forbidden";
+export function normalizePayment(payment, now = new Date()) {
   const {amountCents, paymentDate, key} = payment;
   const paidAt = payment.receivedTime || bankTime.format(now);
-  if (!Number.isSafeInteger(stayId) || stayId < 1 ||
-      !Number.isSafeInteger(amountCents) || amountCents < 1 || amountCents > 99_999_999_900 ||
+  if (!Number.isSafeInteger(amountCents) || amountCents < 1 || amountCents > 99_999_999_900 ||
       typeof key !== "string" || !/^[0-9a-f]{32}$/.test(key) ||
       typeof paymentDate !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(paymentDate) ||
-      paymentDate > bankDate.format(now) || !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(paidAt)) {
-    return "invalid";
-  }
+      paymentDate > bankDate.format(now) || typeof paidAt !== "string" ||
+      !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(paidAt)) return null;
   const parsed = new Date(paymentDate + "T00:00:00Z");
   if (!Number.isFinite(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== paymentDate ||
-      paymentDate.startsWith("0000")) return "invalid";
+      paymentDate.startsWith("0000")) return null;
+  return {amountCents, paymentDate, key, paidAt};
+}
+
+export async function receiveStayPayment(db, stayId, payment, actor, now = new Date()) {
+  if (!Number.isSafeInteger(actor?.id) || typeof actor?.email !== "string" || !actor.email) return "forbidden";
+  const normalized = normalizePayment(payment, now);
+  if (!Number.isSafeInteger(stayId) || stayId < 1 || !normalized) return "invalid";
+  const {amountCents, paymentDate, key, paidAt} = normalized;
 
   // Run the balance test and insert in one statement. The second statement
   // distinguishes a replay from a missing stay or a rejected amount.

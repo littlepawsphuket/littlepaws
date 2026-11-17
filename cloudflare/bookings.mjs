@@ -1,3 +1,11 @@
+import {authorizedStaff, normalizePayment} from "./stay_payments.mjs";
+
+const quotePending = `(NOT EXISTS (SELECT 1 FROM appointment_dogs ad WHERE ad.appointment_id=a.id)
+  OR EXISTS (SELECT 1 FROM appointment_dogs ad
+             WHERE ad.appointment_id=a.id AND ad.nightly_rate_cents IS NULL))`;
+const deposited = `COALESCE((SELECT SUM(ROUND(t.amount * 100)) FROM transactions t
+  WHERE t.deposit_appointment_id=a.id AND t.payment_type='deposit'), 0)`;
+
 // Search pending bookings without exposing notes, contact details, or payment records.
 export async function pendingBookings(db, after, search) {
   const {results} = await db.prepare(`
@@ -6,11 +14,8 @@ export async function pendingBookings(db, after, search) {
       (SELECT group_concat(d.name, ', ') FROM appointment_dogs ad
        JOIN dogs d ON d.id=ad.dog_id WHERE ad.appointment_id=a.id) AS dogs,
       ROUND(a.agreed_total * 100) AS total_cents,
-      COALESCE((SELECT SUM(ROUND(t.amount * 100)) FROM transactions t
-       WHERE t.deposit_appointment_id=a.id AND t.payment_type='deposit'), 0) AS deposit_cents,
-      (NOT EXISTS (SELECT 1 FROM appointment_dogs ad WHERE ad.appointment_id=a.id)
-       OR EXISTS (SELECT 1 FROM appointment_dogs ad
-                  WHERE ad.appointment_id=a.id AND ad.nightly_rate_cents IS NULL)) AS quote_pending
+      ${deposited} AS deposit_cents,
+      ${quotePending} AS quote_pending
     FROM appointments a JOIN customers c ON c.id=a.customer_id
     WHERE a.status='pending' AND a.stay_id IS NULL AND a.id>?
       AND (?='' OR instr(lower(a.booking_number),?)>0 OR instr(lower(c.name),?)>0
@@ -48,4 +53,32 @@ export async function bookingDetails(db, id) {
     ...booking, dogs: dogs.results, payments: payments.results, paid_cents: paidCents,
     balance_cents: quotePending ? null : Math.max(0, booking.total_cents - paidCents),
   };
+}
+
+export async function receiveBookingDeposit(db, bookingId, payment, actor) {
+  const normalized = normalizePayment(payment);
+  if (!Number.isSafeInteger(bookingId) || bookingId < 1 || !normalized) return "invalid";
+  const {amountCents, paymentDate, key, paidAt} = normalized;
+  const recorded = `EXISTS (SELECT 1 FROM transactions t
+    WHERE t.deposit_appointment_id=a.id AND t.payment_key=?)`;
+  const pending = "a.status='pending' AND a.stay_id IS NULL";
+  const [insert, lookup] = await db.batch([
+    db.prepare(`INSERT INTO transactions
+      (occurred_on,kind,category,description,amount,customer_id,deposit_appointment_id,payment_type,payment_key,received_time)
+      SELECT ?,'income','ค่าฝากเลี้ยง','มัดจำ',?/100.0,a.customer_id,a.id,'deposit',?,?
+      FROM appointments a
+      WHERE a.id=? AND ${authorizedStaff} AND ${pending}
+        AND NOT (${recorded})
+        AND (${quotePending} OR ${deposited}+? <= ROUND(a.agreed_total*100))`)
+      .bind(paymentDate, amountCents, key, paidAt, bookingId, actor.id, actor.email, key, amountCents),
+    db.prepare(`SELECT (${authorizedStaff}) AS authorized, (${recorded}) AS recorded,
+      (${pending}) AS pending FROM appointments a WHERE a.id=?`)
+      .bind(actor.id, actor.email, key, bookingId),
+  ]);
+  if (insert.meta.changes === 1) return "saved";
+  const booking = lookup.results[0];
+  if (!booking) return "not_found";
+  if (!booking.authorized) return "forbidden";
+  if (booking.recorded) return "duplicate";
+  return booking.pending ? "balance_exceeded" : "booking_closed";
 }
