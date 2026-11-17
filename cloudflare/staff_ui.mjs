@@ -1,10 +1,19 @@
 import {couponScreen} from "./coupon_ui.mjs";
+import {settingsScreen} from "./settings_ui.mjs";
+import {themes,themeName} from "./system_settings.mjs";
 import {intakeGroups} from "./stay_terms.mjs";
 
 const css = `
-  body{font:1rem/1.5 "Sukhumvit Set",system-ui,sans-serif;background:#f2f7f3;color:#203c30;margin:0}
+  :root{--page:#f2f7f3;--wash:#e2f0e8;--line:#c8ded4;--ink:#203c30;--accent:#155747}
+  [data-theme=christmas]{--page:#f6f8f4;--wash:#f6e8e5;--line:#bbd7cb;--accent:#185040}
+  [data-theme=valentine]{--page:#fff5f8;--wash:#f8dfeb;--line:#eac3d3;--ink:#432332;--accent:#85274f}
+  [data-theme=halloween]{--page:#fbf5fa;--wash:#f4e5d4;--line:#d9c4d9;--ink:#3d243e;--accent:#653767}
+  [data-theme=songkran]{--page:#f2fbfb;--wash:#d9eefa;--line:#badce2;--ink:#17434b;--accent:#0e5969}
+  [data-theme=buddhist]{--page:#fffaf1;--wash:#f7ead0;--line:#e4d1a6;--ink:#483219;--accent:#76511f}
+  [data-theme=japan]{--page:#fcf6fa;--wash:#e5eef9;--line:#e3bdce;--ink:#432b39;--accent:#873750}
+  body{font:1rem/1.5 "Sukhumvit Set",system-ui,sans-serif;background:linear-gradient(140deg,var(--wash),var(--page) 22rem);color:var(--ink);min-height:100vh;margin:0}
   main{margin:auto;max-width:52rem;padding:1rem}h1{margin:.2rem 0 1rem}
-  article{background:#fff;border:1px solid #c8ded4;border-radius:1rem;margin:.6rem 0;padding:1rem}
+  article{background:#fff;border:1px solid var(--line);border-radius:1rem;margin:.6rem 0;padding:1rem}
   dialog{width:min(34rem,calc(100% - 4rem));max-height:80vh;padding:1rem;border:1px solid #a7cbb9;border-radius:1rem;color:inherit}
   .finance-totals{display:grid;grid-template-columns:repeat(auto-fit,minmax(10rem,1fr));gap:.5rem}
   .finance-totals article{margin:0}
@@ -39,10 +48,25 @@ const css = `
   dialog::backdrop{background:#203c3066}
   h2,p{margin:.15rem 0 .6rem}form{display:flex;flex-wrap:wrap;align-items:end;gap:.7rem}
   label{display:grid;gap:.2rem}input,textarea,select,button{font:inherit;padding:.55rem .7rem;border:1px solid #a7cbb9;border-radius:.6rem}
-  button{background:#155747;color:#fff;cursor:pointer}button:disabled{opacity:.65} [hidden]{display:none}
+  button{background:var(--accent);color:#fff;cursor:pointer}button:disabled{opacity:.65} [hidden]{display:none}
+  button[aria-pressed=false]{background:white;color:var(--accent);border-color:var(--line)}
+  button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  .workspace-menu,.settings-menu{display:flex;flex-wrap:wrap;gap:.45rem;align-items:center}
+  .settings-menu{margin-bottom:.65rem}
+  .settings-icon{min-width:2.75rem}
+  .settings-rate-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,13rem),1fr));flex-basis:100%;gap:.65rem}
+  .settings-rate{display:grid;gap:.4rem;min-width:0;padding:.75rem;border:1px solid var(--line);border-radius:.7rem;background:var(--page)}
+  .settings-rate h3,.settings-rate p{margin:0}
+  .settings-rate input{min-width:0;width:100%;box-sizing:border-box}
+  .settings-list-row{display:flex;flex-wrap:wrap;gap:.5rem;justify-content:space-between;align-items:center;border-top:1px solid var(--line);margin-top:.7rem;padding:.55rem 0}
+  .settings-list-row .settings-menu{margin:0}
+  .settings-list-row strong{overflow-wrap:anywhere}
+  .history-status{flex-basis:100%}
+  .stay-due{display:table;margin:.35rem 0 .6rem;padding:.2rem .6rem;border-radius:1rem;background:#fff0d5;color:#68441a}
+  #stays>article>button{margin-top:1rem}
 `;
 
-function main(intakeGroups,couponScreen,canExport) {
+function main(intakeGroups,couponScreen,settingsScreen,themeLabels,canExport) {
   const results = document.getElementById("stays");
   const message = document.getElementById("message");
   const more = document.getElementById("more");
@@ -78,6 +102,27 @@ function main(intakeGroups,couponScreen,canExport) {
   const isoDay = (date) => date.toISOString().slice(0,10);
   const shiftDay = (date, days) => new Date(date.valueOf() + days * 86400000);
   calendarAnchor.value = parts.format(new Date());
+  const historyToolbar = document.getElementById("history-toolbar");
+  const historyStart = document.getElementById("history-start");
+  const historyEnd = document.getElementById("history-end");
+  const historySearch = document.getElementById("history-search");
+  const historyButtons = historyToolbar.querySelectorAll("[data-status]");
+  const bangkokMonth = new Date(calendarAnchor.value + "T00:00:00Z");
+  historyStart.value = calendarAnchor.value.slice(0,7) + "-01";
+  historyEnd.value = isoDay(new Date(Date.UTC(bangkokMonth.getUTCFullYear(),bangkokMonth.getUTCMonth()+1,0)));
+  let historyQuery = {start:historyStart.value,end:historyEnd.value,q:"",status:"all"};
+  function applyHistory(status) {
+    historyEnd.setCustomValidity(historyStart.value > historyEnd.value ? "วันสิ้นสุดต้องไม่ก่อนวันเริ่มต้น" : "");
+    if (!historyToolbar.reportValidity()) return;
+    historyQuery = {start:historyStart.value,end:historyEnd.value,q:historySearch.value,status};
+    for (const item of historyButtons) item.setAttribute("aria-pressed",String(item.dataset.status === status));
+    message.textContent = "";
+    load(true);
+  }
+  historyToolbar.addEventListener("input",() => historyEnd.setCustomValidity(""));
+  historyToolbar.addEventListener("submit",(event) => { event.preventDefault(); applyHistory(historyQuery.status); });
+  for (const button of historyButtons) button.onclick = () => applyHistory(button.dataset.status);
+
   function calendarRange() {
     const anchor = new Date(calendarAnchor.value + "T00:00:00Z");
     if (!Number.isFinite(anchor.valueOf())) return null;
@@ -208,6 +253,14 @@ function main(intakeGroups,couponScreen,canExport) {
         more.hidden = cursor === null;
         return;
       }
+      if (selected === "settings") {
+        more.hidden = true;
+        const response = await fetch("/api/settings");
+        if (!response.ok) throw Error();
+        const data = await response.json();
+        if (requestId === requestNumber) settingsAdmin.render(data);
+        return;
+      }
       if (selected === "calendar") {
         more.hidden = true;
         const range = calendarRange();
@@ -221,10 +274,19 @@ function main(intakeGroups,couponScreen,canExport) {
       }
       const directory = selected === "bookings" || selected === "customers";
       const directoryPath = selected === "bookings" ? "/api/bookings/pending" : "/api/customers";
-      const url = directory
-        ? directoryPath + "?" + new URLSearchParams({after:cursor || 0, q:queries[selected]})
-        : "/api/stays/" + selected + (cursor ? "?before=" + cursor : "");
+      let url = "/api/stays/" + selected + (cursor ? "?" + new URLSearchParams({before:cursor}) : "");
+      if (directory) url = directoryPath + "?" + new URLSearchParams({after:cursor || 0,q:queries[selected]});
+      if (selected === "history") {
+        const query = new URLSearchParams(historyQuery);
+        if (cursor) query.set("before",cursor);
+        url = "/api/stays/history?" + query;
+      }
       const response = await fetch(url);
+      if (requestId === requestNumber && selected === "history" && response.status === 400) {
+        message.textContent = "กรุณาตรวจช่วงวันที่และคำค้นหา";
+        more.hidden = true;
+        return;
+      }
       if (!response.ok) throw Error();
       const data = await response.json();
       if (requestId !== requestNumber) return;
@@ -237,7 +299,8 @@ function main(intakeGroups,couponScreen,canExport) {
         for (const stay of data.stays) results.append(card(stay));
       }
       if (!results.childElementCount) results.append(node("p", {
-        customers:"ไม่พบลูกค้า", bookings:"ไม่พบการจองที่รอเช็กอิน", current:"ไม่มีสุนัขที่กำลังเข้าพัก", outstanding:"ไม่มียอดค้างชำระ",
+        customers:"ไม่พบลูกค้า", bookings:"ไม่พบการจองที่รอเช็กอิน", current:"ไม่มีสุนัขที่กำลังเข้าพัก",
+        outstanding:"ไม่มียอดค้างชำระ", history:"ไม่พบการเข้าพักตามตัวกรอง",
       }[selected]));
       more.hidden = cursor === null;
     } catch {
@@ -1744,7 +1807,7 @@ function main(intakeGroups,couponScreen,canExport) {
       }
       if (canReceiveStayPayment(stay)) {
         const payment = stayPaymentForm(stay,async () => {
-          if (selected === "current" || selected === "outstanding") await load(true);
+          if (["current","outstanding","history"].includes(selected)) await load(true);
           if (payment.isConnected && bookingDialog.open) {
             await showStay(stay.id);
             document.getElementById("booking-status").textContent = "บันทึกรับชำระแล้ว";
@@ -1854,9 +1917,14 @@ function main(intakeGroups,couponScreen,canExport) {
   function card(stay) {
     const article = node("article");
     article.append(node("h2", stay.customer),
-      node("p", [stay.stay_number || "#" + stay.id, statuses[stay.status] || stay.status,
-        baht.format(stay.due_cents / 100)].join(" · ")));
+      node("p", [stay.stay_number || "#" + stay.id, statuses[stay.status] || stay.status].join(" · ")));
     if (stay.dogs) article.append(node("p", stay.dogs));
+    if (selected === "history") {
+      const date = (value) => bookingDate.format(new Date(value+"T00:00:00Z"));
+      article.append(node("p",date(stay.checkin) + " – " + date(stay.checkout)));
+    }
+    if (stay.due_cents > 0) article.append(Object.assign(node("strong","ค้างชำระ " + baht.format(stay.due_cents/100)),
+      {className:"stay-due"}));
     const summary = Object.assign(node("button","ดูสรุปการเข้าพัก"),{type:"button"});
     summary.addEventListener("click",() => showStay(stay.id));
     article.append(summary);
@@ -1944,12 +2012,15 @@ function main(intakeGroups,couponScreen,canExport) {
 
   const couponAdmin = couponScreen({node,key,baht,results,message,thaiDate:bookingDate,
     reload:() => { message.textContent = ""; return load(true); },isActive:() => selected === "coupons"});
+  const settingsAdmin = settingsScreen({node,results,message,themeLabels,thaiDate:bookingDate,
+    reload:() => load(true),isActive:() => selected === "settings"});
   for (const mode of modes) {
     mode.addEventListener("click", () => {
       if (selected === mode.dataset.mode) return;
       selected = mode.dataset.mode;
       couponAdmin.visible(selected === "coupons");
       financeToolbar.hidden = selected !== "finance";
+      historyToolbar.hidden = selected !== "history";
       addBooking.hidden = selected !== "bookings" && selected !== "calendar";
       calendarToolbar.hidden = selected !== "calendar";
       addCustomer.hidden = selected !== "customers";
@@ -1973,20 +2044,22 @@ function main(intakeGroups,couponScreen,canExport) {
   load();
 }
 
-export function outstandingPage(isAdmin = false,canExport = false) {
+export function outstandingPage(isAdmin = false,canExport = false,theme = "classic") {
   const nonce = crypto.randomUUID().replaceAll("-", "");
-  return new Response(`<!doctype html><html lang="th"><meta charset="utf-8">
+  return new Response(`<!doctype html><html lang="th" data-theme="${themeName(theme)}"><meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <title>ยอดค้างชำระ · Little Paws</title><style nonce="${nonce}">${css}</style>
     <main><p>Little Paws Homestay Phuket</p><h1>จัดการการเข้าพัก</h1>
-    <div role="group" aria-label="มุมมองการเข้าพัก">
+    <div role="group" class="workspace-menu" aria-label="มุมมองการเข้าพัก">
       <button type="button" data-mode="outstanding" aria-pressed="true">ยอดค้างชำระ</button>
       <button type="button" data-mode="finance" aria-pressed="false">ภาพรวมการเงิน</button>
       <button type="button" data-mode="current" aria-pressed="false">กำลังเข้าพัก</button>
+      <button type="button" data-mode="history" aria-pressed="false">ประวัติการเข้าพัก</button>
       <button type="button" data-mode="customers" aria-pressed="false">ลูกค้า</button>
       <button type="button" data-mode="calendar" aria-pressed="false">ปฏิทินการจอง</button>
       <button type="button" data-mode="bookings" aria-pressed="false">การจองที่รอเช็กอิน</button>
       ${isAdmin ? '<button type="button" data-mode="coupons" aria-pressed="false">คูปอง</button>' : ''}
+      ${isAdmin ? '<button type="button" class="settings-icon" data-mode="settings" aria-pressed="false" aria-label="ตั้งค่าระบบ" title="ตั้งค่าระบบ">⚙</button>' : ''}
     </div>
     <form id="booking-search" hidden>
       <label><span id="directory-search-label">เลขจอง ชื่อลูกค้า หรือชื่อสุนัข</span><input type="search" maxlength="100" id="booking-query"></label>
@@ -2007,6 +2080,17 @@ export function outstandingPage(isAdmin = false,canExport = false) {
       <label>ตั้งแต่เดือน<input id="finance-from" type="month" required></label>
       <label>ถึงเดือน<input id="finance-to" type="month" required></label>
       <button>แสดงผล</button>
+    </form>
+    <form id="history-toolbar" hidden>
+      <div class="history-status workspace-menu" role="group" aria-label="สถานะการเข้าพัก">
+        <button type="button" data-status="all" aria-pressed="true">ทั้งหมด</button>
+        <button type="button" data-status="checked_in" aria-pressed="false">กำลังเข้าพัก</button>
+        <button type="button" data-status="completed" aria-pressed="false">กลับบ้านแล้ว</button>
+      </div>
+      <label>ตั้งแต่<input type="date" id="history-start" required></label>
+      <label>ถึง<input type="date" id="history-end" required></label>
+      <label>เลขเข้าพัก ชื่อลูกค้า หรือชื่อสุนัข<input type="search" id="history-search" maxlength="120"></label>
+      <button>ค้นหา</button>
     </form>
     <div id="coupon-toolbar" class="calendar-toolbar" hidden>
       <label>สถานะคูปอง<select id="coupon-group"><option value="active">ใช้งานอยู่</option>
@@ -2029,7 +2113,7 @@ export function outstandingPage(isAdmin = false,canExport = false) {
       <h2 id="coupon-title">จัดการคูปอง</h2><button type="button" id="coupon-close" autofocus>ปิด</button>
       <p id="coupon-status" role="status"></p><div id="coupon-content"></div>
     </dialog>
-    <script nonce="${nonce}">(${main.toString()})(${JSON.stringify(intakeGroups)},${couponScreen.toString()},${canExport})</script></html>`, {
+    <script nonce="${nonce}">(${main.toString()})(${JSON.stringify(intakeGroups)},${couponScreen.toString()},${settingsScreen.toString()},${JSON.stringify(themes)},${canExport})</script></html>`, {
     headers: {
       "Content-Type":"text/html; charset=utf-8", "Cache-Control":"private, no-store",
       "X-Content-Type-Options":"nosniff",

@@ -1,0 +1,188 @@
+export function settingsScreen({node,results,message,themeLabels,thaiDate,reload,isActive}) {
+  const services = {
+    overnight:["ฝากค้างคืน","บาท/คืน"],daycare:["ฝากระหว่างวัน","บาท/วัน"],monthly:["ฝากรายเดือน","บาท/เดือน"],
+  };
+  const sizes = {small:"S · เล็ก",medium:"M · กลาง",large:"L · ใหญ่"};
+  const sections = {rates:"ราคา",holidays:"วันหยุดร้าน",capacity:"ความจุและอายุลิงก์",care:"ประเภทกิจกรรม",theme:"ธีม"};
+  let section = "rates";
+  let data;
+
+  const button = (text) => Object.assign(node("button",text),{type:"button"});
+  const field = (label, input) => {
+    const element = node("label",label);
+    element.append(input);
+    return element;
+  };
+  const submit = (label) => Object.assign(node("button",label),{type:"submit"});
+  const number = (value, max, step = 1, required = true) =>
+    Object.assign(node("input"),{type:"number",value:value ?? "",min:0,max,step,required});
+  const grid = (className) => Object.assign(node("div"),{className});
+
+  async function save(control,path,method,body) {
+    control.disabled = true;
+    message.textContent = "กำลังบันทึก…";
+    try {
+      const response = await fetch(path,{method,headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+      if (!isActive()) return;
+      if (response.ok) {
+        message.textContent = "บันทึกแล้ว";
+        await reload();
+      } else {
+        message.textContent = response.status === 409 ? "ข้อมูลเปลี่ยนแล้ว กรุณาโหลดการตั้งค่าล่าสุด"
+          : response.status === 403 ? "บัญชีนี้ไม่มีสิทธิ์แก้ไขการตั้งค่า"
+          : response.status === 400 ? "กรุณาตรวจข้อมูลที่กรอก" : "บันทึกไม่สำเร็จ กรุณาลองใหม่";
+      }
+    } catch {
+      if (isActive()) message.textContent = "ยังยืนยันผลการบันทึกไม่ได้ กรุณาโหลดการตั้งค่าล่าสุด";
+    } finally { control.disabled = false; }
+  }
+
+  function saveForm(form,write) {
+    form.addEventListener("submit",(event) => {
+      event.preventDefault();
+      if (!event.submitter?.disabled) write(event.submitter || form.querySelector('button[type="submit"]'));
+    });
+  }
+
+  const writeSetting = (control,body) =>
+    save(control,"/api/settings","PUT",{...body,section,revisions:data.revisions});
+
+  function rateForm(panel) {
+    panel.append(node("p","ราคาที่ตั้งไว้ใช้เติมในรายการใหม่ รายการที่บันทึกแล้วใช้ราคาเดิม"));
+    const form = node("form");
+    const groups = grid("settings-rate-grid");
+    const inputs = {};
+    for (const [service,[label,unit]] of Object.entries(services)) {
+      const group = Object.assign(node("section"),{className:"settings-rate"});
+      group.append(node("h3",label),node("p",unit));
+      inputs[service] = {};
+      for (const [size,sizeLabel] of Object.entries(sizes)) {
+        const input = number(data.rates[service][size],999999.99,.01,service !== "monthly");
+        inputs[service][size] = input;
+        group.append(field(sizeLabel,input));
+      }
+      groups.append(group);
+    }
+    form.append(groups,node("p","ปล่อยราคารายเดือนว่างไว้เมื่อต้องการระบุราคาเป็นรายกรณี"),submit("บันทึกราคา"));
+    saveForm(form,(control) => {
+      const ratesCents = Object.fromEntries(Object.entries(inputs).map(([service,row]) =>
+        [service,Object.fromEntries(Object.entries(row).map(([size,input]) =>
+          [size,input.value === "" ? null : Math.round(Number(input.value)*100)]))]));
+      writeSetting(control,{ratesCents});
+    });
+    panel.append(form);
+  }
+
+  function capacityForm(panel) {
+    const form = node("form");
+    const capacity = number(data.capacity,10000);
+    const hours = number(data.careLinkHours,Number.MAX_SAFE_INTEGER);
+    form.append(field("จำนวนสุนัขสูงสุดต่อวัน",capacity),field("อายุลิงก์หลังเช็กเอาต์ (ชั่วโมง)",hours),submit("บันทึก"));
+    saveForm(form,(control) => writeSetting(control,{capacity:Number(capacity.value),careLinkHours:Number(hours.value)}));
+    panel.append(node("p","ใส่ 0 ในช่องจำนวนสุนัขเพื่อปิดการเตือนความจุ หรือใส่ 0 ในช่องอายุลิงก์เพื่อให้หมดอายุทันทีหลังเช็กเอาต์"),form);
+  }
+
+  function themeForm(panel) {
+    const form = node("form");
+    const select = node("select");
+    for (const [value,label] of Object.entries(themeLabels)) {
+      select.append(Object.assign(node("option",label),{value}));
+    }
+    select.value = data.theme;
+    form.append(field("ธีมของระบบ",select),submit("ใช้ธีมนี้"));
+    saveForm(form,(control) => writeSetting(control,{theme:select.value}));
+    panel.append(form);
+  }
+
+  function careForm(panel) {
+    const form = node("form");
+    const name = Object.assign(node("input"),{required:true,maxLength:60});
+    form.append(field("ชื่อกิจกรรม",name),submit("เพิ่มกิจกรรม"));
+    saveForm(form,(control) => writeSetting(control,{action:"add",name:name.value}));
+    panel.append(node("p","กิจกรรมเริ่มต้น · " + data.standardActivities.join(" · ")),form);
+    for (const label of data.activities) {
+      const row = grid("settings-list-row");
+      const remove = button("นำออก");
+      remove.setAttribute("aria-label","นำ " + label + " ออกจากรายการเลือก");
+      remove.onclick = () => {
+        if (confirm("นำกิจกรรมนี้ออกจากรายการเลือก?")) writeSetting(remove,{action:"remove",name:label});
+      };
+      row.append(node("strong",label),remove);
+      panel.append(row);
+    }
+  }
+
+  function holidayForm(panel, previous = null) {
+    const part = grid("settings-holidays");
+    const form = node("form");
+    const holidayName = Object.assign(node("input"),{required:true,maxLength:100,value:previous?.name ?? ""});
+    const start = Object.assign(node("input"),{type:"date",required:true,value:previous?.starts_on ?? ""});
+    const end = Object.assign(node("input"),{type:"date",required:true,value:previous?.ends_on ?? ""});
+    start.onchange = () => {
+      end.min = start.value;
+      if (start.value && (!end.value || end.value < start.value)) end.value = start.value;
+    };
+    end.min = start.value;
+    form.append(field("ชื่อวันหยุด",holidayName),field("ตั้งแต่",start),field("ถึง",end),
+      submit(previous ? "บันทึกการแก้ไข" : "เพิ่มวันหยุด"));
+    if (previous) {
+      const cancel = button("ยกเลิกการแก้ไข");
+      cancel.onclick = () => holidayForm(panel);
+      form.append(cancel);
+    }
+    const base = "/api/settings/holidays";
+    saveForm(form,(control) => save(control,previous ? base+"/"+previous.id : base,previous ? "PUT" : "POST",
+      {name:holidayName.value,starts_on:start.value,ends_on:end.value,previous}));
+    part.append(form);
+    if (!data.holidays.length) part.append(node("p","ยังไม่มีวันหยุดร้าน"));
+    for (const holiday of data.holidays) {
+      const row = grid("settings-list-row");
+      const info = node("div");
+      const date = (value) => thaiDate.format(new Date(value+"T00:00:00Z"));
+      info.append(node("strong",holiday.name),node("p",date(holiday.starts_on) + " – " + date(holiday.ends_on)));
+      const edit = button("แก้ไข");
+      const remove = button("ยกเลิกวันหยุด");
+      edit.onclick = () => { holidayForm(panel,holiday); panel.querySelector("input")?.focus(); };
+      remove.onclick = () => {
+        if (confirm("ยกเลิกวันหยุดนี้?")) save(remove,base+"/"+holiday.id,"DELETE",{previous:holiday});
+      };
+      const actions = grid("settings-menu");
+      actions.append(edit,remove);
+      row.append(info,actions);
+      part.append(row);
+    }
+    const existing = panel.querySelector(".settings-holidays");
+    if (existing) existing.replaceWith(part);
+    else panel.append(part);
+  }
+
+  function render(value) {
+    data = value;
+    document.documentElement.dataset.theme = value.theme;
+    const view = node("article");
+    const menu = grid("settings-menu");
+    menu.setAttribute("role","group");
+    menu.setAttribute("aria-label","หมวดตั้งค่า");
+    for (const [id,label] of Object.entries(sections)) {
+      const tab = button(label);
+      tab.setAttribute("aria-pressed",String(id === section));
+      tab.dataset.section = id;
+      tab.onclick = () => {
+        section = id;
+        message.textContent = "";
+        render(data);
+        results.querySelector('[data-section="'+id+'"]')?.focus();
+      };
+      menu.append(tab);
+    }
+    const refresh = button("โหลดการตั้งค่าล่าสุด");
+    refresh.onclick = () => { message.textContent = ""; reload(); };
+    const panel = node("section");
+    panel.append(node("h2",sections[section]));
+    const forms = {rates:rateForm,holidays:holidayForm,capacity:capacityForm,care:careForm,theme:themeForm};
+    forms[section](panel);
+    view.append(menu,panel,refresh);
+    results.replaceChildren(view);
+  }
+  return {render};
+}

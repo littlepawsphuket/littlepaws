@@ -3,6 +3,8 @@ main = "staff.mjs"
 compatibility_date = "2026-11-17"
 workers_dev = false
 preview_urls = false
+# Browser functions are sent to the page as source. Omit Worker-only name helpers.
+keep_names = false
 
 [vars]
 ACCESS_AUDIENCE = ""

@@ -94,16 +94,20 @@ export async function manageTimelineLink(db,stayId,dogId,form,actor) {
   return "invalid";
 }
 
-const standardActivities = {
+export const standardActivities = {
   food:"ทานอาหาร",medicine:"กินยา",walk:"เดินเล่น",play:"เล่น",rest:"พักผ่อน",custom:"กิจกรรมอื่น",
 };
 
+export function customActivities(raw) {
+  let extra = [];
+  try { const value = JSON.parse(raw); if (Array.isArray(value)) extra = value; } catch {}
+  return extra.filter((label) => typeof label === "string" && label.trim());
+}
+
 async function careOptions(db) {
   const setting = await db.prepare("SELECT value FROM system_settings WHERE key='care_activities'").bind().first();
-  let extra = [];
-  try { const value = JSON.parse(setting?.value); if (Array.isArray(value)) extra = value; } catch {}
-  return {...standardActivities,...Object.fromEntries(extra
-    .filter((label) => typeof label === "string" && label.trim()).map((label) => ["activity:"+label,label]))};
+  return {...standardActivities,...Object.fromEntries(customActivities(setting?.value)
+    .map((label) => ["activity:"+label,label]))};
 }
 
 export async function writeCareEvent(db,media,stayId,dogId,form,actor) {

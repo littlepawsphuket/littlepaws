@@ -77,3 +77,5 @@ Staff document exports support booking confirmation, per-payment deposit receipt
 
 
 The staff timeline exports its selected day or all days as an HTML print view, PDF or PNG, with the dog profile, owner and shared activity photos. Staff-only notes stay out of customer deliverables. Long or photo-heavy ranges can exceed renderer limits; use a shorter selection or the HTML print view, which loads photos through authenticated staff URLs.
+
+The staff workspace includes stay history with a Bangkok current-month default, range and status filters, and search by stay reference, customer or dog. Canceled stays are excluded. The administrator settings manage default rates, holidays on the booking calendar, capacity, customer-link expiry, activity options and theme colors. These settings reuse the migrated data and rate changes leave saved stay and booking prices intact.

@@ -1,6 +1,7 @@
 import {bookingDetails} from "./bookings.mjs";
 import {staySummary} from "./stay_summary.mjs";
 import {validDogPhotoKey} from "./timeline.mjs";
+import {selectedTheme} from "./system_settings.mjs";
 
 function base64(bytes) {
   let text = "";
@@ -21,15 +22,8 @@ async function inlineAsset(media,key,type,limit) {
   return bytes.length <= limit ? "data:"+type+";base64,"+base64(bytes) : null;
 }
 
-const themes = ["classic","christmas","valentine","halloween","songkran","buddhist","japan"];
-
 export async function documentAssets(env) {
-  const row = await env.DB.prepare("SELECT value FROM system_settings WHERE key='theme'").bind().first();
-  let theme = "classic";
-  try {
-    const value = JSON.parse(row?.value);
-    if (themes.includes(value)) theme = value;
-  } catch {}
+  const theme = await selectedTheme(env.DB);
   let budget = 5 * 1024 * 1024;
   async function asset(key,type,limit) {
     if (budget < 64) return null;

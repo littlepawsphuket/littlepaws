@@ -2,7 +2,7 @@ import {validDay, randomReference} from "./bookings.mjs";
 import {bookingSnapshot, bookingWarnings} from "./booking_warnings.mjs";
 import {authorizedStaff} from "./stay_payments.mjs";
 
-const defaultRates = {
+export const defaultRates = {
   overnight:{small:400,medium:500,large:600}, daycare:{small:200,medium:250,large:300},
   monthly:{small:null,medium:null,large:null},
 };
@@ -36,9 +36,13 @@ export function bookingValues(form) {
 }
 
 export async function bookingRates(db) {
-  const row = await db.prepare("SELECT value FROM system_settings WHERE key='rates'").first();
+  const row = await db.prepare("SELECT value FROM system_settings WHERE key='rates'").bind().first();
+  return configuredRates(row?.value);
+}
+
+export function configuredRates(raw) {
   let saved = {};
-  try { saved = JSON.parse(row?.value) || {}; } catch {}
+  try { saved = JSON.parse(raw) || {}; } catch {}
   return Object.fromEntries(Object.entries(defaultRates).map(([service, defaults]) =>
     [service, {...defaults,...saved[service]}]));
 }

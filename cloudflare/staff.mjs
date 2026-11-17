@@ -7,11 +7,13 @@ import { exportCare } from "./care_exports.mjs";
 import { exportDocument } from "./document_exports.mjs";
 import { dashboardFinance } from "./dashboard_finance.mjs";
 import { staySummary } from "./stay_summary.mjs";
+import { stayHistory } from "./stay_history.mjs";
 import { checkInBooking, checkInDirect, previewDirectStay, previewCheckInCoupon, checkInTerms } from "./check_in.mjs";
 import { saveBooking, archiveBooking, bookingRates } from "./booking_writes.mjs";
 import { searchCustomers, customerDetails, saveCustomer, archiveCustomer } from "./customers.mjs";
 import { dogPhoto, saveDogPhoto, photoLimit } from "./dog_photos.mjs";
 import { saveDog, archiveDog } from "./dogs.mjs";
+import {selectedTheme,systemSettings,saveSystemSetting,writeHoliday} from "./system_settings.mjs";
 import { outstandingPage } from "./staff_ui.mjs";
 
 const JSON_HEADERS = {
@@ -133,10 +135,30 @@ export default {
     const bookingMatch = /^\/api\/bookings\/(\d+)$/.exec(url.pathname);
     const receiptMatch = /^\/api\/receipts\/(\d+)$/.exec(url.pathname);
     const isFile = receiptMatch || url.pathname === "/api/payment-qr.jpg";
-    if (!match && !depositMatch && !dogMatch && !customerMatch && !bookingMatch && !checkInMatch && !couponMatch && !documentMatch && !directCheckIn && !directPreview && !couponPreview && !staySummaryMatch && !timelineMatch && !careMediaMatch && !careExportMatch && !isFile && !["/", "/api/account", "/api/dashboard/finance", "/api/customers", "/api/bookings", "/api/bookings/rates", "/api/bookings/calendar", "/api/bookings/pending", "/api/stays/outstanding", "/api/stays/current"].includes(url.pathname)) return json({error: "not_found"}, 404);
+    const settings = url.pathname === "/api/settings";
+    const holidayMatch = /^\/api\/settings\/holidays(?:\/(\d+))?$/.exec(url.pathname);
+    const history = url.pathname === "/api/stays/history";
+    if (!match && !depositMatch && !dogMatch && !customerMatch && !bookingMatch && !checkInMatch && !couponMatch && !documentMatch && !directCheckIn && !directPreview && !couponPreview && !staySummaryMatch && !timelineMatch && !careMediaMatch && !careExportMatch && !isFile && !settings && !holidayMatch && !history && !["/", "/api/account", "/api/dashboard/finance", "/api/customers", "/api/bookings", "/api/bookings/rates", "/api/bookings/calendar", "/api/bookings/pending", "/api/stays/outstanding", "/api/stays/current"].includes(url.pathname)) return json({error: "not_found"}, 404);
     try {
       const user = await authorizedUser(env, ctx);
       if (!user) return json({error: "access_required"}, 403);
+      if (settings || holidayMatch) {
+        if (!user.is_admin) return json({error:"admin_required"},403);
+        if (settings && request.method === "GET") return json(await systemSettings(env.DB));
+        const id = holidayMatch?.[1] ? Number(holidayMatch[1]) : null;
+        if (id !== null && (!Number.isSafeInteger(id) || id < 1)) return json({error:"not_found"},404);
+        const methods = settings ? ["PUT"] : id === null ? ["POST"] : ["PUT","DELETE"];
+        if (!methods.includes(request.method)) return json({error:"method_not_allowed"},405);
+        if (request.headers.get("Origin") !== url.origin) return json({error:"invalid_origin"},403);
+        if (request.headers.get("Content-Type")?.split(";",1)[0].trim().toLowerCase() !== "application/json") {
+          return json({error:"invalid_content_type"},415);
+        }
+        const data = await smallJson(request,65536);
+        if (!data) return json({status:"invalid"},400);
+        const status = settings ? await saveSystemSetting(env.DB,data,user)
+          : await writeHoliday(env.DB,id,data,user,request.method);
+        return json({status},{saved:200,invalid:400,conflict:409}[status]);
+      }
       if (isFile) return await privateFile(request, env, receiptMatch);
       if (careExportMatch) {
         if (request.method !== "GET") return json({error:"method_not_allowed"},405);
@@ -342,13 +364,17 @@ export default {
       }
       if (!match && !depositMatch) {
         if (request.method !== "GET") return json({error: "method_not_allowed"}, 405);
-        if (url.pathname === "/") return outstandingPage(Boolean(user.is_admin),Boolean(env.BROWSER));
+        if (url.pathname === "/") return outstandingPage(Boolean(user.is_admin),Boolean(env.BROWSER),await selectedTheme(env.DB));
         if (url.pathname === "/api/account") {
           return json({id: user.id, displayName: user.display_name, isAdmin: !!user.is_admin});
         }
         if (url.pathname === "/api/dashboard/finance") {
           const period = await dashboardFinance(env.DB,url.searchParams.get("from"),url.searchParams.get("to"));
           return period ? json(period) : json({error:"invalid_range"},400);
+        }
+        if (history) {
+          const page = await stayHistory(env.DB,url.searchParams);
+          return page ? json(page) : json({error:"invalid_search"},400);
         }
         if (staySummaryMatch) {
           const id = Number(staySummaryMatch[1]);
