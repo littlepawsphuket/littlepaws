@@ -1004,6 +1004,10 @@ function main(intakeGroups) {
     }
   }
 
+  const couponErrors = {
+    coupon_invalid:"กรุณากรอกรหัสคูปอง 6 หลัก",coupon_unavailable:"คูปองนี้ไม่พร้อมใช้งานหรือใช้ครบแล้ว",
+    coupon_minimum:"ยอดค่าฝากไม่ถึงขั้นต่ำของคูปอง",coupon_exceeds:"ส่วนลดเกินยอดที่หักได้หลังตรวจยอดชำระเดิม",
+  };
   function bookingCheckIn(booking, draft = null) {
     const endpoint = draft ? "/api/stays/check-in" : "/api/bookings/" + booking.id + "/check-in";
     bookingRequest?.abort();
@@ -1025,10 +1029,76 @@ function main(intakeGroups) {
     const arrivalTime = field("เวลาเช็กอินจริง","time",now);
     const returnTime = field("เวลานัดรับกลับ","time","",false);
     const amount = field("ยอดรับเพิ่ม (บาท)","number",(booking.balance_cents/100).toFixed(2));
+    let coupon = null;
+    let couponRequest = 0;
     Object.assign(amount,{min:"0",step:"0.01",max:(booking.balance_cents/100).toFixed(2)});
     const paymentDay = field("วันที่ชำระ","date",today);
     paymentDay.max = today;
     const paymentTime = field("เวลาชำระ","time",now);
+    const couponPanel = node("section");
+    couponPanel.className = "intake-details";
+    const couponInput = Object.assign(node("input"),{type:"text",inputMode:"numeric",maxLength:6});
+    const couponLabel = node("label","รหัสคูปอง");
+    couponLabel.append(couponInput);
+    const applyCoupon = Object.assign(node("button","ใช้คูปอง"),{type:"button"});
+    const resetCoupon = Object.assign(node("button","นำคูปองออก"),{type:"button",hidden:true});
+    const couponStatus = node("p","");
+    couponStatus.setAttribute("role","status");
+    couponPanel.append(couponLabel,applyCoupon,resetCoupon,couponStatus);
+    form.append(couponPanel);
+    const totalLine = node("p");
+    const money = (cents) => baht.format(cents/100);
+    function updateBill(nextCoupon) {
+      const oldBalance = coupon?.balance_cents ?? booking.balance_cents;
+      const newBalance = nextCoupon?.balance_cents ?? booking.balance_cents;
+      if (Math.round(Number(amount.value)*100) === oldBalance || Number(amount.value)*100 > newBalance) {
+        amount.value = (newBalance/100).toFixed(2);
+      }
+      amount.max = (newBalance/100).toFixed(2);
+      coupon = nextCoupon;
+      resetCoupon.hidden = !coupon;
+      totalLine.textContent = "ยอดสุทธิ " + money(coupon?.total_cents ?? booking.total_cents) +
+        " · รับมัดจำแล้ว " + money(booking.paid_cents) + " · คงเหลือ " + money(newBalance);
+    }
+    updateBill(null);
+    resetCoupon.addEventListener("click",() => {
+      couponRequest++;
+      couponInput.value = "";
+      applyCoupon.disabled = false;
+      couponStatus.textContent = "";
+      updateBill(null);
+    });
+    couponInput.addEventListener("input",() => {
+      couponRequest++;
+      applyCoupon.disabled = false;
+      couponStatus.textContent = "";
+      if (coupon) updateBill(null);
+    });
+    applyCoupon.addEventListener("click",async () => {
+      const code = couponInput.value.trim();
+      if (!/^\d{6}$/.test(code)) { couponStatus.textContent = couponErrors.coupon_invalid; return; }
+      const request = ++couponRequest;
+      applyCoupon.disabled = true;
+      try {
+        const response = await fetch("/api/stays/check-in/coupon",{
+          method:"POST",headers:{"Content-Type":"application/json"},signal:controller.signal,
+          body:JSON.stringify({code,bookingId:draft ? undefined : booking.id,draft:draft || undefined}),
+        });
+        const result = await response.json();
+        if (request !== couponRequest || controller.signal.aborted) return;
+        if (!response.ok) {
+          couponStatus.textContent = couponErrors[result.status] || "ตรวจคูปองไม่ได้ กรุณาตรวจรายการ";
+          updateBill(null);
+          return;
+        }
+        updateBill({...result,code});
+        couponStatus.textContent = "ส่วนลดคูปอง " + money(result.discount_cents);
+      } catch {
+        if (request === couponRequest && !controller.signal.aborted) couponStatus.textContent = "ตรวจคูปองไม่ได้ กรุณาลองใหม่";
+      } finally {
+        if (request === couponRequest) applyCoupon.disabled = false;
+      }
+    });
     const termsBox = node("section");
     termsBox.className = "checkin-terms";
     const picker = node("select");
@@ -1059,10 +1129,7 @@ function main(intakeGroups) {
     const resetWarning = () => { warningToken = undefined; warnings.hidden = true; submit.textContent = "ยืนยันเช็กอิน"; };
     arrival.addEventListener("change",resetWarning);
     form.append(intakeForm.panel,termsBox,acceptLabel,signatureArea,warnings,submit,back,status);
-    bookingContent.replaceChildren(node("h3","เช็กอิน · " + booking.customer),
-      node("p","ยอดสุทธิ " + baht.format(booking.total_cents/100) +
-        " · รับมัดจำแล้ว " + baht.format(booking.paid_cents/100) +
-        " · คงเหลือ " + baht.format(booking.balance_cents/100)),form);
+    bookingContent.replaceChildren(node("h3","เช็กอิน · " + booking.customer),totalLine,form);
 
     const strokes = [];
     let active = null;
@@ -1154,12 +1221,16 @@ function main(intakeGroups) {
     form.addEventListener("submit",async (event) => {
       event.preventDefault();
       if (saving || !termsVersion) return;
+      if (couponInput.value.trim() && (!coupon || couponInput.value.trim() !== coupon.code)) {
+        status.textContent = "กดใช้คูปองก่อนเช็กอิน หรือล้างรหัสคูปอง";
+        return;
+      }
       if (!strokes.some((stroke) => stroke.length > 1)) { status.textContent = "กรุณาให้ลูกค้าเซ็นลายเซ็น"; return; }
       saving = true;
       submit.disabled = true;
       const body = {language:picker.value,version:termsVersion,accepted:accept.checked,signature:strokes,
         revision:booking.cloud_revision, arrivalDay:arrival.value,arrivalTime:arrivalTime.value,pickupTime:returnTime.value,
-        expectedBalance:booking.balance_cents,amountCents:Math.round(Number(amount.value)*100),
+        expectedBalance:coupon?.balance_cents ?? booking.balance_cents,couponCode:coupon?.code,amountCents:Math.round(Number(amount.value)*100),
         paymentDate:paymentDay.value,receivedTime:paymentTime.value,key:paymentKey,intake:intakeForm.values(),draft,warningToken};
       try {
         const response = await fetch(endpoint,{
@@ -1175,9 +1246,9 @@ function main(intakeGroups) {
           return;
         }
         if (!response.ok) {
-          status.textContent = result.status === "conflict" ? "การจองหรือยอดมัดจำเปลี่ยนแล้ว กรุณาเปิดรายละเอียดล่าสุด"
+          status.textContent = couponErrors[result.status] || (result.status === "conflict" ? "ราคา คูปอง หรือยอดมัดจำเปลี่ยนแล้ว กรุณาตรวจรายละเอียดล่าสุด"
             : result.status === "consent_required" ? "กรุณาตรวจการยอมรับเงื่อนไขและลายเซ็น"
-            : "เช็กอินไม่ได้ กรุณาตรวจวัน เวลา และยอดรับชำระ";
+            : "เช็กอินไม่ได้ กรุณาตรวจวัน เวลา และยอดรับชำระ");
           return;
         }
         if (form.isConnected && bookingDialog.open) await showStay(result.stayId);
@@ -1210,6 +1281,8 @@ function main(intakeGroups) {
         node("p",[stay.checkin,stay.checkout].map((day) => bookingDate.format(new Date(day))).join(" – ")),
         node("p",service + " · " + stay.charged_nights + " " + unit),
         node("p","ยอดสุทธิ " + money(stay.total_cents)));
+      if (stay.coupon_code) bookingContent.append(node("p","คูปอง " + stay.coupon_code +
+        " · ส่วนลด " + money(stay.coupon_discount_cents)));
       for (const [label,value] of [["เช็กอินจริง",stay.actual_checkin_at],["เช็กเอาต์จริง",stay.actual_checkout_at]]) {
         if (!value) continue;
         const moment = new Date(value);

@@ -32,7 +32,7 @@ export function bookingValues(form) {
   const rawNet = Math.max(0,subtotal-discountCents);
   const rounding = form.wholeBaht === true ? rawNet % 100 : 0;
   return {fields:[customerId,checkin,checkout,quantity100/100,(rawNet-rounding)/100,note,discountCents,rounding,service],
-    dogIds:[...ids], dogRows:JSON.stringify(dogs), quotePending, netCents:rawNet-rounding};
+    subtotal, dogIds:[...ids], dogRows:JSON.stringify(dogs), quotePending, netCents:rawNet-rounding};
 }
 
 export async function bookingRates(db) {

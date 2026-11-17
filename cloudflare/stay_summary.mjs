@@ -8,8 +8,10 @@ export async function staySummary(db, id) {
           ELSE 'overnight' END AS service_type,s.intake,
         ROUND(s.agreed_total*100) AS total_cents,s.discount_cents,s.payment_tracking,
         CASE WHEN s.payment_tracking=1 THEN ${stayBalance} ELSE NULL END AS due_cents,
-        c.name AS customer,b.id AS booking_id,b.booking_number
+        c.name AS customer,b.id AS booking_id,b.booking_number,
+        coupon.code AS coupon_code,used.discount_cents AS coupon_discount_cents
       FROM stays s JOIN customers c ON c.id=s.customer_id LEFT JOIN appointments b ON b.stay_id=s.id
+      LEFT JOIN coupon_uses used ON used.stay_id=s.id LEFT JOIN coupons coupon ON coupon.id=used.coupon_id
       WHERE s.id=?`).bind(id),
     db.prepare(`SELECT d.name,sd.nightly_rate_cents FROM stay_dogs sd JOIN dogs d ON d.id=sd.dog_id
       WHERE sd.stay_id=? ORDER BY d.name,d.id`).bind(id),

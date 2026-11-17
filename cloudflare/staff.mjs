@@ -1,7 +1,7 @@
 import { receiveStayPayment, stayBalance, authorizedStaff } from "./stay_payments.mjs";
 import { pendingBookings, bookingCalendar, bookingDetails, receiveBookingDeposit, deleteBookingDeposit } from "./bookings.mjs";
 import { staySummary } from "./stay_summary.mjs";
-import { checkInBooking, checkInDirect, previewDirectStay, checkInTerms } from "./check_in.mjs";
+import { checkInBooking, checkInDirect, previewDirectStay, previewCheckInCoupon, checkInTerms } from "./check_in.mjs";
 import { saveBooking, archiveBooking, bookingRates } from "./booking_writes.mjs";
 import { searchCustomers, customerDetails, saveCustomer, archiveCustomer } from "./customers.mjs";
 import { dogPhoto, saveDogPhoto, photoLimit } from "./dog_photos.mjs";
@@ -116,20 +116,21 @@ export default {
     const customerMatch = /^\/api\/customers\/(\d+)(?:\/dogs\/(\d+)\/photo)?$/.exec(url.pathname);
     const staySummaryMatch = /^\/api\/stays\/(\d+)$/.exec(url.pathname);
     const directCheckIn = url.pathname === "/api/stays/check-in";
+    const couponPreview = url.pathname === "/api/stays/check-in/coupon";
     const directPreview = url.pathname === "/api/stays/check-in/preview";
     const checkInMatch = /^\/api\/bookings\/(\d+)\/check-in$/.exec(url.pathname);
     const bookingMatch = /^\/api\/bookings\/(\d+)$/.exec(url.pathname);
     const receiptMatch = /^\/api\/receipts\/(\d+)$/.exec(url.pathname);
     const isFile = receiptMatch || url.pathname === "/api/payment-qr.jpg";
-    if (!match && !depositMatch && !dogMatch && !customerMatch && !bookingMatch && !checkInMatch && !directCheckIn && !directPreview && !staySummaryMatch && !isFile && !["/", "/api/account", "/api/customers", "/api/bookings", "/api/bookings/rates", "/api/bookings/calendar", "/api/bookings/pending", "/api/stays/outstanding", "/api/stays/current"].includes(url.pathname)) return json({error: "not_found"}, 404);
+    if (!match && !depositMatch && !dogMatch && !customerMatch && !bookingMatch && !checkInMatch && !directCheckIn && !directPreview && !couponPreview && !staySummaryMatch && !isFile && !["/", "/api/account", "/api/customers", "/api/bookings", "/api/bookings/rates", "/api/bookings/calendar", "/api/bookings/pending", "/api/stays/outstanding", "/api/stays/current"].includes(url.pathname)) return json({error: "not_found"}, 404);
     try {
       const user = await authorizedUser(env, ctx);
       if (!user) return json({error: "access_required"}, 403);
       if (isFile) return await privateFile(request, env, receiptMatch);
-      if (checkInMatch || directCheckIn || directPreview) {
+      if (checkInMatch || directCheckIn || directPreview || couponPreview) {
         const id = checkInMatch ? Number(checkInMatch[1]) : null;
         if (checkInMatch && (!Number.isSafeInteger(id) || id < 1)) return json({error:"not_found"},404);
-        if (request.method === "GET" && !directPreview) return json(checkInTerms(url.searchParams.get("lang")));
+        if (request.method === "GET" && !directPreview && !couponPreview) return json(checkInTerms(url.searchParams.get("lang")));
         if (request.method !== "POST") return json({error:"method_not_allowed"},405);
         if (request.headers.get("Origin") !== url.origin) return json({error:"invalid_origin"},403);
         if (request.headers.get("Content-Type")?.split(";",1)[0].trim().toLowerCase() !== "application/json") {
@@ -137,9 +138,10 @@ export default {
         }
         const form = await smallJson(request, 65536);
         if (!form) return json({error:"invalid"},400);
-        const result = directPreview ? await previewDirectStay(env.DB,form,user)
+        const result = couponPreview ? await previewCheckInCoupon(env.DB,form,user) : directPreview ? await previewDirectStay(env.DB,form,user)
           : directCheckIn ? await checkInDirect(env.DB,form,user) : await checkInBooking(env.DB,id,form,user);
-        return json(result, {ready:200,created:201,saved:200,invalid:400,consent_required:422,not_found:404,conflict:409,warning:409}[result.status]);
+        return json(result, {ready:200,created:201,saved:200,invalid:400,consent_required:422,not_found:404,conflict:409,warning:409,coupon_invalid:400,
+          coupon_unavailable:409,coupon_minimum:422,coupon_exceeds:422}[result.status]);
       }
       if (request.method !== "GET" && (bookingMatch || url.pathname === "/api/bookings")) {
         const id = bookingMatch ? Number(bookingMatch[1]) : null;

@@ -394,9 +394,24 @@ assert.equal((await get(termsPath)).status,404);
 const savedTerms = await (await staffCall(termsPath,{},context)).json();
 assert.equal(savedTerms.language,"en");
 assert.equal(savedTerms.terms.sections.length,3);
+sqlite.exec(`INSERT INTO coupons (code,kind,value,minimum_cents,expires_on,max_uses) VALUES
+  ('000001','percent',1000,100000,'2099-12-31',1),
+  ('000002','fixed',2500,20000,'2099-12-31',1),
+  ('000003','percent',1000,150000,'2099-12-31',1),
+  ('000004','fixed',2500,0,'2020-01-01',1),
+  ('000005','fixed',100000,0,'2099-12-31',1)`);
+const couponPath = "/api/stays/check-in/coupon";
+assert.equal((await staffCall(couponPath,customerWrite("POST",{bookingId:1,code:"000001"}))).status,403);
+const couponForBooking = (code) => staffCall(couponPath,customerWrite("POST",{bookingId:1,code}),context);
+assert.equal((await (await couponForBooking("000003")).json()).status,"coupon_minimum");
+assert.equal((await (await couponForBooking("000004")).json()).status,"coupon_unavailable");
+assert.equal((await (await couponForBooking("000005")).json()).status,"coupon_exceeds");
+const quote = await (await couponForBooking("000001")).json();
+assert.deepEqual(quote,{status:"ready",discount_cents:12000,total_cents:108000,balance_cents:48000});
+assert.equal(sqlite.prepare("SELECT count(*) AS count FROM coupon_uses").get().count,0);
 const checkIn = {language:"en",version:savedTerms.version,accepted:true,signature:[[[10,10],[30,20]]],
-  revision:null,arrivalDay:"2026-01-10",arrivalTime:"09:15",pickupTime:"17:00",expectedBalance:60000,
-  amountCents:50000,paymentDate:"2026-01-10",receivedTime:"09:21",key:"8".repeat(32),
+  revision:null,arrivalDay:"2026-01-10",arrivalTime:"09:15",pickupTime:"17:00",expectedBalance:48000,couponCode:"000001",
+  amountCents:38000,paymentDate:"2026-01-10",receivedTime:"09:21",key:"8".repeat(32),
   intake:{food_packed:"1",food:"อาหารเม็ด",treats_packed:"1",supplies:"ไม่เลือก",exam_eyes:"normal",
     exam_ears:"abnormal",health_note:"ตรวจหูอีกครั้ง",behavior:"friendly",service_type:"malicious override"}};
 assert.equal((await staffCall(checkInPath,customerWrite("POST",checkIn))).status,403);
@@ -426,6 +441,10 @@ assert.equal(staySummary.payments.filter((payment) => payment.payment_type === "
 assert.equal(staySummary.payments.filter((payment) => payment.payment_type === "checkin").length,1);
 assert.equal(staySummary.payments.at(-1).received_time,"09:21");
 assert.equal(staySummary.due_cents,10000);
+assert.equal(staySummary.total_cents,108000);
+assert.equal(staySummary.coupon_code,"000001");
+assert.equal(staySummary.coupon_discount_cents,12000);
+assert.equal(sqlite.prepare("SELECT count(*) AS count FROM coupon_uses").get().count,1);
 assert.deepEqual(staySummary.intake,{food_packed:"1",food:"อาหารเม็ด",treats_packed:"1",exam_eyes:"normal",
   exam_ears:"abnormal",health_note:"ตรวจหูอีกครั้ง",behavior:"friendly",service_type:"overnight",
   arrival_time:"09:15",pickup_time:"17:00"});
@@ -452,7 +471,7 @@ assert.equal((await staffCall(directPreviewPath,customerWrite("POST",{...draft,d
 const preview = await (await staffCall(directPreviewPath,customerWrite("POST",draft),context)).json();
 assert.equal(preview.total_cents,25000);
 const directConsent = await (await staffCall(directPath+"?lang=th",{},context)).json();
-const directForm = {...checkIn,draft,key:draft.key,language:"th",version:directConsent.version,expectedBalance:25000,
+const directForm = {...checkIn,draft,key:draft.key,language:"th",version:directConsent.version,expectedBalance:25000,couponCode:undefined,
   amountCents:25000,arrivalDay:draft.checkin,paymentDate:draft.checkin};
 assert.equal((await get(directPath)).status,404);
 assert.equal((await staffCall(directPath,customerWrite("POST",{...directForm,amountCents:25001}),context)).status,400);
@@ -471,6 +490,17 @@ assert.equal(directStay.consent.signed_language,"th");
 const duplicateDates = await (await staffCall(directPath,customerWrite("POST",{...directForm,key:"3".repeat(32)}),context)).json();
 assert.deepEqual(duplicateDates.warnings,["overlap"]);
 assert.equal((await staffCall("/api/stays/"+walkIn.stayId+"/check-out",checkoutOptions,context)).status,200);
+const fixedQuote = await (await staffCall(couponPath,customerWrite("POST",{draft,code:"000002"}),context)).json();
+assert.deepEqual(fixedQuote,{status:"ready",discount_cents:2500,total_cents:22500,balance_cents:22500});
+assert.equal((await (await staffCall(couponPath,customerWrite("POST",{draft,code:"000001"}),context)).json()).status,"coupon_unavailable");
+const couponRace = await Promise.all(["2025-10-22","2025-11-22"].map((date,index) => {
+  const request = {...directForm,draft:{...draft,checkin:date,checkout:date},arrivalDay:date,paymentDate:date,
+    amountCents:22500,expectedBalance:22500,couponCode:"000002",key:(index ? "b" : "c").repeat(32)};
+  return staffCall(directPath,customerWrite("POST",request),context);
+}));
+assert.deepEqual(couponRace.map((result) => result.status).sort(),[201,409]);
+assert.equal((await couponRace.find((result) => result.status === 409).json()).status,"coupon_unavailable");
+assert.equal(sqlite.prepare("SELECT count(*) AS count FROM coupon_uses").get().count,2);
 const dogsPath = customerPath + "/dogs";
 const dogForm = {name:"New dog",size:"medium",note:"",breed:"Corgi",gender:"female",neutered:"yes",
   weight:"10.5",vaccinated:"yes",rabies:"yes",flea_tick:"",medical_history:"",required_care:"",medications:"",
@@ -497,7 +527,7 @@ assert.equal(afterDog.dogs.length, 1);
 assert.match(afterDog.stays.find((stay) => stay.id === 1).dogs, /Other dog/);
 assert.equal((await staffCall(customerDogPhoto, {}, context)).status, 404);
 assert.equal((await staffCall(customerPath, customerWrite("DELETE"), context)).status, 200);
-assert.equal(sqlite.prepare("SELECT count(*) AS count FROM stays WHERE customer_id=1").get().count, 4);
+assert.equal(sqlite.prepare("SELECT count(*) AS count FROM stays WHERE customer_id=1").get().count, 5);
 assert.equal(sqlite.prepare("SELECT count(*) AS count FROM dogs WHERE customer_id=1").get().count, 3);
 assert.equal((await staffCall(customerDogPhoto, {}, context)).status, 404);
 sqlite.exec("UPDATE app_users SET active=0 WHERE id=1");
