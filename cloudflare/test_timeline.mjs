@@ -85,6 +85,7 @@ sqlite.exec("UPDATE stays SET status='completed', agreed_total=1000, payment_tra
 sqlite.exec(await readFile(new URL("./staff_access.sql", import.meta.url), "utf8"));
 sqlite.exec(await readFile(new URL("./booking_deposits.sql", import.meta.url), "utf8"));
 sqlite.exec(await readFile(new URL("./customer_writes.sql", import.meta.url), "utf8"));
+sqlite.exec(await readFile(new URL("./dog_writes.sql", import.meta.url), "utf8"));
 sqlite.exec("INSERT INTO staff_access_identities (email,user_id) VALUES ('admin@example.test',1)");
 const actor = {id:1,email:"admin@example.test"};
 const now = new Date("2026-11-17T06:30:00Z");
@@ -287,9 +288,34 @@ assert.ok(Number.isFinite(Date.parse(checkoutTime)));
 assert.equal((await staffCall(checkoutPath, checkoutOptions, context)).status,200);
 assert.equal(sqlite.prepare("SELECT actual_checkout_at FROM stays WHERE id=1").get().actual_checkout_at,checkoutTime);
 assert.deepEqual((await (await staffCall("/api/stays/current", {}, context)).json()).stays, []);
+const dogsPath = customerPath + "/dogs";
+const dogForm = {name:"New dog",size:"medium",note:"",breed:"Corgi",gender:"female",neutered:"yes",
+  weight:"10.5",vaccinated:"yes",rabies:"yes",flea_tick:"",medical_history:"",required_care:"",medications:"",
+  birth_date:"",birth_estimated:false,age_years:"3",age_months:"2",key:"f".repeat(32)};
+assert.equal((await staffCall(dogsPath, customerWrite("POST", dogForm))).status, 403);
+assert.equal((await staffCall(dogsPath, customerWrite("POST", {...dogForm,age_months:"12"}), context)).status, 400);
+const dogResponses = await Promise.all([0,1].map(() => staffCall(dogsPath, customerWrite("POST", dogForm), context)));
+assert.deepEqual(dogResponses.map((response) => response.status).sort(), [200,201]);
+const dogs = (await (await staffCall(customerPath, {}, context)).json()).dogs;
+assert.equal(dogs.filter((dog) => dog.name === "New dog").length, 1);
+const newDog = dogs.find((dog) => dog.name === "New dog");
+const newDogProfile = JSON.parse(newDog.profile);
+assert.equal(newDogProfile.birth_estimated, true);
+assert.match(newDogProfile.birth_date, /^\d{4}-\d{2}-\d{2}$/);
+assert.equal((await staffCall("/api/customers/3/dogs/2", customerWrite("PUT", dogForm), context)).status, 404);
+assert.equal((await staffCall(dogsPath + "/2", customerWrite("PUT", {...dogForm,name:"Other dog",age_years:"",
+  age_months:"",birth_date:"2020-02-29"}), context)).status, 200);
+const editedDog = sqlite.prepare("SELECT profile FROM dogs WHERE id=2").get();
+assert.equal(JSON.parse(editedDog.profile).birth_date, "2020-02-29");
+assert.equal((await staffCall(dogsPath + "/2", customerWrite("DELETE"), context)).status, 200);
+assert.equal((await staffCall(dogsPath + "/" + newDog.id, customerWrite("DELETE"), context)).status, 200);
+const afterDog = await (await staffCall(customerPath, {}, context)).json();
+assert.equal(afterDog.dogs.length, 1);
+assert.match(afterDog.stays.find((stay) => stay.id === 1).dogs, /Other dog/);
+assert.equal((await staffCall(customerDogPhoto, {}, context)).status, 404);
 assert.equal((await staffCall(customerPath, customerWrite("DELETE"), context)).status, 200);
 assert.equal(sqlite.prepare("SELECT count(*) AS count FROM stays WHERE customer_id=1").get().count, 2);
-assert.equal(sqlite.prepare("SELECT count(*) AS count FROM dogs WHERE customer_id=1").get().count, 2);
+assert.equal(sqlite.prepare("SELECT count(*) AS count FROM dogs WHERE customer_id=1").get().count, 3);
 assert.equal((await staffCall(customerDogPhoto, {}, context)).status, 404);
 sqlite.exec("UPDATE app_users SET active=0 WHERE id=1");
 assert.equal((await staffCall(paymentPath, staffOptions, context)).status, 403);

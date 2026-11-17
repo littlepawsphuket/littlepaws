@@ -7,7 +7,7 @@ const css = `
   .delete-deposit{margin-inline-start:.75rem;background:#fff1ed;color:#8b3225;border-color:#e6a99b}
   dialog::backdrop{background:#203c3066}
   h2,p{margin:.15rem 0 .6rem}form{display:flex;flex-wrap:wrap;align-items:end;gap:.7rem}
-  label{display:grid;gap:.2rem}input,textarea,button{font:inherit;padding:.55rem .7rem;border:1px solid #a7cbb9;border-radius:.6rem}
+  label{display:grid;gap:.2rem}input,textarea,select,button{font:inherit;padding:.55rem .7rem;border:1px solid #a7cbb9;border-radius:.6rem}
   button{background:#155747;color:#fff;cursor:pointer}button:disabled{opacity:.65} [hidden]{display:none}
 `;
 
@@ -176,6 +176,129 @@ function main() {
     return article;
   }
 
+  const sizes = {small:"เล็ก",medium:"กลาง",large:"ใหญ่"};
+  const yesNo = {yes:"ใช่",no:"ไม่ใช่"};
+  const genders = {male:"เพศผู้",female:"เพศเมีย"};
+  const neutered = {yes:"ทำหมันแล้ว",no:"ยังไม่ทำหมัน"};
+  const dogAttempts = new Map();
+
+  function readProfile(dog) {
+    try { return JSON.parse(dog?.profile) || {}; } catch { return {}; }
+  }
+
+  function dogEditor(customerId, dog) {
+    customerRequest?.abort();
+    const profile = readProfile(dog);
+    const attempt = dog ? null : dogAttempts.get(customerId);
+    const values = attempt || {...profile,...dog};
+    const form = node("form");
+    const inputs = {};
+    function field(name, label, type, setting) {
+      const input = node(type === "select" ? "select" : type === "textarea" ? "textarea" : "input");
+      if (type === "select") {
+        for (const [value, text] of Object.entries(setting)) input.append(new Option(text, value));
+      } else if (type !== "textarea") input.type = type;
+      if (typeof setting === "number") input.maxLength = setting;
+      if (type === "checkbox") input.checked = Boolean(values[name]);
+      else input.value = values[name] ?? (name === "size" ? "small" : "");
+      input.required = name === "name";
+      const caption = node("label", label);
+      caption.append(input);
+      inputs[name] = input;
+      form.append(caption);
+    }
+    field("name","ชื่อสุนัข","text",120);
+    field("size","ขนาด","select",sizes);
+    field("breed","สายพันธุ์","text",120);
+    field("gender","เพศ","select",{"":"—", ...genders});
+    field("neutered","สถานะทำหมัน","select",{"":"—", ...neutered});
+    field("weight","น้ำหนัก (กก.)","text",6);
+    field("birth_date","วันเกิด","date");
+    field("birth_estimated","วันเกิดโดยประมาณ","checkbox");
+    field("age_years","ระบุอายุแทนวันเกิด (ปี)","text",2);
+    field("age_months","ระบุอายุแทนวันเกิด (เดือน)","text",2);
+    field("vaccinated","วัคซีนพื้นฐานใน 1 ปีที่ผ่านมา","select",{"":"—", ...yesNo});
+    field("rabies","วัคซีนพิษสุนัขบ้าใน 1 ปีที่ผ่านมา","select",{"":"—", ...yesNo});
+    field("flea_tick","ป้องกันเห็บหมัดใน 1 เดือนที่ผ่านมา","select",{"":"—", ...yesNo});
+    field("medical_history","ประวัติสุขภาพ / แพ้อาหาร","textarea",600);
+    field("required_care","โรคประจำตัว / การดูแลที่ต้องการ","textarea",600);
+    field("medications","ยาประจำตัว","textarea",600);
+    field("note","นิสัย / ข้อควรระวัง","textarea",600);
+    if (dog) {
+      inputs.birth_date.addEventListener("change", () => {
+        inputs.age_years.value = "";
+        inputs.age_months.value = "";
+        inputs.birth_estimated.checked = false;
+      });
+    }
+    const status = node("p", attempt ? "ส่งข้อมูลเดิมอีกครั้งเพื่อยืนยันผล" : "");
+    status.setAttribute("role","status");
+    const submit = node("button","บันทึกข้อมูลสุนัข");
+    const back = Object.assign(node("button","กลับไปดูข้อมูลลูกค้า"), {type:"button"});
+    back.addEventListener("click", () => showCustomer(customerId));
+    form.append(submit, back, status);
+    customerContent.replaceChildren(node("h3", dog ? "แก้ไขสุนัข" : "เพิ่มสุนัข"), form);
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const values = Object.fromEntries(Object.entries(inputs).map(([field,input]) =>
+        [field,input.type === "checkbox" ? input.checked : input.value.trim()]));
+      const pending = dog ? null : dogAttempts.get(customerId);
+      if (pending && Object.keys(values).some((field) => values[field] !== pending[field])) {
+        status.textContent = "ส่งข้อมูลเดิมอีกครั้งเพื่อยืนยันผลการบันทึกครั้งก่อน";
+        return;
+      }
+      const body = dog ? values : pending || {...values,key:key()};
+      if (!dog) dogAttempts.set(customerId, body);
+      submit.disabled = true;
+      try {
+        const response = await fetch("/api/customers/" + customerId + "/dogs" + (dog ? "/" + dog.id : ""), {
+          method:dog ? "PUT" : "POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body),
+        });
+        if (!response.ok) {
+          if (!dog && response.status < 500) dogAttempts.delete(customerId);
+          status.textContent = "บันทึกไม่ได้ กรุณาตรวจชื่อ วันเกิด อายุ และน้ำหนัก";
+          return;
+        }
+        if (!dog) dogAttempts.delete(customerId);
+        if (form.isConnected && customerDialog.open) {
+          await showCustomer(customerId);
+          document.getElementById("customer-status").textContent = "บันทึกข้อมูลสุนัขแล้ว";
+        }
+        if (selected === "customers") await load(true);
+      } catch {
+        status.textContent = "ยังยืนยันผลไม่ได้ กรุณาลองส่งข้อมูลเดิมอีกครั้ง";
+      } finally {
+        submit.disabled = false;
+      }
+    });
+  }
+
+  async function removeDog(customerId, dog, button) {
+    if (!confirm("นำ " + dog.name + " ออกจากรายชื่อสุนัขโดยเก็บประวัติไว้หรือไม่?")) return;
+    button.disabled = true;
+    try {
+      const response = await fetch("/api/customers/" + customerId + "/dogs/" + dog.id, {method:"DELETE"});
+      if (!response.ok) throw Error();
+      if (button.isConnected && customerDialog.open) {
+        await showCustomer(customerId);
+        document.getElementById("customer-status").textContent = "นำสุนัขออกจากรายชื่อแล้ว";
+      }
+      if (selected === "customers") await load(true);
+    } catch {
+      if (button.isConnected) document.getElementById("customer-status").textContent = "นำสุนัขออกไม่ได้ กรุณาลองใหม่";
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  function dogAge(birth) {
+    const [year,month,day] = parts.format(new Date()).split("-").map(Number);
+    let months = (year - birth.getUTCFullYear()) * 12 + month - 1 - birth.getUTCMonth();
+    const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+    if (Math.min(lastDay, birth.getUTCDate()) > day) months -= 1;
+    return Math.floor(months / 12) + " ปี " + (months % 12) + " เดือน";
+  }
+
   function dogCard(customerId, dog) {
     const item = node("article");
     item.append(node("h4", dog.name));
@@ -184,18 +307,20 @@ function main() {
       photo.src = "/api/customers/" + customerId + "/dogs/" + dog.id + "/photo";
       item.append(photo);
     }
-    let profile = {};
-    try { profile = JSON.parse(dog.profile) || {}; } catch {}
+    const profile = readProfile(dog);
     const birth = new Date(profile.birth_date);
     const facts = [
-      {small:"เล็ก",medium:"กลาง",large:"ใหญ่"}[dog.size], profile.breed,
-      {male:"เพศผู้",female:"เพศเมีย"}[profile.gender],
-      {yes:"ทำหมันแล้ว",no:"ยังไม่ทำหมัน"}[profile.neutered],
+      sizes[dog.size], profile.breed, genders[profile.gender], neutered[profile.neutered],
       profile.birth_date && Number.isFinite(birth.getTime())
-        ? (profile.birth_estimated ? "วันเกิดโดยประมาณ " : "วันเกิด ") + bookingDate.format(birth) : "",
+        ? (profile.birth_estimated ? "วันเกิดโดยประมาณ " : "วันเกิด ") + bookingDate.format(birth) + " (" + dogAge(birth) + ")" : "",
     ].filter(Boolean);
     if (facts.length) item.append(node("p", facts.join(" · ")));
     if (dog.note) item.append(node("p", dog.note));
+    const edit = Object.assign(node("button", "แก้ไขสุนัข"), {type:"button"});
+    edit.addEventListener("click", () => dogEditor(customerId, dog));
+    const remove = Object.assign(node("button", "นำออกจากรายชื่อ"), {type:"button",className:"delete-deposit"});
+    remove.addEventListener("click", () => removeDog(customerId, dog, remove));
+    item.append(edit, remove);
     return item;
   }
 
@@ -223,7 +348,9 @@ function main() {
             ["ที่อยู่ฉุกเฉิน",customer.emergency_address], ["หมายเหตุ",customer.note]]) {
             if (value) customerContent.append(node("p", label + " · " + value));
           }
-          customerContent.append(node("h3", "สุนัข"));
+          const addDog = Object.assign(node("button", "เพิ่มสุนัข"), {type:"button"});
+          addDog.addEventListener("click", () => dogEditor(customer.id));
+          customerContent.append(node("h3", "สุนัข"), addDog);
           for (const dog of data.dogs) customerContent.append(dogCard(customer.id, dog));
           if (!data.dogs.length) customerContent.append(node("p", "ยังไม่มีข้อมูลสุนัข"));
           customerContent.append(node("h3", "ประวัติการเข้าพัก"));

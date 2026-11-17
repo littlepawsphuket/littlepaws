@@ -1,6 +1,7 @@
 import { receiveStayPayment, stayBalance, authorizedStaff } from "./stay_payments.mjs";
 import { pendingBookings, bookingDetails, receiveBookingDeposit, deleteBookingDeposit } from "./bookings.mjs";
 import { searchCustomers, customerDetails, dogPhoto, saveCustomer, archiveCustomer } from "./customers.mjs";
+import { saveDog, archiveDog } from "./dogs.mjs";
 import { outstandingPage } from "./staff_ui.mjs";
 
 const JSON_HEADERS = {
@@ -97,15 +98,36 @@ export default {
     const url = new URL(request.url);
     const match = /^\/api\/stays\/(\d+)\/(payments|check-out)$/.exec(url.pathname);
     const depositMatch = /^\/api\/bookings\/(\d+)\/deposits(?:\/(\d+))?$/.exec(url.pathname);
+    const dogMatch = /^\/api\/customers\/(\d+)\/dogs(?:\/(\d+))?$/.exec(url.pathname);
     const customerMatch = /^\/api\/customers\/(\d+)(?:\/dogs\/(\d+)\/photo)?$/.exec(url.pathname);
     const bookingMatch = /^\/api\/bookings\/(\d+)$/.exec(url.pathname);
     const receiptMatch = /^\/api\/receipts\/(\d+)$/.exec(url.pathname);
     const isFile = receiptMatch || url.pathname === "/api/payment-qr.jpg";
-    if (!match && !depositMatch && !customerMatch && !bookingMatch && !isFile && !["/", "/api/account", "/api/customers", "/api/bookings/pending", "/api/stays/outstanding", "/api/stays/current"].includes(url.pathname)) return json({error: "not_found"}, 404);
+    if (!match && !depositMatch && !dogMatch && !customerMatch && !bookingMatch && !isFile && !["/", "/api/account", "/api/customers", "/api/bookings/pending", "/api/stays/outstanding", "/api/stays/current"].includes(url.pathname)) return json({error: "not_found"}, 404);
     try {
       const user = await authorizedUser(env, ctx);
       if (!user) return json({error: "access_required"}, 403);
       if (isFile) return await privateFile(request, env, receiptMatch);
+      if (dogMatch) {
+        const customerId = Number(dogMatch[1]);
+        const dogId = dogMatch[2] ? Number(dogMatch[2]) : null;
+        if (![customerId, dogId ?? 1].every((id) => Number.isSafeInteger(id) && id > 0)) return json({error:"not_found"}, 404);
+        const methods = dogId === null ? ["POST"] : ["PUT", "DELETE"];
+        if (!methods.includes(request.method)) return json({error:"method_not_allowed"}, 405);
+        if (request.headers.get("Origin") !== url.origin) return json({error:"invalid_origin"}, 403);
+        let status;
+        if (request.method === "DELETE") {
+          status = await archiveDog(env.DB, customerId, dogId, user);
+        } else {
+          if (request.headers.get("Content-Type")?.split(";", 1)[0].trim().toLowerCase() !== "application/json") {
+            return json({error:"invalid_content_type"}, 415);
+          }
+          const form = await smallJson(request, 16384);
+          if (!form) return json({error:"invalid"}, 400);
+          status = await saveDog(env.DB, customerId, dogId, form, user);
+        }
+        return json({status}, {created:201,saved:200,archived:200,invalid:400,not_found:404}[status]);
+      }
       if (request.method !== "GET" && (url.pathname === "/api/customers" || (customerMatch && !customerMatch[2]))) {
         const id = customerMatch ? Number(customerMatch[1]) : null;
         if (id !== null && (!Number.isSafeInteger(id) || id < 1)) return json({error:"not_found"}, 404);
