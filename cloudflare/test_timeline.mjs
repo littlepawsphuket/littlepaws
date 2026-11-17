@@ -94,6 +94,7 @@ sqlite.exec(await readFile(new URL("./booking_deposits.sql", import.meta.url), "
 sqlite.exec(await readFile(new URL("./customer_writes.sql", import.meta.url), "utf8"));
 sqlite.exec(await readFile(new URL("./dog_writes.sql", import.meta.url), "utf8"));
 sqlite.exec(await readFile(new URL("./booking_writes.sql", import.meta.url), "utf8"));
+sqlite.exec(await readFile(new URL("./direct_checkin.sql", import.meta.url), "utf8"));
 sqlite.exec("INSERT INTO staff_access_identities (email,user_id) VALUES ('admin@example.test',1)");
 const actor = {id:1,email:"admin@example.test"};
 const now = new Date("2026-11-17T06:30:00Z");
@@ -440,6 +441,36 @@ assert.equal(paidSummary.status,"completed");
 assert.equal(paidSummary.due_cents,0);
 assert.equal(paidSummary.payments.filter((payment) => payment.payment_type === "additional").length,1);
 assert.equal(paidSummary.payments.at(-1).received_time,"18:35");
+const directPath = "/api/stays/check-in";
+const directPreviewPath = directPath + "/preview";
+const draft = {...bookingForm,service:"daycare",checkin:"2025-12-22",checkout:"2025-12-22",quantity100:100,
+  dogs:[{id:2,rate:25000}],discountCents:0,key:"6".repeat(32)};
+const bookingCount = sqlite.prepare("SELECT count(*) AS count FROM appointments").get().count;
+assert.equal((await staffCall(directPreviewPath,customerWrite("POST",draft))).status,403);
+assert.equal((await staffCall(directPreviewPath,customerWrite("POST",{...draft,customerId:3}),context)).status,400);
+assert.equal((await staffCall(directPreviewPath,customerWrite("POST",{...draft,dogs:[{id:2,rate:null}]}),context)).status,400);
+const preview = await (await staffCall(directPreviewPath,customerWrite("POST",draft),context)).json();
+assert.equal(preview.total_cents,25000);
+const directConsent = await (await staffCall(directPath+"?lang=th",{},context)).json();
+const directForm = {...checkIn,draft,key:draft.key,language:"th",version:directConsent.version,expectedBalance:25000,
+  amountCents:25000,arrivalDay:draft.checkin,paymentDate:draft.checkin};
+assert.equal((await get(directPath)).status,404);
+assert.equal((await staffCall(directPath,customerWrite("POST",{...directForm,amountCents:25001}),context)).status,400);
+assert.equal((await staffCall(directPath,customerWrite("POST",{...directForm,expectedBalance:26000}),context)).status,400);
+const directResults = await Promise.all([0,1].map(() => staffCall(directPath,customerWrite("POST",directForm),context)));
+assert.deepEqual(directResults.map((result) => result.status).sort(),[200,201]);
+const [walkIn,repeatedWalkIn] = await Promise.all(directResults.map((response) => response.json()));
+assert.equal(walkIn.stayId,repeatedWalkIn.stayId);
+assert.equal(sqlite.prepare("SELECT count(*) AS count FROM appointments").get().count,bookingCount);
+const directStay = await (await staffCall("/api/stays/"+walkIn.stayId,{},context)).json();
+assert.equal(directStay.booking_number,null);
+assert.equal(directStay.service_type,"daycare");
+assert.equal(directStay.due_cents,0);
+assert.equal(directStay.payments.length,1);
+assert.equal(directStay.consent.signed_language,"th");
+const duplicateDates = await (await staffCall(directPath,customerWrite("POST",{...directForm,key:"3".repeat(32)}),context)).json();
+assert.deepEqual(duplicateDates.warnings,["overlap"]);
+assert.equal((await staffCall("/api/stays/"+walkIn.stayId+"/check-out",checkoutOptions,context)).status,200);
 const dogsPath = customerPath + "/dogs";
 const dogForm = {name:"New dog",size:"medium",note:"",breed:"Corgi",gender:"female",neutered:"yes",
   weight:"10.5",vaccinated:"yes",rabies:"yes",flea_tick:"",medical_history:"",required_care:"",medications:"",
@@ -466,7 +497,7 @@ assert.equal(afterDog.dogs.length, 1);
 assert.match(afterDog.stays.find((stay) => stay.id === 1).dogs, /Other dog/);
 assert.equal((await staffCall(customerDogPhoto, {}, context)).status, 404);
 assert.equal((await staffCall(customerPath, customerWrite("DELETE"), context)).status, 200);
-assert.equal(sqlite.prepare("SELECT count(*) AS count FROM stays WHERE customer_id=1").get().count, 3);
+assert.equal(sqlite.prepare("SELECT count(*) AS count FROM stays WHERE customer_id=1").get().count, 4);
 assert.equal(sqlite.prepare("SELECT count(*) AS count FROM dogs WHERE customer_id=1").get().count, 3);
 assert.equal((await staffCall(customerDogPhoto, {}, context)).status, 404);
 sqlite.exec("UPDATE app_users SET active=0 WHERE id=1");

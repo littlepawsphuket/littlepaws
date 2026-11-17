@@ -650,10 +650,18 @@ function main(intakeGroups) {
 
   let bookingRequest;
   const addBooking = document.getElementById("add-booking");
+  document.getElementById("direct-checkin").addEventListener("click", () => bookingEditor(null,true));
+  const warningLabels = {holiday:"ช่วงที่เลือกตรงกับวันหยุดร้าน",overlap:"สุนัขมีรายการอื่นทับช่วงวันที่เลือก",
+    capacity:"จำนวนสุนัขเกินความจุที่ตั้งไว้"};
   addBooking.addEventListener("click", () => bookingEditor());
   let createBookingKey;
 
-  async function bookingEditor(booking) {
+  async function bookingEditor(booking, direct = false, draftState = null) {
+    const draft = draftState?.draft;
+    const initial = booking || (draft && {customer:draftState.customer,customer_id:draft.customerId,
+      checkin:draft.checkin,checkout:draft.checkout,service_type:draft.service,charged_nights:draft.quantity100/100,
+      discount_cents:draft.discountCents,note:draft.note,
+      dogs:draft.dogs.map((dog) => ({id:dog.id,nightly_rate_cents:dog.rate}))});
     bookingRequest?.abort();
     const controller = bookingRequest = new AbortController();
     if (!bookingDialog.open) bookingDialog.showModal();
@@ -661,7 +669,7 @@ function main(intakeGroups) {
     status.setAttribute("role","status");
     const today = parts.format(new Date());
     const form = node("form");
-    const submit = node("button","บันทึกการจอง");
+    const submit = node("button",direct ? "ไปหน้าเช็กอิน" : "บันทึกการจอง");
     const warnings = node("ul");
     warnings.className = "booking-warnings";
     warnings.hidden = true;
@@ -691,26 +699,32 @@ function main(intakeGroups) {
       owner.append(new Option(booking.customer, booking.customer_id));
       owner.value = booking.customer_id;
       owner.disabled = true;
-    } else form.append(search,searchButton);
+    } else {
+      form.append(search,searchButton);
+      if (initial) {
+        owner.append(new Option(initial.customer,initial.customer_id));
+        owner.value = initial.customer_id;
+      }
+    }
     form.append(ownerGroup);
     const service = node("select");
     for (const [value,[label]] of Object.entries(services)) service.append(new Option(label,value));
-    service.value = booking?.service_type || "overnight";
+    service.value = initial?.service_type || "overnight";
     const serviceLabel = node("label","ประเภทบริการ");
     serviceLabel.append(service);
     form.append(serviceLabel);
-    const defaultDay = selected === "calendar" ? calendarAnchor.value || today : today;
-    const checkin = field("วันเข้าพัก","date",booking?.checkin || defaultDay);
-    const checkout = field("วันรับกลับ","date",booking?.checkout || defaultDay);
-    const quantity = field("จำนวนวัน / เดือน","number",booking?.charged_nights ?? 1);
-    const discount = field("ส่วนลด (บาท)","number",(booking?.discount_cents || 0)/100);
-    const note = field("หมายเหตุ","text",booking?.note || "");
+    const defaultDay = !direct && selected === "calendar" ? calendarAnchor.value || today : today;
+    const checkin = field("วันเข้าพัก","date",initial?.checkin || defaultDay);
+    const checkout = field("วันรับกลับ","date",initial?.checkout || defaultDay);
+    const quantity = field("จำนวนวัน / เดือน","number",initial?.charged_nights ?? 1);
+    const discount = field("ส่วนลด (บาท)","number",(initial?.discount_cents || 0)/100);
+    const note = field("หมายเหตุ","text",initial?.note || "");
     note.maxLength = 800;
     quantity.min = discount.min = "0";
     discount.step = "0.01";
     checkin.required = checkout.required = quantity.required = true;
     form.append(dogs,warnings,submit,status);
-    bookingContent.replaceChildren(node("h3",booking ? "แก้ไขการจอง" : "สร้างการจอง"),form);
+    bookingContent.replaceChildren(node("h3",direct ? "เช็กอินโดยตรง" : booking ? "แก้ไขการจอง" : "สร้างการจอง"),form);
     function defaults() {
       quantity.step = service.value === "monthly" ? "0.01" : "1";
       const days = (Date.parse(checkout.value) - Date.parse(checkin.value)) / 86400000;
@@ -753,7 +767,7 @@ function main(intakeGroups) {
       dogs.replaceChildren(node("legend","สุนัขและราคา"));
       choices.clear();
       if (!owner.value) return;
-      const existing = new Map((booking?.dogs || []).map((dog) => [dog.id,dog]));
+      const existing = new Map((initial?.dogs || []).map((dog) => [dog.id,dog]));
       let available = [];
       try {
         const response = await fetch("/api/customers/" + owner.value,{signal:controller.signal});
@@ -765,7 +779,7 @@ function main(intakeGroups) {
       }
       if (controller.signal.aborted || call !== requestId) return;
       const allDogs = new Map(available.map((dog) => [dog.id,dog]));
-      for (const dog of existing.values()) if (!allDogs.has(dog.id)) allDogs.set(dog.id,dog);
+      if (booking) for (const dog of existing.values()) if (!allDogs.has(dog.id)) allDogs.set(dog.id,dog);
       for (const dog of allDogs.values()) {
         const original = existing.get(dog.id);
         const include = Object.assign(node("input"),{type:"checkbox",checked:!!original});
@@ -788,7 +802,7 @@ function main(intakeGroups) {
       warningToken = null;
       warnings.replaceChildren();
       warnings.hidden = true;
-      submit.textContent = "บันทึกการจอง";
+      submit.textContent = direct ? "ไปหน้าเช็กอิน" : "บันทึกการจอง";
     }
     form.addEventListener("input",clearWarnings);
     owner.addEventListener("change",clearWarnings);
@@ -798,26 +812,29 @@ function main(intakeGroups) {
       const selectedDogs = [...choices].filter(([,entry]) => entry.include.checked)
         .map(([id,{rate}]) => ({id, rate:rate.value === "" ? null : Math.round(Number(rate.value)*100)}));
       if (!selectedDogs.length) { status.textContent = "กรุณาเลือกสุนัขอย่างน้อยหนึ่งตัว"; return; }
-      if (!booking) createBookingKey ??= key();
+      if (!booking && !direct) createBookingKey ??= key();
       const quantity100 = Math.round(Number(quantity.value)*100);
       const discountCents = Math.round(Number(discount.value)*100);
       const samePrice = booking && quantity100 === Math.round(booking.charged_nights*100) &&
         discountCents === booking.discount_cents && selectedDogs.length === booking.dogs.length &&
         selectedDogs.every((dog) => booking.dogs.some((old) => old.id === dog.id && old.nightly_rate_cents === dog.rate));
+      if (direct && selectedDogs.some((dog) => dog.rate === null)) {
+        status.textContent = "กรุณาระบุราคาของสุนัขทุกตัวก่อนเช็กอิน";
+        return;
+      }
       const body = {customerId:Number(owner.value),service:service.value, checkin:checkin.value,checkout:checkout.value,
         quantity100,discountCents,
-        dogs:selectedDogs,note:note.value,warningToken,wholeBaht:!samePrice || booking.rounding_cents > 0,key:createBookingKey,revision:booking?.cloud_revision ?? null};
+        dogs:selectedDogs,note:note.value,warningToken,wholeBaht:!samePrice || booking.rounding_cents > 0,
+        key:direct ? draft?.key || key() : createBookingKey,revision:booking?.cloud_revision ?? null};
       pendingSave = true;
       submit.disabled = true;
       try {
-        const response = await fetch("/api/bookings" + (booking ? "/" + booking.id : ""),{
+        const response = await fetch(direct ? "/api/stays/check-in/preview" : "/api/bookings" + (booking ? "/" + booking.id : ""),{
           method:booking ? "PUT" : "POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body),
         });
         const result = await response.json();
         if (result.status === "warning") {
-          const labels = {holiday:"ช่วงที่เลือกตรงกับวันหยุดร้าน", overlap:"สุนัขมีรายการอื่นทับช่วงวันที่เลือก",
-            capacity:"จำนวนสุนัขเกินความจุที่ตั้งไว้"};
-          warnings.replaceChildren(...result.warnings.map((value) => node("li",labels[value] || value)));
+          warnings.replaceChildren(...result.warnings.map((value) => node("li",warningLabels[value] || value)));
           warnings.hidden = false;
           warningToken = result.token;
           status.textContent = "ตรวจคำเตือน แล้วเลือกแก้ข้อมูลหรือยืนยันบันทึก";
@@ -828,6 +845,11 @@ function main(intakeGroups) {
         if (!response.ok) {
           status.textContent = response.status === 409
             ? "บันทึกไม่ได้ กรุณาตรวจยอดมัดจำหรือเปิดรายละเอียดล่าสุดอีกครั้ง" : "บันทึกไม่ได้ กรุณาตรวจวัน ราคา และสุนัข";
+          return;
+        }
+        if (direct) {
+          if (form.isConnected && bookingDialog.open) bookingCheckIn({...result,checkout:body.checkout,
+            checkin:body.checkin,paid_cents:0,cloud_revision:null},body);
           return;
         }
         if (!booking) createBookingKey = undefined;
@@ -845,7 +867,7 @@ function main(intakeGroups) {
       const response = await fetch("/api/bookings/rates",{signal:controller.signal});
       if (!response.ok) throw Error();
       rates = await response.json();
-      if (booking) await loadDogs();
+      if (initial) await loadDogs();
       else await searchOwners();
     } catch {
       if (!controller.signal.aborted) status.textContent = "โหลดการตั้งค่าราคาไม่ได้ กรุณาเปิดหน้าจอใหม่";
@@ -982,7 +1004,8 @@ function main(intakeGroups) {
     }
   }
 
-  function bookingCheckIn(booking) {
+  function bookingCheckIn(booking, draft = null) {
+    const endpoint = draft ? "/api/stays/check-in" : "/api/bookings/" + booking.id + "/check-in";
     bookingRequest?.abort();
     const controller = bookingRequest = new AbortController();
     const form = node("form");
@@ -997,7 +1020,7 @@ function main(intakeGroups) {
       form.append(wrapper);
       return input;
     }
-    const arrival = field("วันที่เช็กอินจริง","date",today);
+    const arrival = field("วันที่เช็กอินจริง","date",draft ? draft.checkin : today);
     arrival.max = today < booking.checkout ? today : booking.checkout;
     const arrivalTime = field("เวลาเช็กอินจริง","time",now);
     const returnTime = field("เวลานัดรับกลับ","time","",false);
@@ -1026,10 +1049,16 @@ function main(intakeGroups) {
     signatureArea.append(node("h4","ลายเซ็นลูกค้า"),canvas,clear);
     const submit = node("button","ยืนยันเช็กอิน");
     submit.disabled = true;
-    const back = Object.assign(node("button","กลับไปดูการจอง"),{type:"button"});
-    back.addEventListener("click", () => showBooking(booking.id));
+    const back = Object.assign(node("button",draft ? "กลับไปแก้รายละเอียด" : "กลับไปดูการจอง"),{type:"button"});
+    back.addEventListener("click", () => draft ? bookingEditor(null,true,{draft,customer:booking.customer}) : showBooking(booking.id));
     const intakeForm = checkInDetails();
-    form.append(intakeForm.panel,termsBox,acceptLabel,signatureArea,submit,back,status);
+    const warnings = node("ul");
+    warnings.className = "booking-warnings";
+    warnings.hidden = true;
+    let warningToken;
+    const resetWarning = () => { warningToken = undefined; warnings.hidden = true; submit.textContent = "ยืนยันเช็กอิน"; };
+    arrival.addEventListener("change",resetWarning);
+    form.append(intakeForm.panel,termsBox,acceptLabel,signatureArea,warnings,submit,back,status);
     bookingContent.replaceChildren(node("h3","เช็กอิน · " + booking.customer),
       node("p","ยอดสุทธิ " + baht.format(booking.total_cents/100) +
         " · รับมัดจำแล้ว " + baht.format(booking.paid_cents/100) +
@@ -1094,7 +1123,7 @@ function main(intakeGroups) {
       submit.disabled = true;
       termsContent.replaceChildren(node("p","กำลังโหลดเงื่อนไข…"));
       try {
-        const response = await fetch("/api/bookings/" + booking.id + "/check-in?lang=" + lang,{signal:controller.signal});
+        const response = await fetch(endpoint + "?lang=" + lang,{signal:controller.signal});
         if (!response.ok) throw Error();
         const data = await response.json();
         if (request !== termsRequest || controller.signal.aborted) return;
@@ -1120,7 +1149,7 @@ function main(intakeGroups) {
     picker.addEventListener("change",loadTerms);
     loadTerms();
 
-    const paymentKey = key();
+    const paymentKey = draft?.key || key();
     let saving = false;
     form.addEventListener("submit",async (event) => {
       event.preventDefault();
@@ -1131,12 +1160,20 @@ function main(intakeGroups) {
       const body = {language:picker.value,version:termsVersion,accepted:accept.checked,signature:strokes,
         revision:booking.cloud_revision, arrivalDay:arrival.value,arrivalTime:arrivalTime.value,pickupTime:returnTime.value,
         expectedBalance:booking.balance_cents,amountCents:Math.round(Number(amount.value)*100),
-        paymentDate:paymentDay.value,receivedTime:paymentTime.value,key:paymentKey,intake:intakeForm.values()};
+        paymentDate:paymentDay.value,receivedTime:paymentTime.value,key:paymentKey,intake:intakeForm.values(),draft,warningToken};
       try {
-        const response = await fetch("/api/bookings/" + booking.id + "/check-in",{
+        const response = await fetch(endpoint,{
           method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body),
         });
         const result = await response.json();
+        if (result.status === "warning") {
+          warnings.replaceChildren(...result.warnings.map((value) => node("li",warningLabels[value] || value)));
+          warnings.hidden = false;
+          warningToken = result.token;
+          submit.textContent = "ยืนยันเช็กอินตามคำเตือน";
+          status.textContent = "ตรวจคำเตือน แล้วเลือกแก้รายละเอียดหรือยืนยัน";
+          return;
+        }
         if (!response.ok) {
           status.textContent = result.status === "conflict" ? "การจองหรือยอดมัดจำเปลี่ยนแล้ว กรุณาเปิดรายละเอียดล่าสุด"
             : result.status === "consent_required" ? "กรุณาตรวจการยอมรับเงื่อนไขและลายเซ็น"
@@ -1429,7 +1466,7 @@ export function outstandingPage() {
       <label><span id="directory-search-label">เลขจอง ชื่อลูกค้า หรือชื่อสุนัข</span><input type="search" maxlength="100" id="booking-query"></label>
       <button type="submit">ค้นหา</button>
     </form>
-    <p><button id="add-booking" type="button" hidden>สร้างการจอง</button><button id="add-customer" type="button" hidden>เพิ่มลูกค้า</button></p>
+    <p><button id="direct-checkin" type="button">เช็กอินโดยตรง</button><button id="add-booking" type="button" hidden>สร้างการจอง</button><button id="add-customer" type="button" hidden>เพิ่มลูกค้า</button></p>
     <p><a id="payment-qr" href="/api/payment-qr.jpg" target="_blank" rel="noopener" hidden>เปิด QR สำหรับชำระเงิน</a></p>
     <div id="calendar-toolbar" class="calendar-toolbar" hidden>
       <button type="button" id="calendar-prev" aria-label="ก่อนหน้า">‹</button>

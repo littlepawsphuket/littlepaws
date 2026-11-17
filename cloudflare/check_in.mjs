@@ -1,5 +1,7 @@
 import terms, {intakeGroups} from "./stay_terms.mjs";
 import {authorizedStaff, normalizePayment} from "./stay_payments.mjs";
+import {bookingValues, allDogsOwned} from "./booking_writes.mjs";
+import {bookingSnapshot, bookingWarnings} from "./booking_warnings.mjs";
 import {validDay, randomReference} from "./bookings.mjs";
 
 const timePattern = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
@@ -49,7 +51,7 @@ export function checkInTerms(language) {
   return {language:lang, terms:terms[lang], version:terms.versions[lang]};
 }
 
-export async function checkInBooking(db, id, form, actor) {
+function checkInValues(form) {
   const now = new Date();
   const signedAt = new Date(now.valueOf()+7*3600000).toISOString().replace("Z","+07:00");
   const {language,version,signature,accepted,revision,arrivalDay,arrivalTime,pickupTime,
@@ -66,8 +68,31 @@ export async function checkInBooking(db, id, form, actor) {
   const intake = normalizeIntake(form.intake);
   if (!payment || !intake) return {status:"invalid"};
 
-  const identity = [actor.id,actor.email];
   const arrival = `${arrivalDay}T${arrivalTime}:00+07:00`;
+  return {arrival,arrivalDay,arrivalTime,pickupTime,amountCents,expectedBalance,paymentDate,revision,
+    paidAt:payment.paidAt,signedAt,language,signature,intake};
+}
+
+function consentInsert(db, marker, checkIn) {
+  return db.prepare(`INSERT INTO stay_consents(stay_id,customer_id,customer_name,signed_at,terms,signature,signed_language,terms_en)
+    SELECT s.id,s.customer_id,c.name,?,?,?,?,? FROM stays s JOIN customers c ON c.id=s.customer_id
+    WHERE s.create_key=?`).bind(checkIn.signedAt,JSON.stringify(terms.th),JSON.stringify(checkIn.signature),
+    checkIn.language,JSON.stringify(terms.en),marker);
+}
+
+function paymentInsert(db, marker, checkIn) {
+  return db.prepare(`INSERT INTO transactions(occurred_on,kind,category,description,amount,customer_id,stay_id,
+    payment_method,payment_type,payment_key,received_time)
+    SELECT ?,'income','ค่าฝากเลี้ยง','ชำระวันเข้าพัก',?/100.0,s.customer_id,s.id,'','checkin',?,?
+    FROM stays s WHERE s.create_key=? AND ?>0`)
+    .bind(checkIn.paymentDate,checkIn.amountCents,marker,checkIn.paidAt,marker,checkIn.amountCents);
+}
+
+export async function checkInBooking(db, id, form, actor) {
+  const checkIn = checkInValues(form);
+  if (checkIn.status) return checkIn;
+  const {arrival,arrivalDay,arrivalTime,pickupTime,expectedBalance,revision,intake} = checkIn;
+  const identity = [actor.id,actor.email];
   const marker = crypto.randomUUID();
   for (let attempt=0; attempt<5; attempt++) {
     const code = randomReference();
@@ -89,17 +114,10 @@ export async function checkInBooking(db, id, form, actor) {
       db.prepare(`INSERT INTO stay_dogs(stay_id,dog_id,nightly_rate_cents)
         SELECT s.id,d.dog_id,d.nightly_rate_cents FROM stays s CROSS JOIN appointment_dogs d
         WHERE s.create_key=? AND d.appointment_id=?`).bind(marker,id),
-      db.prepare(`INSERT INTO stay_consents(stay_id,customer_id,customer_name,signed_at,terms,signature,signed_language,terms_en)
-        SELECT s.id,s.customer_id,c.name,?,?,?,?,? FROM stays s JOIN customers c ON c.id=s.customer_id
-        WHERE s.create_key=?`)
-        .bind(signedAt,JSON.stringify(terms.th),JSON.stringify(signature),language,JSON.stringify(terms.en),marker),
+      consentInsert(db,marker,checkIn),
       db.prepare(`UPDATE transactions SET stay_id=(SELECT id FROM stays WHERE create_key=?)
         WHERE deposit_appointment_id=? AND EXISTS (SELECT 1 FROM stays WHERE create_key=?)`).bind(marker,id,marker),
-      db.prepare(`INSERT INTO transactions(occurred_on,kind,category,description,amount,customer_id,stay_id,
-        payment_method,payment_type,payment_key,received_time)
-        SELECT ?,'income','ค่าฝากเลี้ยง','ชำระวันเข้าพัก',?/100.0,s.customer_id,s.id,'','checkin',?,?
-        FROM stays s WHERE s.create_key=? AND ?>0`)
-        .bind(paymentDate,amountCents,marker,payment.paidAt,marker,amountCents),
+      paymentInsert(db,marker,checkIn),
       db.prepare(`UPDATE appointments AS a SET stay_id=(SELECT id FROM stays WHERE create_key=?)
         WHERE a.id=? AND EXISTS (SELECT 1 FROM stays WHERE create_key=?)`).bind(marker,id,marker),
       db.prepare("SELECT id AS stay_id FROM stays WHERE create_key=?").bind(marker),
@@ -119,4 +137,64 @@ export async function checkInBooking(db, id, form, actor) {
     }
   }
   return {status:"conflict"};
+}
+
+const activeOwner = "EXISTS (SELECT 1 FROM customers c WHERE c.id=? AND c.archived=0)";
+
+export async function previewDirectStay(db, draft, actor) {
+  const booking = bookingValues(draft);
+  if (!booking || booking.quotePending) return {status:"invalid"};
+  const customer = await db.prepare(`SELECT c.name FROM customers c WHERE c.id=? AND c.archived=0
+    AND ${allDogsOwned} AND ${authorizedStaff}`).bind(draft.customerId,JSON.stringify(booking.dogIds),
+    draft.customerId,null,booking.dogIds.length,actor.id,actor.email).first();
+  if (!customer) return {status:"invalid"};
+  return {status:"ready",customer:customer.name,total_cents:booking.netCents,balance_cents:booking.netCents};
+}
+
+export async function checkInDirect(db, form, actor) {
+  const checkIn = checkInValues(form);
+  if (checkIn.status) return checkIn;
+  const draft = form.draft;
+  if (!draft || typeof draft !== "object") return {status:"invalid"};
+  const booking = bookingValues(draft);
+  if (!booking || booking.quotePending || checkIn.expectedBalance !== booking.netCents ||
+      checkIn.arrivalDay > draft.checkout) return {status:"invalid"};
+  const [owner,checkin,checkout,quantity,total,note,discount,rounding,service] = booking.fields;
+  const identity = [actor.id,actor.email];
+  const submission = actor.id + ":" + form.key;
+  const marker = crypto.randomUUID();
+  const intake = JSON.stringify({...checkIn.intake,service_type:service,arrival_time:checkIn.arrivalTime,pickup_time:checkIn.pickupTime});
+  async function replay() {
+    const previous = await db.prepare(`SELECT id FROM stays WHERE direct_checkin_key=? AND ${authorizedStaff}`)
+      .bind(submission,...identity).first();
+    return previous ? {status:"saved",stayId:previous.id} : null;
+  }
+  for (let attempt=0; attempt<5; attempt++) {
+    const previous = await replay();
+    if (previous) return previous;
+    const warnings = await bookingWarnings(db,null,checkIn.arrivalDay,checkout,booking.dogIds);
+    if (warnings.token && warnings.token !== form.warningToken) {
+      return await replay() || {status:"warning",warnings:warnings.warnings,token:warnings.token};
+    }
+    const code = randomReference();
+    const [write,,,,result] = await db.batch([
+      db.prepare(`INSERT INTO stays(customer_id,checkin,checkout,charged_nights,agreed_total,status,note,
+          discount_cents,rounding_cents,actual_checkin_at,intake,payment_tracking,create_key,stay_number,direct_checkin_key)
+        SELECT ?,?,?,?,?,'checked_in',?,?,?,?,?,1,?,?,?
+        WHERE ${activeOwner} AND ${allDogsOwned} AND ${authorizedStaff}
+          AND NOT EXISTS (SELECT 1 FROM appointments a WHERE a.booking_number=?)
+          AND (${bookingSnapshot})=?
+        ON CONFLICT DO NOTHING`).bind(owner,checkin,checkout,quantity,total,note,discount,rounding,checkIn.arrival,intake,
+        marker,code,submission,owner,JSON.stringify(booking.dogIds),owner,null,booking.dogIds.length,...identity,
+        code,...warnings.params,warnings.snapshot),
+      db.prepare(`INSERT INTO stay_dogs(stay_id,dog_id,nightly_rate_cents)
+        SELECT s.id,json_extract(d.value,'$.id'),json_extract(d.value,'$.rate')
+        FROM stays s CROSS JOIN json_each(?) d WHERE s.create_key=?`).bind(booking.dogRows,marker),
+      consentInsert(db,marker,checkIn),
+      paymentInsert(db,marker,checkIn),
+      db.prepare("SELECT id FROM stays WHERE create_key=?").bind(marker),
+    ]);
+    if (write.meta.changes === 1) return {status:"created",stayId:result.results[0].id};
+  }
+  return await replay() || {status:"conflict"};
 }

@@ -10,7 +10,7 @@ const pending = "a.status='pending' AND a.stay_id IS NULL";
 const hasPayments = "EXISTS (SELECT 1 FROM transactions t WHERE t.deposit_appointment_id=a.id AND t.payment_type!='')";
 const keyPattern = /^[0-9a-f]{32}$/;
 
-function bookingValues(form) {
+export function bookingValues(form) {
   const {customerId,checkin,checkout,service,quantity100,discountCents,dogs,note} = form;
   if (!Number.isSafeInteger(customerId) || customerId < 1 || !validDay(checkin) || !validDay(checkout) ||
       checkout < checkin || !Object.hasOwn(defaultRates,service) ||
@@ -43,7 +43,7 @@ export async function bookingRates(db) {
     [service, {...defaults,...saved[service]}]));
 }
 
-const allDogsOwned = `(SELECT count(*) FROM dogs d JOIN json_each(?) choice ON d.id=choice.value
+export const allDogsOwned = `(SELECT count(*) FROM dogs d JOIN json_each(?) choice ON d.id=choice.value
     WHERE d.customer_id=? AND (d.archived=0 OR EXISTS (
       SELECT 1 FROM appointment_dogs ad WHERE ad.appointment_id=? AND ad.dog_id=d.id))) = ?`;
 
