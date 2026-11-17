@@ -1,4 +1,4 @@
-import terms from "./stay_terms.mjs";
+import terms, {intakeGroups} from "./stay_terms.mjs";
 import {authorizedStaff, normalizePayment} from "./stay_payments.mjs";
 import {validDay, randomReference} from "./bookings.mjs";
 
@@ -20,6 +20,30 @@ function hasSignature(strokes) {
   return line;
 }
 
+function normalizeIntake(value) {
+  if (value === undefined) return {};
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const intake = {};
+  for (const group of intakeGroups) {
+    for (const [field,,kind] of group.fields) {
+      const entry = value[field];
+      if (entry !== undefined && (typeof entry !== "string" || entry.length > 600)) return null;
+      if (kind === "item") {
+        const packed = value[field + "_packed"];
+        if (packed !== undefined && packed !== "1") return null;
+        if (!packed) continue;
+        intake[field + "_packed"] = "1";
+      }
+      const text = entry?.trim();
+      if (!text) continue;
+      if (kind === "exam" && !["normal","abnormal"].includes(text)) return null;
+      if (typeof kind === "object" && !Object.hasOwn(kind,text)) return null;
+      intake[field] = text;
+    }
+  }
+  return intake;
+}
+
 export function checkInTerms(language) {
   const lang = language === "en" ? "en" : "th";
   return {language:lang, terms:terms[lang], version:terms.versions[lang]};
@@ -39,7 +63,8 @@ export async function checkInBooking(db, id, form, actor) {
     return {status:"invalid"};
   }
   const payment = normalizePayment({amountCents:Math.max(1,amountCents),paymentDate,receivedTime,key},now);
-  if (!payment) return {status:"invalid"};
+  const intake = normalizeIntake(form.intake);
+  if (!payment || !intake) return {status:"invalid"};
 
   const identity = [actor.id,actor.email];
   const arrival = `${arrivalDay}T${arrivalTime}:00+07:00`;
@@ -50,8 +75,8 @@ export async function checkInBooking(db, id, form, actor) {
       db.prepare(`INSERT INTO stays(customer_id,checkin,checkout,charged_nights,agreed_total,status,note,
         discount_cents,rounding_cents,actual_checkin_at,intake,payment_tracking,create_key,stay_number)
         SELECT a.customer_id,a.checkin,a.checkout,a.charged_nights,a.agreed_total,'checked_in',a.note,
-          a.discount_cents,a.rounding_cents,?,json_object('service_type',a.service_type,'arrival_time',?,
-          'pickup_time',?),1,?,?
+          a.discount_cents,a.rounding_cents,?,json_patch(?,json_object('service_type',a.service_type,'arrival_time',?,
+          'pickup_time',?)),1,?,?
         FROM appointments a WHERE a.id=? AND a.stay_id IS NULL AND a.status='pending'
           AND a.cloud_revision IS ? AND ?<=a.checkout AND ${authorizedStaff}
           AND EXISTS (SELECT 1 FROM appointment_dogs d WHERE d.appointment_id=a.id)
@@ -60,7 +85,7 @@ export async function checkInBooking(db, id, form, actor) {
             WHERE t.deposit_appointment_id=a.id AND t.payment_type!=''),0)=?
           AND NOT EXISTS (SELECT 1 FROM appointments b WHERE b.booking_number=?)
         ON CONFLICT DO NOTHING`)
-        .bind(arrival,arrivalTime,pickupTime,marker,code,id,revision,arrivalDay,...identity,expectedBalance,code),
+        .bind(arrival,JSON.stringify(intake),arrivalTime,pickupTime,marker,code,id,revision,arrivalDay,...identity,expectedBalance,code),
       db.prepare(`INSERT INTO stay_dogs(stay_id,dog_id,nightly_rate_cents)
         SELECT s.id,d.dog_id,d.nightly_rate_cents FROM stays s CROSS JOIN appointment_dogs d
         WHERE s.create_key=? AND d.appointment_id=?`).bind(marker,id),

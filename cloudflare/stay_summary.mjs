@@ -3,7 +3,9 @@ import {stayBalance} from "./stay_payments.mjs";
 export async function staySummary(db, id) {
   const [record,dogs,payments,consent] = await db.batch([
     db.prepare(`SELECT s.id,s.stay_number,s.status,s.checkin,s.checkout,s.actual_checkin_at,s.actual_checkout_at,
-        s.charged_nights,COALESCE(json_extract(s.intake,'$.service_type'),'overnight') AS service_type,
+        s.charged_nights,
+        CASE WHEN json_valid(s.intake) THEN COALESCE(json_extract(s.intake,'$.service_type'),'overnight')
+          ELSE 'overnight' END AS service_type,s.intake,
         ROUND(s.agreed_total*100) AS total_cents,s.discount_cents,s.payment_tracking,
         CASE WHEN s.payment_tracking=1 THEN ${stayBalance} ELSE NULL END AS due_cents,
         c.name AS customer,b.id AS booking_id,b.booking_number
@@ -18,5 +20,6 @@ export async function staySummary(db, id) {
   ]);
   const stay = record.results[0];
   if (!stay) return null;
+  try { stay.intake = JSON.parse(stay.intake) || {}; } catch { stay.intake = {}; }
   return {...stay, dogs:dogs.results, payments:payments.results, consent:consent.results[0] || null};
 }

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import {readFile, stat} from "node:fs/promises";
 import {join} from "node:path";
 import {DatabaseSync} from "node:sqlite";
+import {Script} from "node:vm";
 import worker from "./timeline.mjs";
 import staff from "./staff.mjs";
 import {receiveStayPayment} from "./stay_payments.mjs";
@@ -359,7 +360,9 @@ assert.equal((await staffCall("/", {})).status, 403);
 const staffPage = await staffCall("/", {}, context);
 assert.equal(staffPage.status, 200);
 assert.match(staffPage.headers.get("Content-Security-Policy"), /frame-ancestors 'none'/);
-assert.match(await staffPage.text(), /ยอดค้างชำระ/);
+const staffHtml = await staffPage.text();
+assert.match(staffHtml,/ยอดค้างชำระ/);
+assert.doesNotThrow(() => new Script(staffHtml.match(/<script nonce="[^"]+">([\s\S]*?)<\/script>/)[1]));
 const paymentPath = "/api/stays/1/payments";
 const staffOptions = {method: "POST", headers: {
   Origin: "https://staff.example.test", "Content-Type": "application/json",
@@ -392,13 +395,19 @@ assert.equal(savedTerms.language,"en");
 assert.equal(savedTerms.terms.sections.length,3);
 const checkIn = {language:"en",version:savedTerms.version,accepted:true,signature:[[[10,10],[30,20]]],
   revision:null,arrivalDay:"2026-01-10",arrivalTime:"09:15",pickupTime:"17:00",expectedBalance:60000,
-  amountCents:50000,paymentDate:"2026-01-10",receivedTime:"09:21",key:"8".repeat(32)};
+  amountCents:50000,paymentDate:"2026-01-10",receivedTime:"09:21",key:"8".repeat(32),
+  intake:{food_packed:"1",food:"อาหารเม็ด",treats_packed:"1",supplies:"ไม่เลือก",exam_eyes:"normal",
+    exam_ears:"abnormal",health_note:"ตรวจหูอีกครั้ง",behavior:"friendly",service_type:"malicious override"}};
 assert.equal((await staffCall(checkInPath,customerWrite("POST",checkIn))).status,403);
 assert.equal((await staffCall(checkInPath,customerWrite("POST",checkIn,"https://other.example.test"),context)).status,403);
 assert.equal((await staffCall(checkInPath,customerWrite("POST",{...checkIn,accepted:false}),context)).status,422);
 assert.equal((await staffCall(checkInPath,customerWrite("POST",{...checkIn,signature:[[[10,10],[11,11]]]}),context)).status,422);
 assert.equal((await staffCall(checkInPath,customerWrite("POST",{...checkIn,version:"old"}),context)).status,422);
 assert.equal((await staffCall(checkInPath,customerWrite("POST",{...checkIn,expectedBalance:60001}),context)).status,409);
+assert.equal(sqlite.prepare("SELECT stay_id FROM appointments WHERE id=1").get().stay_id,null);
+assert.equal((await staffCall(checkInPath,customerWrite("POST",{
+  ...checkIn,intake:{exam_eyes:"yes"},
+}),context)).status,400);
 assert.equal(sqlite.prepare("SELECT stay_id FROM appointments WHERE id=1").get().stay_id,null);
 const checkedIn = await Promise.all([0,1].map(() => staffCall(checkInPath,customerWrite("POST",checkIn),context)));
 assert.deepEqual(checkedIn.map((response) => response.status).sort(),[200,201]);
@@ -416,10 +425,21 @@ assert.equal(staySummary.payments.filter((payment) => payment.payment_type === "
 assert.equal(staySummary.payments.filter((payment) => payment.payment_type === "checkin").length,1);
 assert.equal(staySummary.payments.at(-1).received_time,"09:21");
 assert.equal(staySummary.due_cents,10000);
+assert.deepEqual(staySummary.intake,{food_packed:"1",food:"อาหารเม็ด",treats_packed:"1",exam_eyes:"normal",
+  exam_ears:"abnormal",health_note:"ตรวจหูอีกครั้ง",behavior:"friendly",service_type:"overnight",
+  arrival_time:"09:15",pickup_time:"17:00"});
 assert.equal(staySummary.consent.signed_language,"en");
 assert.deepEqual(JSON.parse(staySummary.consent.signature),checkIn.signature);
 assert.equal(sqlite.prepare("SELECT count(*) AS count FROM stay_consents WHERE stay_id=?").get(firstCheckIn.stayId).count,1);
 assert.equal((await staffCall("/api/stays/" + firstCheckIn.stayId + "/check-out",checkoutOptions,context)).status,200);
+const finalPayment = customerWrite("POST",{amountCents:10000,paymentDate:"2026-01-13",receivedTime:"18:35",key:"7".repeat(32)});
+assert.equal((await staffCall(staySummaryPath+"/payments",finalPayment,context)).status,201);
+assert.equal((await staffCall(staySummaryPath+"/payments",finalPayment,context)).status,200);
+const paidSummary = await (await staffCall(staySummaryPath,{},context)).json();
+assert.equal(paidSummary.status,"completed");
+assert.equal(paidSummary.due_cents,0);
+assert.equal(paidSummary.payments.filter((payment) => payment.payment_type === "additional").length,1);
+assert.equal(paidSummary.payments.at(-1).received_time,"18:35");
 const dogsPath = customerPath + "/dogs";
 const dogForm = {name:"New dog",size:"medium",note:"",breed:"Corgi",gender:"female",neutered:"yes",
   weight:"10.5",vaccinated:"yes",rabies:"yes",flea_tick:"",medical_history:"",required_care:"",medications:"",

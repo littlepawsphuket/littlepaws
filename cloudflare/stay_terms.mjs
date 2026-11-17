@@ -80,3 +80,96 @@ export default {
     "en": "eb8ad7c40327bdf6070c3721f39fbd280f223563255046037143fa45f5b6da72"
   }
 };
+export const intakeGroups = [
+  {
+    "title": "ของใช้ที่นำมาฝาก",
+    "fields": [
+      [
+        "food",
+        "อาหาร",
+        "item"
+      ],
+      [
+        "treats",
+        "ขนม",
+        "item"
+      ],
+      [
+        "supplies",
+        "ยา / อาหารเสริมที่นำมา",
+        "item"
+      ],
+      [
+        "bedding",
+        "ที่นอน ผ้าห่ม หรือของเล่น",
+        "item"
+      ],
+      [
+        "other_items",
+        "ของใช้อื่น ๆ",
+        "textarea"
+      ]
+    ]
+  },
+  {
+    "title": "ตรวจร่างกาย",
+    "fields": [
+      [
+        "exam_eyes",
+        "ตา",
+        "exam"
+      ],
+      [
+        "exam_ears",
+        "หู",
+        "exam"
+      ],
+      [
+        "exam_skin",
+        "ผิวหนัง",
+        "exam"
+      ],
+      [
+        "exam_coat",
+        "ขน",
+        "exam"
+      ],
+      [
+        "health",
+        "ตา หู ผิวหนัง และขน",
+        {
+          "normal": "ปกติ",
+          "abnormal": "พบความผิดปกติ"
+        }
+      ],
+      [
+        "health_note",
+        "รายละเอียดที่ตรวจพบ",
+        "textarea"
+      ],
+      [
+        "behavior",
+        "พฤติกรรมขณะรับฝาก",
+        {
+          "friendly": "เป็นมิตร",
+          "anxious": "กังวล",
+          "aggressive": "ก้าวร้าว"
+        }
+      ],
+      [
+        "social",
+        "การอยู่ร่วมกับสุนัขตัวอื่น",
+        {
+          "yes": "ใช่",
+          "no": "ไม่ใช่",
+          "special": "ต้องดูแลเป็นพิเศษ"
+        }
+      ],
+      [
+        "staff_note",
+        "หมายเหตุจากผู้รับฝาก",
+        "textarea"
+      ]
+    ]
+  }
+];

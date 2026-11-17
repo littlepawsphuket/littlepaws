@@ -1,3 +1,5 @@
+import {intakeGroups} from "./stay_terms.mjs";
+
 const css = `
   body{font:1rem/1.5 "Sukhumvit Set",system-ui,sans-serif;background:#f2f7f3;color:#203c30;margin:0}
   main{margin:auto;max-width:52rem;padding:1rem}h1{margin:.2rem 0 1rem}
@@ -12,6 +14,12 @@ const css = `
   .calendar-holiday{display:block;background:#fff1d9;color:#593d19;border-radius:.35rem;padding:.2rem;overflow-wrap:anywhere;font-size:.85rem}
   @media(max-width:37rem){.calendar-grid:not([data-view="day"]){grid-template-columns:repeat(7,minmax(0,1fr));gap:.15rem}.calendar-day{padding:.2rem}.calendar-day button{font-size:.72rem}}
   .checkin-terms{flex-basis:100%;border:1px solid #c8ded4;border-radius:.6rem;padding:.6rem}
+  .intake-details{flex-basis:100%;border:1px solid #c8ded4;border-radius:.65rem;padding:.6rem}
+  .intake-details fieldset{margin:.7rem 0;border:1px solid #d9e4de;border-radius:.6rem;min-width:0}
+  .intake-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,12rem),1fr));gap:.55rem;align-items:start}
+  .intake-choice{display:flex;flex-wrap:wrap;gap:.35rem}
+  .intake-choice label{display:flex;align-items:center;padding:.32rem .45rem;border-radius:.5rem;border:1px solid #c8ded4;cursor:pointer}
+  .intake-choice label:has(input:checked){background:#e4f1eb;border-color:#467b66}
   .checkin-signature{flex-basis:100%;min-width:0}
   .signature-canvas{display:block;width:100%;height:auto;border:1px solid #a7cbb9;border-radius:.55rem;background:white;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
   .booking-warnings{flex-basis:100%;border:1px solid #d8ad6f;background:#fff7e9;color:#604119;border-radius:.7rem;padding:.55rem .65rem .55rem 2rem;margin:0}
@@ -24,7 +32,7 @@ const css = `
   button{background:#155747;color:#fff;cursor:pointer}button:disabled{opacity:.65} [hidden]{display:none}
 `;
 
-function main() {
+function main(intakeGroups) {
   const results = document.getElementById("stays");
   const message = document.getElementById("message");
   const more = document.getElementById("more");
@@ -525,7 +533,10 @@ function main() {
           item.append(node("h4", [stay.stay_number || "#" + stay.id, statuses[stay.status] || stay.status].join(" · ")),
             node("p", stay.dogs || "—"),
             node("p", [stay.checkin, stay.checkout].map((day) => bookingDate.format(new Date(day))).join(" – ")));
-          if (stay.due_cents > 0) item.append(node("strong", "ค้างชำระ " + baht.format(stay.due_cents / 100)));
+          const summary = Object.assign(node("button",stay.due_cents > 0
+            ? "ค้างชำระ " + baht.format(stay.due_cents / 100) : "ดูสรุปการเข้าพัก"),{type:"button"});
+          summary.addEventListener("click", () => { customerDialog.close(); showStay(stay.id); });
+          item.append(summary);
           customerContent.append(item);
         }
         if (data.nextOffset !== null) {
@@ -871,6 +882,84 @@ function main() {
     return actions;
   }
 
+  function checkInDetails() {
+    const panel = node("details");
+    panel.className = "intake-details";
+    panel.append(node("summary","รายละเอียดตอนเช็กอิน · ไม่บังคับกรอก"));
+    const fields = [];
+    for (const {title,fields:group} of intakeGroups) {
+      const fieldset = node("fieldset");
+      const grid = node("div");
+      grid.className = "intake-grid";
+      fieldset.append(node("legend",title),grid);
+      for (const [field,label,kind] of group) {
+        if (field === "health") continue;
+        if (kind === "item") {
+          const item = node("div");
+          const box = Object.assign(node("input"),{type:"checkbox"});
+          const toggle = node("label",label);
+          toggle.prepend(box);
+          const detail = Object.assign(node("input"),{type:"text",maxLength:600,disabled:true});
+          const detailLabel = node("label","รายละเอียด " + label);
+          detailLabel.append(detail);
+          detailLabel.hidden = true;
+          box.addEventListener("change", () => { detail.disabled = detailLabel.hidden = !box.checked; });
+          item.append(toggle,detailLabel);
+          grid.append(item);
+          fields.push([field,() => box.checked ? detail.value.trim() : ""],[field+"_packed",() => box.checked ? "1" : ""]);
+        } else if (kind === "exam") {
+          const item = node("div");
+          const choices = node("div");
+          choices.className = "intake-choice";
+          item.append(node("strong",label),choices);
+          const options = [];
+          for (const [value,caption] of [["","ไม่ระบุ"],["normal","ปกติ"],["abnormal","พบความผิดปกติ"]]) {
+            const radio = Object.assign(node("input"),{type:"radio",name:field,value,checked:!value});
+            const option = node("label",caption);
+            option.prepend(radio);
+            options.push(radio);
+            choices.append(option);
+          }
+          fields.push([field,() => options.find((input) => input.checked)?.value || ""]);
+          grid.append(item);
+        } else {
+          const input = typeof kind === "object" ? node("select") : node("textarea");
+          if (typeof kind === "object") {
+            input.append(new Option("ไม่ระบุ",""), ...Object.entries(kind).map(([value,caption]) => new Option(caption,value)));
+          } else { input.rows = 2; input.maxLength = 600; }
+          const wrapper = node("label",label);
+          wrapper.append(input);
+          fields.push([field,() => input.value.trim()]);
+          grid.append(wrapper);
+        }
+      }
+      panel.append(fieldset);
+    }
+    return {panel,values:() => Object.fromEntries(fields.map(([field,read]) => [field,read()]).filter(([,value]) => value))};
+  }
+
+  function showIntake(intake) {
+    if (!intake || typeof intake !== "object") return null;
+    const sections = [];
+    for (const {title,fields} of intakeGroups) {
+      const list = node("ul");
+      for (const [field,label,kind] of fields) {
+        const value = typeof intake[field] === "string" ? intake[field] : "";
+        if (kind === "item" && !value && intake[field+"_packed"] !== "1") continue;
+        if (kind !== "item" && !value) continue;
+        const text = kind === "exam" ? ({normal:"ปกติ",abnormal:"พบความผิดปกติ","1":"ตรวจแล้ว"}[value] || value)
+          : typeof kind === "object" && Object.hasOwn(kind,value) ? kind[value] : value;
+        list.append(node("li", text ? label + " · " + text : label));
+      }
+      if (list.childElementCount) sections.push(node("h4",title),list);
+    }
+    if (!sections.length) return null;
+    const panel = node("details");
+    panel.className = "intake-details";
+    panel.append(node("summary","รายละเอียดตอนเช็กอิน"),...sections);
+    return panel;
+  }
+
   function signatureCanvas() {
     const canvas = Object.assign(node("canvas"),{width:720,height:240,className:"signature-canvas"});
     canvas.setAttribute("aria-label","ช่องลายเซ็นลูกค้า");
@@ -939,7 +1028,8 @@ function main() {
     submit.disabled = true;
     const back = Object.assign(node("button","กลับไปดูการจอง"),{type:"button"});
     back.addEventListener("click", () => showBooking(booking.id));
-    form.append(termsBox,acceptLabel,signatureArea,submit,back,status);
+    const intakeForm = checkInDetails();
+    form.append(intakeForm.panel,termsBox,acceptLabel,signatureArea,submit,back,status);
     bookingContent.replaceChildren(node("h3","เช็กอิน · " + booking.customer),
       node("p","ยอดสุทธิ " + baht.format(booking.total_cents/100) +
         " · รับมัดจำแล้ว " + baht.format(booking.paid_cents/100) +
@@ -1041,7 +1131,7 @@ function main() {
       const body = {language:picker.value,version:termsVersion,accepted:accept.checked,signature:strokes,
         revision:booking.cloud_revision, arrivalDay:arrival.value,arrivalTime:arrivalTime.value,pickupTime:returnTime.value,
         expectedBalance:booking.balance_cents,amountCents:Math.round(Number(amount.value)*100),
-        paymentDate:paymentDay.value,receivedTime:paymentTime.value,key:paymentKey};
+        paymentDate:paymentDay.value,receivedTime:paymentTime.value,key:paymentKey,intake:intakeForm.values()};
       try {
         const response = await fetch("/api/bookings/" + booking.id + "/check-in",{
           method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body),
@@ -1095,11 +1185,29 @@ function main() {
       const dogs = node("ul");
       for (const dog of stay.dogs) dogs.append(node("li",dog.name + " · " +
         (dog.nightly_rate_cents === null ? "—" : money(dog.nightly_rate_cents) + " / " + unit)));
-      bookingContent.append(node("h4","สุนัขที่เข้าพัก"),dogs,node("h4","ประวัติการชำระเงิน"));
+      bookingContent.append(node("h4","สุนัขที่เข้าพัก"),dogs);
+      const intake = showIntake(stay.intake);
+      if (intake) bookingContent.append(intake);
+      bookingContent.append(node("h4","ประวัติการชำระเงิน"));
       if (!stay.payments.length) bookingContent.append(node("p","ยังไม่มีรายการชำระ"));
       for (const payment of stay.payments) {
         bookingContent.append(node("p",[bookingDate.format(new Date(payment.occurred_on)),payment.received_time,
           paymentLabels[payment.payment_type] || payment.payment_type,money(payment.amount_cents)].filter(Boolean).join(" · ")));
+      }
+      if (canReceiveStayPayment(stay)) {
+        const payment = stayPaymentForm(stay,async () => {
+          if (selected === "current" || selected === "outstanding") await load(true);
+          if (payment.isConnected && bookingDialog.open) {
+            await showStay(stay.id);
+            document.getElementById("booking-status").textContent = "บันทึกรับชำระแล้ว";
+          }
+        });
+        bookingContent.append(payment);
+        if (!qr.hidden) {
+          bookingContent.append(Object.assign(node("a","เปิด QR สำหรับชำระเงิน"),{
+            href:qr.href,target:"_blank",rel:"noopener",
+          }));
+        }
       }
       if (stay.consent) {
         bookingContent.append(node("h4","ลายเซ็นลูกค้า"),node("p",stay.consent.customer_name));
@@ -1214,48 +1322,67 @@ function main() {
       });
       article.append(checkout);
     }
-    if (!stay.due_cents) return article;
+    if (canReceiveStayPayment(stay)) article.append(stayPaymentForm(stay,async () => {
+      await load(true);
+      message.textContent = "บันทึกรับชำระแล้ว";
+    }));
+    return article;
+  }
+
+  const pendingStayPayments = new Map();
+  function canReceiveStayPayment(stay) {
+    return stay.status !== "cancelled" && (stay.due_cents > 0 || pendingStayPayments.has(stay.id));
+  }
+
+  function stayPaymentForm(stay, onSaved) {
     const form = node("form");
-    const amount = Object.assign(node("input"), {type:"number", step:"0.01", min:"0.01",
-      value:(stay.due_cents/100).toFixed(2), max:(stay.due_cents/100).toFixed(2), required:true});
-    const date = Object.assign(node("input"), {type:"date", value:parts.format(new Date()),
-      max:parts.format(new Date()), required:true});
-    const amountLabel = node("label","ยอดรับชำระ (บาท)");
-    const dateLabel = node("label","วันที่รับชำระ");
-    amountLabel.append(amount);
-    dateLabel.append(date);
+    const pending = pendingStayPayments.get(stay.id);
+    const now = new Date();
+    const today = parts.format(now);
+    const amount = Object.assign(node("input"), {type:"number",step:"0.01",min:"0.01",required:true,
+      value:((pending?.amountCents ?? stay.due_cents)/100).toFixed(2)});
+    if (!pending) amount.max = (stay.due_cents/100).toFixed(2);
+    const date = Object.assign(node("input"),{type:"date",value:pending?.paymentDate || today,max:today,required:true});
+    const time = Object.assign(node("input"),{type:"time",value:pending?.receivedTime || bangkokTime.format(now),required:true});
+    for (const [label,input] of [["ยอดรับชำระ (บาท)",amount],["วันที่รับชำระ",date],["เวลารับชำระ",time]]) {
+      const wrapper = node("label",label);
+      wrapper.append(input);
+      form.append(wrapper);
+    }
+    const status = node("p",pending ? "ส่งรายการเดิมอีกครั้งเพื่อยืนยันผล" : "");
+    status.setAttribute("role","status");
     const button = node("button","บันทึกรับชำระ");
-    form.append(amountLabel,dateLabel,button);
-    let pending = null;
+    form.append(button,status);
     form.addEventListener("submit",async (event) => {
       event.preventDefault();
-      const submitted = {amountCents:Math.round(Number(amount.value)*100), paymentDate:date.value};
-      if (pending && (pending.amountCents !== submitted.amountCents || pending.paymentDate !== submitted.paymentDate)) {
-        message.textContent = "กรุณาลองส่งยอดและวันที่เดิมเพื่อยืนยันผลครั้งก่อน";
+      const submitted = {amountCents:Math.round(Number(amount.value)*100),paymentDate:date.value,receivedTime:time.value};
+      const stored = pendingStayPayments.get(stay.id);
+      if (stored && Object.keys(submitted).some((field) => submitted[field] !== stored[field])) {
+        status.textContent = "กรุณาส่งยอด วันที่ และเวลาเดิมเพื่อยืนยันผลครั้งก่อน";
         return;
       }
-      pending ??= {...submitted,key:key()};
+      const attempt = stored || {...submitted,key:key()};
+      pendingStayPayments.set(stay.id,attempt);
       button.disabled = true;
       try {
         const response = await fetch("/api/stays/" + stay.id + "/payments",{
-          method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(pending),
+          method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(attempt),
         });
         const data = await response.json();
         if (response.ok) {
-          message.textContent = "บันทึกรับชำระแล้ว";
-          await load(true);
+          pendingStayPayments.delete(stay.id);
+          if (form.isConnected) await onSaved();
         } else {
-          if (response.status < 500) pending = null;
-          message.textContent = errors[data.status] || "บันทึกไม่ได้ กรุณาตรวจสอบและลองใหม่";
+          if (response.status < 500) pendingStayPayments.delete(stay.id);
+          status.textContent = errors[data.status] || "บันทึกไม่ได้ กรุณาตรวจสอบและลองใหม่";
         }
       } catch {
-        message.textContent = "ยังยืนยันผลไม่ได้ กรุณาลองส่งรายการเดิมอีกครั้ง";
+        status.textContent = "ยังยืนยันผลไม่ได้ กรุณาลองส่งรายการเดิมอีกครั้ง";
       } finally {
         button.disabled = false;
       }
     });
-    article.append(form);
-    return article;
+    return form;
   }
 
   for (const mode of modes) {
@@ -1325,7 +1452,7 @@ export function outstandingPage() {
       <p id="customer-status" role="status"></p>
       <div id="customer-content" aria-live="polite"></div>
     </dialog>
-    <script nonce="${nonce}">(${main.toString()})()</script></html>`, {
+    <script nonce="${nonce}">(${main.toString()})(${JSON.stringify(intakeGroups)})</script></html>`, {
     headers: {
       "Content-Type":"text/html; charset=utf-8", "Cache-Control":"private, no-store",
       "X-Content-Type-Options":"nosniff",
