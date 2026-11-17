@@ -15,7 +15,7 @@ export const stayBalance = `MAX(0, ROUND(s.agreed_total*100) - COALESCE((
   SELECT SUM(ROUND(t.amount*100)) FROM transactions t WHERE t.stay_id=s.id AND t.payment_type!=''
 ),0))`;
 
-const authorized = `EXISTS (SELECT 1 FROM app_users u JOIN staff_access_identities a ON a.user_id=u.id
+export const authorizedStaff = `EXISTS (SELECT 1 FROM app_users u JOIN staff_access_identities a ON a.user_id=u.id
   WHERE u.id=? AND u.active=1 AND a.email=?)`;
 
 export async function receiveStayPayment(db, stayId, payment, actor, now = new Date()) {
@@ -41,10 +41,10 @@ export async function receiveStayPayment(db, stayId, payment, actor, now = new D
       (occurred_on,kind,category,description,amount,customer_id,stay_id,payment_method,payment_type,payment_key,received_time)
       SELECT ?,'income','ค่าฝากเลี้ยง','ชำระเพิ่มเติม',?/100.0,s.customer_id,s.id,'','additional',?,?
       FROM stays s
-      WHERE s.id=? AND ${authorized} AND s.payment_tracking=1 AND s.status!='cancelled' AND s.cancelled_at IS NULL
+      WHERE s.id=? AND ${authorizedStaff} AND s.payment_tracking=1 AND s.status!='cancelled' AND s.cancelled_at IS NULL
         AND NOT (${recorded})
         AND ? <= ${stayBalance}`).bind(paymentDate, amountCents, key, paidAt, stayId, ...actorParams, key, key, amountCents),
-    db.prepare(`SELECT (${recorded}) AS recorded, (${authorized}) AS authorized FROM stays s WHERE s.id=?`).bind(key, key, ...actorParams, stayId),
+    db.prepare(`SELECT (${recorded}) AS recorded, (${authorizedStaff}) AS authorized FROM stays s WHERE s.id=?`).bind(key, key, ...actorParams, stayId),
   ]);
   if (insert.meta.changes === 1) return "saved";
   const stay = lookup.results[0];

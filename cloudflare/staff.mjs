@@ -1,4 +1,4 @@
-import { receiveStayPayment, stayBalance } from "./stay_payments.mjs";
+import { receiveStayPayment, stayBalance, authorizedStaff } from "./stay_payments.mjs";
 import { outstandingPage } from "./staff_ui.mjs";
 
 const JSON_HEADERS = {
@@ -46,10 +46,28 @@ async function smallJson(request) {
   }
 }
 
+async function checkout(db, stayId, user) {
+  if (!Number.isSafeInteger(stayId) || stayId < 1) return json({status: "invalid"}, 400);
+  const [change, lookup] = await db.batch([
+    db.prepare(`UPDATE stays SET status='completed',actual_checkout_at=?
+      WHERE id=? AND status='checked_in' AND cancelled_at IS NULL AND ${authorizedStaff}`)
+      .bind(new Date().toISOString(), stayId, user.id, user.email),
+    db.prepare(`SELECT status,cancelled_at,(${authorizedStaff}) AS authorized FROM stays WHERE id=?`)
+      .bind(user.id,user.email,stayId),
+  ]);
+  const stay = lookup.results[0];
+  if (!stay) return json({status: "not_found"}, 404);
+  if (!stay.authorized) return json({status: "forbidden"}, 403);
+  if (change.meta.changes === 1 || (stay.status === "completed" && !stay.cancelled_at)) {
+    return json({status: "completed"});
+  }
+  return json({status: "not_checked_in"}, 409);
+}
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
-    const match = /^\/api\/stays\/(\d+)\/payments$/.exec(url.pathname);
+    const match = /^\/api\/stays\/(\d+)\/(payments|check-out)$/.exec(url.pathname);
     if (!match && !["/", "/api/account", "/api/stays/outstanding"].includes(url.pathname)) return json({error: "not_found"}, 404);
     try {
       const user = await authorizedUser(env, ctx);
@@ -72,6 +90,7 @@ export default {
       }
       if (request.method !== "POST") return json({error: "method_not_allowed"}, 405);
       if (request.headers.get("Origin") !== url.origin) return json({error: "invalid_origin"}, 403);
+      if (match[2] === "check-out") return checkout(env.DB, Number(match[1]), user);
       if (request.headers.get("Content-Type")?.split(";", 1)[0].trim().toLowerCase() !== "application/json") {
         return json({error: "invalid_content_type"}, 415);
       }

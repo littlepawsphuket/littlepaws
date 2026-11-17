@@ -134,6 +134,15 @@ assert.equal((await staffCall(paymentPath, {...staffOptions, headers: {
 assert.equal((await staffCall(paymentPath, {...staffOptions, body: " ".repeat(3000)}, context)).status, 400);
 assert.equal((await staffCall(paymentPath, staffOptions, context)).status, 201);
 assert.equal((await staffCall(paymentPath, staffOptions, context)).status, 200);
+sqlite.exec("UPDATE stays SET status='checked_in',actual_checkout_at=NULL WHERE id=1");
+const checkoutPath = "/api/stays/1/check-out";
+const checkoutOptions = {method:"POST",headers:{Origin:"https://staff.example.test"}};
+assert.equal((await staffCall(checkoutPath, checkoutOptions)).status,403);
+assert.equal((await staffCall(checkoutPath, checkoutOptions, context)).status,200);
+const checkoutTime = sqlite.prepare("SELECT actual_checkout_at FROM stays WHERE id=1").get().actual_checkout_at;
+assert.ok(Number.isFinite(Date.parse(checkoutTime)));
+assert.equal((await staffCall(checkoutPath, checkoutOptions, context)).status,200);
+assert.equal(sqlite.prepare("SELECT actual_checkout_at FROM stays WHERE id=1").get().actual_checkout_at,checkoutTime);
 sqlite.exec("UPDATE app_users SET active=0 WHERE id=1");
 assert.equal((await staffCall(paymentPath, staffOptions, context)).status, 403);
 assert.equal(await receiveStayPayment(env.DB, 1, {...payment, key: "5".repeat(32)}, actor, now), "forbidden");
