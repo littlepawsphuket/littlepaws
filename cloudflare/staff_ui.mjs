@@ -3,6 +3,15 @@ const css = `
   main{margin:auto;max-width:52rem;padding:1rem}h1{margin:.2rem 0 1rem}
   article{background:#fff;border:1px solid #c8ded4;border-radius:1rem;margin:.6rem 0;padding:1rem}
   dialog{width:min(34rem,calc(100% - 4rem));max-height:80vh;padding:1rem;border:1px solid #a7cbb9;border-radius:1rem;color:inherit}
+  .calendar-toolbar{display:flex;flex-wrap:wrap;gap:.45rem;align-items:center;margin:1rem 0}
+  .calendar-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:.3rem}
+  .calendar-grid[data-view="day"]{grid-template-columns:minmax(0,1fr)}
+  .calendar-day{background:#fff;border:1px solid #c8ded4;border-radius:.55rem;min-width:0;padding:.35rem;min-height:4rem}
+  .calendar-day[data-muted]{background:#eaf0eb;color:#476052}
+  .calendar-day button{display:block;width:100%;margin:.2rem 0;padding:.25rem;text-align:start;overflow-wrap:anywhere;font-size:.85rem}
+  .calendar-holiday{display:block;background:#fff1d9;color:#593d19;border-radius:.35rem;padding:.2rem;overflow-wrap:anywhere;font-size:.85rem}
+  @media(max-width:37rem){.calendar-grid:not([data-view="day"]){grid-template-columns:repeat(7,minmax(0,1fr));gap:.15rem}.calendar-day{padding:.2rem}.calendar-day button{font-size:.72rem}}
+  .booking-warnings{flex-basis:100%;border:1px solid #d8ad6f;background:#fff7e9;color:#604119;border-radius:.7rem;padding:.55rem .65rem .55rem 2rem;margin:0}
   .photo-actions{display:flex;flex-wrap:wrap;gap:.5rem;margin:.6rem 0}
   .customer-dog-photo{width:6rem;height:6rem;object-fit:cover;border-radius:1rem}
   .delete-deposit{margin-inline-start:.75rem;background:#fff1ed;color:#8b3225;border-color:#e6a99b}
@@ -38,6 +47,77 @@ function main() {
   const key = () => Array.from(crypto.getRandomValues(new Uint8Array(16)),
     (byte) => byte.toString(16).padStart(2, "0")).join("");
 
+  const calendarToolbar = document.getElementById("calendar-toolbar");
+  const calendarAnchor = document.getElementById("calendar-date");
+  const calendarView = document.getElementById("calendar-view");
+  const calendarTitle = document.getElementById("calendar-title");
+  const calendarMonth = new Intl.DateTimeFormat("th-TH", {month:"long",year:"numeric",timeZone:"UTC"});
+  const calendarWeekday = new Intl.DateTimeFormat("th-TH",{weekday:"short",timeZone:"UTC"});
+  const calendarDay = new Intl.DateTimeFormat("th-TH",{day:"numeric",month:"short",timeZone:"UTC"});
+  const isoDay = (date) => date.toISOString().slice(0,10);
+  const shiftDay = (date, days) => new Date(date.valueOf() + days * 86400000);
+  calendarAnchor.value = parts.format(new Date());
+  function calendarRange() {
+    const anchor = new Date(calendarAnchor.value + "T00:00:00Z");
+    if (!Number.isFinite(anchor.valueOf())) return null;
+    if (calendarView.value === "day") return {start:anchor,end:anchor,anchor};
+    const first = calendarView.value === "week"
+      ? anchor : new Date(Date.UTC(anchor.getUTCFullYear(),anchor.getUTCMonth(),1));
+    const last = calendarView.value === "week"
+      ? first : new Date(Date.UTC(anchor.getUTCFullYear(),anchor.getUTCMonth()+1,0));
+    return {start:shiftDay(first,-((first.getUTCDay()+6)%7)),end:shiftDay(last,(7-last.getUTCDay())%7),anchor};
+  }
+  function navigateCalendar(direction) {
+    const range = calendarRange();
+    if (!range) return;
+    const {anchor} = range;
+    const next = calendarView.value === "month"
+      ? new Date(Date.UTC(anchor.getUTCFullYear(),anchor.getUTCMonth()+direction,1))
+      : shiftDay(anchor,direction*(calendarView.value === "week" ? 7 : 1));
+    calendarAnchor.value = isoDay(next);
+    load(true);
+  }
+  document.getElementById("calendar-prev").onclick = () => navigateCalendar(-1);
+  document.getElementById("calendar-next").onclick = () => navigateCalendar(1);
+  document.getElementById("calendar-today").onclick = () => {
+    calendarAnchor.value = parts.format(new Date());
+    load(true);
+  };
+  calendarAnchor.addEventListener("change", () => load(true));
+  calendarView.addEventListener("change", () => load(true));
+
+  function renderCalendar(data,range) {
+    const view = calendarView.value;
+    calendarTitle.textContent = view === "month" ? calendarMonth.format(range.anchor)
+      : view === "day" ? bookingDate.format(range.anchor)
+        : [range.start,range.end].map((date) => bookingDate.format(date)).join(" – ");
+    const grid = node("div");
+    grid.className = "calendar-grid";
+    grid.dataset.view = view;
+    for (let day = range.start; day <= range.end; day = shiftDay(day,1)) {
+      const date = isoDay(day);
+      const cell = node("section");
+      cell.className = "calendar-day";
+      if (view === "month" && day.getUTCMonth() !== range.anchor.getUTCMonth()) cell.dataset.muted = "";
+      cell.append(node("strong", calendarWeekday.format(day) + " " + calendarDay.format(day)));
+      for (const holiday of data.holidays) {
+        if (date < holiday.starts_on || date > holiday.ends_on) continue;
+        const label = node("span", "วันหยุด · " + holiday.name);
+        label.className = "calendar-holiday";
+        cell.append(label);
+      }
+      for (const booking of data.bookings) {
+        if (date < booking.checkin || date > booking.checkout) continue;
+        const label = (booking.dogs || booking.customer) + (booking.stay_id ? " · เช็กอินแล้ว" : "");
+        const open = Object.assign(node("button",label),{type:"button",title:booking.booking_number || label});
+        open.addEventListener("click", () => showBooking(booking.id));
+        cell.append(open);
+      }
+      grid.append(cell);
+    }
+    results.replaceChildren(grid);
+  }
+
   async function load(reset = false) {
     const requestId = ++requestNumber;
     if (reset) {
@@ -46,6 +126,17 @@ function main() {
     }
     more.disabled = true;
     try {
+      if (selected === "calendar") {
+        more.hidden = true;
+        const range = calendarRange();
+        if (!range) { message.textContent = "กรุณาเลือกวันที่"; return; }
+        const query = new URLSearchParams({start:isoDay(range.start),end:isoDay(range.end)});
+        const response = await fetch("/api/bookings/calendar?" + query);
+        if (!response.ok) throw Error();
+        const data = await response.json();
+        if (requestId === requestNumber) renderCalendar(data,range);
+        return;
+      }
       const directory = selected === "bookings" || selected === "customers";
       const directoryPath = selected === "bookings" ? "/api/bookings/pending" : "/api/customers";
       const url = directory
@@ -496,7 +587,7 @@ function main() {
         if (response.ok) {
           pendingDeposits.delete(booking.id);
           if (submit.isConnected && bookingDialog.open) await showBooking(booking.id);
-          if (selected === "bookings") await load(true);
+          if (selected === "bookings" || selected === "calendar") await load(true);
           message.textContent = "บันทึกรับมัดจำแล้ว";
         } else {
           const result = await response.json();
@@ -533,7 +624,7 @@ function main() {
           await showBooking(bookingId);
           status.textContent = "ลบรายการมัดจำแล้ว";
         }
-        if (selected === "bookings") await load(true);
+        if (selected === "bookings" || selected === "calendar") await load(true);
       } catch {
         if (button.isConnected) status.textContent = "ยังยืนยันการลบไม่ได้ กรุณาตรวจรายการแล้วลองใหม่";
       } finally {
@@ -557,6 +648,9 @@ function main() {
     const today = parts.format(new Date());
     const form = node("form");
     const submit = node("button","บันทึกการจอง");
+    const warnings = node("ul");
+    warnings.className = "booking-warnings";
+    warnings.hidden = true;
     submit.disabled = true;
     const search = Object.assign(node("input"), {type:"search", maxLength:100, placeholder:"พิมพ์ชื่อแล้วกดค้นหา"});
     const searchButton = Object.assign(node("button","ค้นหา"),{type:"button"});
@@ -571,6 +665,7 @@ function main() {
     let rates;
     let requestId = 0;
     let pendingSave = false;
+    let warningToken = null;
     function field(label, type, value) {
       const input = Object.assign(node("input"), {type,value});
       const wrapper = node("label", label);
@@ -590,8 +685,9 @@ function main() {
     const serviceLabel = node("label","ประเภทบริการ");
     serviceLabel.append(service);
     form.append(serviceLabel);
-    const checkin = field("วันเข้าพัก","date",booking?.checkin || today);
-    const checkout = field("วันรับกลับ","date",booking?.checkout || today);
+    const defaultDay = selected === "calendar" ? calendarAnchor.value || today : today;
+    const checkin = field("วันเข้าพัก","date",booking?.checkin || defaultDay);
+    const checkout = field("วันรับกลับ","date",booking?.checkout || defaultDay);
     const quantity = field("จำนวนวัน / เดือน","number",booking?.charged_nights ?? 1);
     const discount = field("ส่วนลด (บาท)","number",(booking?.discount_cents || 0)/100);
     const note = field("หมายเหตุ","text",booking?.note || "");
@@ -599,7 +695,7 @@ function main() {
     quantity.min = discount.min = "0";
     discount.step = "0.01";
     checkin.required = checkout.required = quantity.required = true;
-    form.append(dogs,submit,status);
+    form.append(dogs,warnings,submit,status);
     bookingContent.replaceChildren(node("h3",booking ? "แก้ไขการจอง" : "สร้างการจอง"),form);
     function defaults() {
       quantity.step = service.value === "monthly" ? "0.01" : "1";
@@ -674,6 +770,14 @@ function main() {
       submit.disabled = choices.size === 0;
     }
     owner.addEventListener("change", loadDogs);
+    function clearWarnings() {
+      warningToken = null;
+      warnings.replaceChildren();
+      warnings.hidden = true;
+      submit.textContent = "บันทึกการจอง";
+    }
+    form.addEventListener("input",clearWarnings);
+    owner.addEventListener("change",clearWarnings);
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
       if (pendingSave) return;
@@ -688,7 +792,7 @@ function main() {
         selectedDogs.every((dog) => booking.dogs.some((old) => old.id === dog.id && old.nightly_rate_cents === dog.rate));
       const body = {customerId:Number(owner.value),service:service.value, checkin:checkin.value,checkout:checkout.value,
         quantity100,discountCents,
-        dogs:selectedDogs,note:note.value,wholeBaht:!samePrice || booking.rounding_cents > 0,key:createBookingKey,revision:booking?.cloud_revision ?? null};
+        dogs:selectedDogs,note:note.value,warningToken,wholeBaht:!samePrice || booking.rounding_cents > 0,key:createBookingKey,revision:booking?.cloud_revision ?? null};
       pendingSave = true;
       submit.disabled = true;
       try {
@@ -696,6 +800,17 @@ function main() {
           method:booking ? "PUT" : "POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body),
         });
         const result = await response.json();
+        if (result.status === "warning") {
+          const labels = {holiday:"ช่วงที่เลือกตรงกับวันหยุดร้าน", overlap:"สุนัขมีรายการอื่นทับช่วงวันที่เลือก",
+            capacity:"จำนวนสุนัขเกินความจุที่ตั้งไว้"};
+          warnings.replaceChildren(...result.warnings.map((value) => node("li",labels[value] || value)));
+          warnings.hidden = false;
+          warningToken = result.token;
+          status.textContent = "ตรวจคำเตือน แล้วเลือกแก้ข้อมูลหรือยืนยันบันทึก";
+          submit.textContent = "ยืนยันบันทึกการจอง";
+          submit.focus();
+          return;
+        }
         if (!response.ok) {
           status.textContent = response.status === 409
             ? "บันทึกไม่ได้ กรุณาตรวจยอดมัดจำหรือเปิดรายละเอียดล่าสุดอีกครั้ง" : "บันทึกไม่ได้ กรุณาตรวจวัน ราคา และสุนัข";
@@ -703,7 +818,7 @@ function main() {
         }
         if (!booking) createBookingKey = undefined;
         if (form.isConnected && bookingDialog.open) await showBooking(result.id);
-        if (selected === "bookings") await load(true);
+        if (selected === "bookings" || selected === "calendar") await load(true);
         message.textContent = "บันทึกการจองแล้ว";
       } catch {
         status.textContent = "ยังยืนยันผลไม่ได้ กรุณาตรวจรายการก่อนลองใหม่";
@@ -739,7 +854,7 @@ function main() {
           return;
         }
         if (remove.isConnected && bookingDialog.open) bookingDialog.close();
-        if (selected === "bookings") await load(true);
+        if (selected === "bookings" || selected === "calendar") await load(true);
         message.textContent = "ลบการจองแล้ว";
       } catch {
         status.textContent = "ยังยืนยันการลบไม่ได้ กรุณาลองใหม่";
@@ -892,7 +1007,8 @@ function main() {
     mode.addEventListener("click", () => {
       if (selected === mode.dataset.mode) return;
       selected = mode.dataset.mode;
-      addBooking.hidden = selected !== "bookings";
+      addBooking.hidden = selected !== "bookings" && selected !== "calendar";
+      calendarToolbar.hidden = selected !== "calendar";
       addCustomer.hidden = selected !== "customers";
       bookingSearch.hidden = selected !== "bookings" && selected !== "customers";
       searchLabel.textContent = selected === "customers" ? "ชื่อลูกค้าหรือชื่อสุนัข" : "เลขจอง ชื่อลูกค้า หรือชื่อสุนัข";
@@ -924,6 +1040,7 @@ export function outstandingPage() {
       <button type="button" data-mode="outstanding" aria-pressed="true">ยอดค้างชำระ</button>
       <button type="button" data-mode="current" aria-pressed="false">กำลังเข้าพัก</button>
       <button type="button" data-mode="customers" aria-pressed="false">ลูกค้า</button>
+      <button type="button" data-mode="calendar" aria-pressed="false">ปฏิทินการจอง</button>
       <button type="button" data-mode="bookings" aria-pressed="false">การจองที่รอเช็กอิน</button>
     </div>
     <form id="booking-search" hidden>
@@ -932,6 +1049,15 @@ export function outstandingPage() {
     </form>
     <p><button id="add-booking" type="button" hidden>สร้างการจอง</button><button id="add-customer" type="button" hidden>เพิ่มลูกค้า</button></p>
     <p><a id="payment-qr" href="/api/payment-qr.jpg" target="_blank" rel="noopener" hidden>เปิด QR สำหรับชำระเงิน</a></p>
+    <div id="calendar-toolbar" class="calendar-toolbar" hidden>
+      <button type="button" id="calendar-prev" aria-label="ก่อนหน้า">‹</button>
+      <button type="button" id="calendar-today">วันนี้</button>
+      <button type="button" id="calendar-next" aria-label="ถัดไป">›</button>
+      <label>เลือกวันที่<input id="calendar-date" type="date"></label>
+      <label>มุมมอง<select id="calendar-view"><option value="month">รายเดือน</option>
+        <option value="week">รายสัปดาห์</option><option value="day">รายวัน</option></select></label>
+      <strong id="calendar-title" aria-live="polite"></strong>
+    </div>
     <p id="message" role="status"></p><div id="stays"></div>
     <button id="more" type="button" hidden>โหลดเพิ่มเติม</button></main>
     <dialog id="booking-detail" aria-labelledby="booking-title">

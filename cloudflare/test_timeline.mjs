@@ -289,6 +289,49 @@ assert.equal((await staffCall(createdBookingPath,customerWrite("DELETE"),context
 assert.equal((await staffCall("/api/bookings",customerWrite("POST",bookingForm),context)).status,409);
 const removedBookingList = await (await staffCall(bookingPath + "?q=" + createdBooking.booking_number, {}, context)).json();
 assert.deepEqual(removedBookingList.bookings, []);
+const warningForm = {...bookingForm,key:"0".repeat(32),checkin:"2026-01-10",checkout:"2026-01-13",
+  dogs:[{id:2,rate:100000}]};
+sqlite.exec("INSERT INTO system_settings(key,value) VALUES('capacity','1')");
+sqlite.exec("INSERT INTO shop_holidays(name,starts_on,ends_on) VALUES('Fixture holiday','2026-01-11','2026-01-11')");
+const warningResponse = await staffCall("/api/bookings",customerWrite("POST",warningForm),context);
+assert.equal(warningResponse.status,409);
+const bookingWarning = await warningResponse.json();
+assert.deepEqual(bookingWarning.warnings,["holiday","overlap","capacity"]);
+assert.match(bookingWarning.token,/^[a-f0-9]{64}$/);
+assert.equal(sqlite.prepare("SELECT count(*) AS total FROM appointments WHERE create_key=?").get(warningForm.key).total,0);
+sqlite.exec("UPDATE shop_holidays SET ends_on='2026-01-12' WHERE name='Fixture holiday'");
+const staleWarning = await (await staffCall("/api/bookings",customerWrite("POST",{
+  ...warningForm,warningToken:bookingWarning.token,
+}),context)).json();
+assert.deepEqual(staleWarning.warnings,bookingWarning.warnings);
+assert.notEqual(staleWarning.token,bookingWarning.token);
+const confirmedWarning = await staffCall("/api/bookings",customerWrite("POST",{
+  ...warningForm,warningToken:staleWarning.token,
+}),context);
+assert.equal(confirmedWarning.status,201);
+const warningId = (await confirmedWarning.json()).id;
+assert.equal((await staffCall("/api/bookings",customerWrite("POST",warningForm),context)).status,200);
+assert.equal((await staffCall("/api/bookings/" + warningId,customerWrite("DELETE"),context)).status,200);
+sqlite.exec("DELETE FROM system_settings WHERE key='capacity'");
+const calendarPath = "/api/bookings/calendar?start=2026-01-01&end=2026-01-31";
+assert.equal((await staffCall(calendarPath)).status,403);
+assert.equal((await get(calendarPath)).status,404);
+assert.equal((await staffCall("/api/bookings/calendar?start=2026-01-01&end=2026-03-01",{},context)).status,400);
+assert.equal((await staffCall("/api/bookings/calendar?start=2026-02-31&end=2026-03-01",{},context)).status,400);
+const calendar = await (await staffCall(calendarPath,{},context)).json();
+assert.deepEqual(calendar.bookings.map((booking) => booking.id),[3,1]);
+assert.equal(calendar.bookings[0].stay_id,1);
+assert.deepEqual(calendar.holidays.map(({name,starts_on,ends_on}) => [name,starts_on,ends_on]),
+  [["Fixture holiday","2026-01-11","2026-01-12"]]);
+const singleDay = await (await staffCall("/api/bookings/calendar?start=2026-01-12&end=2026-01-12",{},context)).json();
+assert.deepEqual(singleDay.bookings.map((booking) => booking.id),[1]);
+assert.equal(singleDay.holidays.length,1);
+const concurrentBooking = {...bookingForm,checkin:"2027-02-05",checkout:"2027-02-06",dogs:[{id:2,rate:100000}]};
+const racingBookings = await Promise.all(["1","2"].map((digit) => staffCall("/api/bookings",
+  customerWrite("POST",{...concurrentBooking,key:digit.repeat(32)}),context)));
+assert.deepEqual(racingBookings.map((result) => result.status).sort(),[201,409]);
+const raceWarning = await racingBookings.find((result) => result.status === 409).json();
+assert.deepEqual(raceWarning.warnings,["overlap"]);
 const qrPath = "/api/payment-qr.jpg";
 const receiptPath = "/api/receipts/1";
 for (const filePath of [qrPath, receiptPath]) {

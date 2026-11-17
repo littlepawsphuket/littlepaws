@@ -118,3 +118,26 @@ export async function deleteBookingDeposit(db, bookingId, transactionId, {key}, 
   if (archive.meta.changes === 1 || booking.deleted) return "deleted";
   return booking.checked_in ? "booking_closed" : "not_found";
 }
+
+export function validDay(value) {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value) || value.startsWith("0000")) return false;
+  const date = new Date(value + "T00:00:00Z");
+  return Number.isFinite(date.valueOf()) && date.toISOString().slice(0,10) === value;
+}
+
+export async function bookingCalendar(db, start, end) {
+  if (!validDay(start) || !validDay(end) || end < start || Date.parse(end)-Date.parse(start) > 41*86400000) {
+    return null;
+  }
+  const [bookings,holidays] = await db.batch([
+    db.prepare(`SELECT a.id,a.checkin,a.checkout,a.booking_number,a.stay_id,c.name AS customer,
+      (SELECT group_concat(d.name, ', ') FROM appointment_dogs ad JOIN dogs d ON d.id=ad.dog_id
+        WHERE ad.appointment_id=a.id) AS dogs
+      FROM appointments a JOIN customers c ON c.id=a.customer_id
+      WHERE a.status='pending' AND a.checkin<=? AND a.checkout>=?
+      ORDER BY a.checkin,a.id`).bind(end,start),
+    db.prepare(`SELECT id,name,starts_on,ends_on FROM shop_holidays
+      WHERE starts_on<=? AND ends_on>=? ORDER BY starts_on,id`).bind(end,start),
+  ]);
+  return {bookings:bookings.results,holidays:holidays.results};
+}

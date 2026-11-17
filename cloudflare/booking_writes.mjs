@@ -1,3 +1,5 @@
+import {validDay} from "./bookings.mjs";
+import {bookingSnapshot, bookingWarnings} from "./booking_warnings.mjs";
 import {authorizedStaff} from "./stay_payments.mjs";
 
 const defaultRates = {
@@ -8,12 +10,6 @@ const pending = "a.status='pending' AND a.stay_id IS NULL";
 const hasPayments = "EXISTS (SELECT 1 FROM transactions t WHERE t.deposit_appointment_id=a.id AND t.payment_type!='')";
 const keyPattern = /^[0-9a-f]{32}$/;
 const numberChars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-
-function validDay(value) {
-  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value) || value.startsWith("0000")) return false;
-  const date = new Date(value + "T00:00:00Z");
-  return Number.isFinite(date.valueOf()) && date.toISOString().slice(0,10) === value;
-}
 
 function bookingValues(form) {
   const {customerId,checkin,checkout,service,quantity100,discountCents,dogs,note} = form;
@@ -37,7 +33,7 @@ function bookingValues(form) {
   const rawNet = Math.max(0,subtotal-discountCents);
   const rounding = form.wholeBaht === true ? rawNet % 100 : 0;
   return {fields:[customerId,checkin,checkout,quantity100/100,(rawNet-rounding)/100,note,discountCents,rounding,service],
-    dogIds:JSON.stringify([...ids]), dogRows:JSON.stringify(dogs), quotePending, netCents:rawNet-rounding};
+    dogIds:[...ids], dogRows:JSON.stringify(dogs), quotePending, netCents:rawNet-rounding};
 }
 
 export async function bookingRates(db) {
@@ -61,10 +57,24 @@ export async function saveBooking(db, id, form, actor) {
   const revision = crypto.randomUUID();
   const owner = form.customerId;
   const ownerCheck = `EXISTS(SELECT 1 FROM customers c WHERE c.id=? AND (c.archived=0 OR c.id=?))`;
-  const eligible = [owner,id === null ? null : owner,data.dogIds,owner,id,form.dogs.length];
+  const eligible = [owner,id === null ? null : owner,JSON.stringify(data.dogIds),owner,id,form.dogs.length];
   const bookedAt = new Date(Date.now()+7*3600000).toISOString().replace("Z","+07:00");
+  async function replay() {
+    if (id !== null) return null;
+    const row = await db.prepare(`SELECT a.id,a.status FROM appointments a WHERE a.create_key=? AND ${authorizedStaff}`)
+      .bind(form.key,...identity).first();
+    if (!row) return null;
+    return row.status === "pending" ? {status:"saved",id:row.id} : {status:"conflict"};
+  }
   // A single D1 batch makes the parent and all selected dogs visible together.
   for (let attempt=0; attempt<5; attempt++) {
+    const previous = await replay();
+    if (previous) return previous;
+    const check = await bookingWarnings(db,id,form.checkin,form.checkout,data.dogIds);
+    if (check.token && form.warningToken !== check.token) {
+      return await replay() || {status:"warning",warnings:check.warnings,token:check.token};
+    }
+    const unchanged = [ ...check.params,check.snapshot ];
     const code = [...crypto.getRandomValues(new Uint8Array(6))].map((byte) => numberChars[byte % numberChars.length]).join("");
     const primary = id === null
       ? db.prepare(`INSERT INTO appointments(customer_id,checkin,checkout,charged_nights,agreed_total,note,
@@ -72,14 +82,16 @@ export async function saveBooking(db, id, form, actor) {
           SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?
           WHERE ${ownerCheck} AND ${allDogsOwned} AND ${authorizedStaff}
             AND NOT EXISTS (SELECT 1 FROM stays WHERE stay_number=?)
-          ON CONFLICT DO NOTHING`).bind(...data.fields,form.key,code,bookedAt,revision,...eligible,...identity,code)
+            AND (${bookingSnapshot})=?
+          ON CONFLICT DO NOTHING`).bind(...data.fields,form.key,code,bookedAt,revision,...eligible,...identity,code,...unchanged)
       : db.prepare(`UPDATE appointments AS a SET customer_id=?,checkin=?,checkout=?,charged_nights=?,agreed_total=?,
           note=?,discount_cents=?,rounding_cents=?,service_type=?,cloud_revision=?
           WHERE a.id=? AND ${pending} AND a.customer_id=? AND a.cloud_revision IS ?
             AND ${ownerCheck} AND ${allDogsOwned} AND ${authorizedStaff}
             AND (? OR ? >= COALESCE((SELECT SUM(ROUND(amount*100)) FROM transactions
-              WHERE deposit_appointment_id=a.id AND payment_type!=''),0))`)
-        .bind(...data.fields,revision,id,owner,form.revision,...eligible,...identity,Number(data.quotePending),data.netCents);
+              WHERE deposit_appointment_id=a.id AND payment_type!=''),0))
+            AND (${bookingSnapshot})=?`)
+        .bind(...data.fields,revision,id,owner,form.revision,...eligible,...identity,Number(data.quotePending),data.netCents,...unchanged);
     const [update,,, result] = await db.batch([
       primary,
       db.prepare("DELETE FROM appointment_dogs WHERE appointment_id=(SELECT id FROM appointments WHERE cloud_revision=?)").bind(revision),
@@ -91,7 +103,11 @@ export async function saveBooking(db, id, form, actor) {
         : db.prepare(`SELECT a.id,a.status FROM appointments a WHERE a.id=? AND ${authorizedStaff}`).bind(id,...identity),
     ]);
     if (update.meta.changes === 1) return {status:id === null ? "created" : "saved",id:result.results[0].id};
-    if (id !== null) return {status:result.results.length ? "conflict" : "not_found"};
+    if (id !== null) {
+      const latest = await bookingWarnings(db,id,form.checkin,form.checkout,data.dogIds);
+      if (latest.snapshot !== check.snapshot) continue;
+      return {status:result.results.length ? "conflict" : "not_found"};
+    }
     if (result.results.length) {
       return result.results[0].status === "pending" ? {status:"saved",id:result.results[0].id} : {status:"conflict"};
     }
