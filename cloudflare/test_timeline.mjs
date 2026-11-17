@@ -84,6 +84,7 @@ assert.equal((await get(path("a")+"/photos/1")).status, 404);
 sqlite.exec("UPDATE stays SET status='completed', agreed_total=1000, payment_tracking=1 WHERE id=1");
 sqlite.exec(await readFile(new URL("./staff_access.sql", import.meta.url), "utf8"));
 sqlite.exec(await readFile(new URL("./booking_deposits.sql", import.meta.url), "utf8"));
+sqlite.exec(await readFile(new URL("./customer_writes.sql", import.meta.url), "utf8"));
 sqlite.exec("INSERT INTO staff_access_identities (email,user_id) VALUES ('admin@example.test',1)");
 const actor = {id:1,email:"admin@example.test"};
 const now = new Date("2026-11-17T06:30:00Z");
@@ -141,6 +142,32 @@ assert.equal((await staffCall("/api/customers/3/dogs/2/photo", {}, context)).sta
 const profilePhoto = await staffCall(customerDogPhoto, {}, context);
 assert.equal(profilePhoto.headers.get("Cache-Control"), "private, no-store");
 assert.equal(await profilePhoto.text(), "fixture-dog-photo");
+const customerForm = {name:" ลูกค้าทดสอบ ",owner_phone:"0811234567",line_id:"test-line",
+  emergency_address:"ภูเก็ต",note:"Test note",key:"e".repeat(32)};
+const customerWrite = (method, body, origin = "https://staff.example.test") => ({
+  method, headers:{Origin:origin,"Content-Type":"application/json"}, body:body ? JSON.stringify(body) : undefined,
+});
+assert.equal((await staffCall(customersPath, customerWrite("POST", customerForm))).status, 403);
+assert.equal((await staffCall(customersPath, customerWrite("POST", customerForm, "https://other.example.test"), context)).status, 403);
+assert.equal((await staffCall(customersPath, customerWrite("POST", {...customerForm,name:" "}), context)).status, 400);
+const creations = await Promise.all([0,1].map(() => staffCall(customersPath, customerWrite("POST", customerForm), context)));
+assert.deepEqual(creations.map((response) => response.status).sort(), [200,201]);
+const [firstCustomer, retryCustomer] = await Promise.all(creations.map((response) => response.json()));
+assert.equal(firstCustomer.id, retryCustomer.id);
+const newCustomerPath = customersPath + "/" + firstCustomer.id;
+const newCustomer = await (await staffCall(newCustomerPath, {}, context)).json();
+assert.equal(newCustomer.customer.name, "ลูกค้าทดสอบ");
+assert.match(sqlite.prepare("SELECT registered_at FROM customers WHERE id=?").get(firstCustomer.id).registered_at, /\+07:00$/);
+assert.equal((await staffCall(customerPath, customerWrite("PUT", {...customerForm,name:"Fixture owner"}), context)).status, 200);
+const editedCustomer = await (await staffCall(customerPath, {}, context)).json();
+assert.equal(editedCustomer.customer.owner_phone, "0811234567");
+assert.equal(editedCustomer.dogs.length, 2);
+assert.equal(editedCustomer.stays.length, 2);
+assert.equal((await staffCall(newCustomerPath, customerWrite("DELETE"), context)).status, 200);
+assert.equal((await staffCall(newCustomerPath, customerWrite("DELETE"), context)).status, 200);
+assert.equal((await staffCall(newCustomerPath, {}, context)).status, 404);
+assert.equal((await staffCall(newCustomerPath, customerWrite("PUT", customerForm), context)).status, 404);
+assert.equal((await staffCall(customersPath, customerWrite("POST", customerForm), context)).status, 404);
 const bookingPath = "/api/bookings/pending";
 assert.equal((await staffCall(bookingPath)).status, 403);
 for (const search of ["", "ab12cd", "Fixture owner", "Other dog"]) {
@@ -260,6 +287,10 @@ assert.ok(Number.isFinite(Date.parse(checkoutTime)));
 assert.equal((await staffCall(checkoutPath, checkoutOptions, context)).status,200);
 assert.equal(sqlite.prepare("SELECT actual_checkout_at FROM stays WHERE id=1").get().actual_checkout_at,checkoutTime);
 assert.deepEqual((await (await staffCall("/api/stays/current", {}, context)).json()).stays, []);
+assert.equal((await staffCall(customerPath, customerWrite("DELETE"), context)).status, 200);
+assert.equal(sqlite.prepare("SELECT count(*) AS count FROM stays WHERE customer_id=1").get().count, 2);
+assert.equal(sqlite.prepare("SELECT count(*) AS count FROM dogs WHERE customer_id=1").get().count, 2);
+assert.equal((await staffCall(customerDogPhoto, {}, context)).status, 404);
 sqlite.exec("UPDATE app_users SET active=0 WHERE id=1");
 assert.equal((await staffCall(paymentPath, staffOptions, context)).status, 403);
 assert.equal(await receiveStayPayment(env.DB, 1, {...payment, key: "5".repeat(32)}, actor, now), "forbidden");

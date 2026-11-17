@@ -7,7 +7,7 @@ const css = `
   .delete-deposit{margin-inline-start:.75rem;background:#fff1ed;color:#8b3225;border-color:#e6a99b}
   dialog::backdrop{background:#203c3066}
   h2,p{margin:.15rem 0 .6rem}form{display:flex;flex-wrap:wrap;align-items:end;gap:.7rem}
-  label{display:grid;gap:.2rem}input,button{font:inherit;padding:.55rem .7rem;border:1px solid #a7cbb9;border-radius:.6rem}
+  label{display:grid;gap:.2rem}input,textarea,button{font:inherit;padding:.55rem .7rem;border:1px solid #a7cbb9;border-radius:.6rem}
   button{background:#155747;color:#fff;cursor:pointer}button:disabled{opacity:.65} [hidden]{display:none}
 `;
 
@@ -77,10 +77,96 @@ function main() {
 
   const bookingDate = new Intl.DateTimeFormat("th-TH", {dateStyle:"medium", timeZone:"UTC"});
   const customerDialog = document.getElementById("customer-detail");
+  const addCustomer = document.getElementById("add-customer");
   const customerContent = document.getElementById("customer-content");
   let customerRequest;
   document.getElementById("close-customer").addEventListener("click", () => customerDialog.close());
   customerDialog.addEventListener("close", () => customerRequest?.abort());
+
+  addCustomer.addEventListener("click", () => customerEditor());
+
+  let pendingCustomer;
+  function customerEditor(customer) {
+    const editing = Boolean(customer);
+    const attempt = editing ? null : pendingCustomer;
+    customerRequest?.abort();
+    if (!customerDialog.open) customerDialog.showModal();
+    const form = node("form");
+    const inputs = {};
+    for (const [field, label, limit] of [
+      ["name","ชื่อลูกค้า",120], ["owner_phone","เบอร์โทร",50], ["line_id","Line ID / Facebook",120],
+      ["emergency_address","ที่อยู่ฉุกเฉิน",500], ["note","หมายเหตุ",800],
+    ]) {
+      const input = node(limit >= 500 ? "textarea" : "input");
+      Object.assign(input, {maxLength:limit, required:field === "name",
+        value:customer?.[field] ?? attempt?.[field] ?? ""});
+      if (field === "owner_phone") input.type = "tel";
+      const caption = node("label", label);
+      caption.append(input);
+      inputs[field] = input;
+      form.append(caption);
+    }
+    const status = node("p", attempt ? "กรุณาส่งข้อมูลเดิมอีกครั้งเพื่อยืนยันผล" : "");
+    status.setAttribute("role", "status");
+    const submit = node("button", "บันทึก");
+    form.append(submit, status);
+    customerContent.replaceChildren(node("h3", editing ? "แก้ไขข้อมูลลูกค้า" : "เพิ่มลูกค้า"), form);
+    const back = Object.assign(node("button", "กลับไปดูข้อมูล"), {type:"button"});
+    if (editing) {
+      back.addEventListener("click", () => showCustomer(customer.id));
+      customerContent.append(back);
+    }
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const values = Object.fromEntries(Object.entries(inputs).map(([field, input]) => [field, input.value.trim()]));
+      if (!values.name) {
+        status.textContent = "กรุณาระบุชื่อลูกค้า";
+        return;
+      }
+      if (!editing && pendingCustomer && Object.keys(values).some((field) => values[field] !== pendingCustomer[field])) {
+        status.textContent = "ส่งข้อมูลเดิมอีกครั้งเพื่อยืนยันผลการบันทึกครั้งก่อน";
+        return;
+      }
+      const body = editing ? values : pendingCustomer || {...values, key:key()};
+      if (!editing) pendingCustomer = body;
+      submit.disabled = true;
+      try {
+        const response = await fetch("/api/customers" + (editing ? "/" + customer.id : ""), {
+          method:editing ? "PUT" : "POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body),
+        });
+        const result = await response.json();
+        if (!response.ok) {
+          if (!editing && response.status < 500) pendingCustomer = null;
+          status.textContent = "บันทึกไม่ได้ กรุณาตรวจข้อมูล";
+          return;
+        }
+        if (!editing) pendingCustomer = null;
+        if (form.isConnected && customerDialog.open) await showCustomer(result.id);
+        if (selected === "customers") await load(true);
+        message.textContent = "บันทึกข้อมูลลูกค้าแล้ว";
+      } catch {
+        status.textContent = "ยังยืนยันผลไม่ได้ กรุณาลองส่งข้อมูลเดิมอีกครั้ง";
+      } finally {
+        submit.disabled = false;
+      }
+    });
+  }
+
+  async function removeCustomer(customer, button) {
+    if (!confirm("นำ " + customer.name + " ออกจากรายชื่อลูกค้าที่ใช้งานและเก็บประวัติไว้หรือไม่?")) return;
+    button.disabled = true;
+    try {
+      const response = await fetch("/api/customers/" + customer.id, {method:"DELETE"});
+      if (!response.ok) throw Error();
+      if (button.isConnected && customerDialog.open) customerDialog.close();
+      if (selected === "customers") await load(true);
+      message.textContent = "นำลูกค้าออกจากรายการแล้ว";
+    } catch {
+      if (button.isConnected) document.getElementById("customer-status").textContent = "นำลูกค้าออกไม่ได้ กรุณาลองใหม่";
+    } finally {
+      button.disabled = false;
+    }
+  }
 
   function customerCard(customer) {
     const article = node("article");
@@ -117,7 +203,8 @@ function main() {
     customerRequest?.abort();
     const controller = customerRequest = new AbortController();
     customerContent.replaceChildren(node("p", "กำลังโหลด…"));
-    customerDialog.showModal();
+    if (!customerDialog.open) customerDialog.showModal();
+    document.getElementById("customer-status").textContent = "";
     async function loadHistory(offset, nextButton) {
       if (nextButton) nextButton.disabled = true;
       try {
@@ -127,7 +214,11 @@ function main() {
         if (controller.signal.aborted) return;
         if (!offset) {
           const customer = data.customer;
-          customerContent.replaceChildren(node("h3", customer.name));
+          const edit = Object.assign(node("button", "แก้ไข"), {type:"button"});
+          edit.addEventListener("click", () => customerEditor(customer));
+          const archive = Object.assign(node("button", "นำออกจากรายการ"), {type:"button",className:"delete-deposit"});
+          archive.addEventListener("click", () => removeCustomer(customer, archive));
+          customerContent.replaceChildren(node("h3", customer.name), edit, archive);
           for (const [label,value] of [["โทร",customer.owner_phone], ["Line ID / Facebook",customer.line_id],
             ["ที่อยู่ฉุกเฉิน",customer.emergency_address], ["หมายเหตุ",customer.note]]) {
             if (value) customerContent.append(node("p", label + " · " + value));
@@ -399,6 +490,7 @@ function main() {
     mode.addEventListener("click", () => {
       if (selected === mode.dataset.mode) return;
       selected = mode.dataset.mode;
+      addCustomer.hidden = selected !== "customers";
       bookingSearch.hidden = selected !== "bookings" && selected !== "customers";
       searchLabel.textContent = selected === "customers" ? "ชื่อลูกค้าหรือชื่อสุนัข" : "เลขจอง ชื่อลูกค้า หรือชื่อสุนัข";
       bookingQuery.value = queries[selected] || "";
@@ -435,6 +527,7 @@ export function outstandingPage() {
       <label><span id="directory-search-label">เลขจอง ชื่อลูกค้า หรือชื่อสุนัข</span><input type="search" maxlength="100" id="booking-query"></label>
       <button type="submit">ค้นหา</button>
     </form>
+    <p><button id="add-customer" type="button" hidden>เพิ่มลูกค้า</button></p>
     <p><a id="payment-qr" href="/api/payment-qr.jpg" target="_blank" rel="noopener" hidden>เปิด QR สำหรับชำระเงิน</a></p>
     <p id="message" role="status"></p><div id="stays"></div>
     <button id="more" type="button" hidden>โหลดเพิ่มเติม</button></main>
@@ -445,6 +538,7 @@ export function outstandingPage() {
     </dialog>
     <dialog id="customer-detail" aria-labelledby="customer-title">
       <h2 id="customer-title">ข้อมูลลูกค้า</h2><button type="button" id="close-customer" autofocus>ปิด</button>
+      <p id="customer-status" role="status"></p>
       <div id="customer-content" aria-live="polite"></div>
     </dialog>
     <script nonce="${nonce}">(${main.toString()})()</script></html>`, {

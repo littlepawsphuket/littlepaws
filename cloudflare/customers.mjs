@@ -1,4 +1,4 @@
-import {stayBalance} from "./stay_payments.mjs";
+import {stayBalance, authorizedStaff} from "./stay_payments.mjs";
 
 export async function searchCustomers(db, after, search) {
   const {results} = await db.prepare(`
@@ -42,4 +42,43 @@ export async function dogPhoto(db, media, customerId, dogId) {
   `).bind(customerId, dogId).first();
   if (record?.object_key !== `dogs/${dogId}.jpg`) return null;
   return media.get(record.object_key);
+}
+
+const fieldLimits = {name:120, owner_phone:50, line_id:120, emergency_address:500, note:800};
+
+export async function saveCustomer(db, id, form, actor) {
+  const fields = [];
+  for (const [field, limit] of Object.entries(fieldLimits)) {
+    const value = form[field];
+    if (typeof value !== "string" || value.length > limit || value.includes("\0")) return {status:"invalid"};
+    fields.push(value.trim());
+  }
+  if (!fields[0]) return {status:"invalid"};
+  const identity = [actor.id, actor.email];
+  if (id !== null) {
+    const {meta} = await db.prepare(`UPDATE customers SET name=?,owner_phone=?,line_id=?,emergency_address=?,note=?
+      WHERE id=? AND archived=0 AND ${authorizedStaff}`).bind(...fields, id, ...identity).run();
+    return meta.changes === 1 ? {status:"saved", id} : {status:"not_found"};
+  }
+  const key = form.key;
+  if (typeof key !== "string" || !/^[a-f0-9]{32}$/.test(key)) return {status:"invalid"};
+  const registered = new Date(Date.now() + 7 * 60 * 60 * 1000).toISOString().replace("Z", "+07:00");
+  const [insert, lookup] = await db.batch([
+    db.prepare(`INSERT INTO customers(name,owner_phone,line_id,emergency_address,note,registered_at,cloud_create_key)
+      SELECT ?,?,?,?,?,?,? WHERE ${authorizedStaff}
+      ON CONFLICT (cloud_create_key) DO NOTHING`)
+      .bind(...fields, registered, key, ...identity),
+    db.prepare(`SELECT id FROM customers WHERE cloud_create_key=? AND archived=0 AND ${authorizedStaff}`)
+      .bind(key, ...identity),
+  ]);
+  const row = lookup.results[0];
+  if (!row) return {status:"not_found"};
+  return {status:insert.meta.changes === 1 ? "created" : "saved", id:row.id};
+}
+
+// Keep foreign-key references and historic receipts usable after removing a customer from the directory.
+export async function archiveCustomer(db, id, actor) {
+  const {meta} = await db.prepare(`UPDATE customers SET archived=1
+    WHERE id=? AND ${authorizedStaff}`).bind(id, actor.id, actor.email).run();
+  return {status:meta.changes === 1 ? "archived" : "not_found"};
 }

@@ -1,6 +1,6 @@
 import { receiveStayPayment, stayBalance, authorizedStaff } from "./stay_payments.mjs";
 import { pendingBookings, bookingDetails, receiveBookingDeposit, deleteBookingDeposit } from "./bookings.mjs";
-import { searchCustomers, customerDetails, dogPhoto } from "./customers.mjs";
+import { searchCustomers, customerDetails, dogPhoto, saveCustomer, archiveCustomer } from "./customers.mjs";
 import { outstandingPage } from "./staff_ui.mjs";
 
 const JSON_HEADERS = {
@@ -23,10 +23,10 @@ async function authorizedUser(env, ctx) {
     .bind(identity.email.trim().toLowerCase()).first();
 }
 
-async function smallJson(request) {
+async function smallJson(request, limit = 2048) {
   const reader = request.body?.getReader();
   if (!reader) return null;
-  const buffer = new Uint8Array(2048);
+  const buffer = new Uint8Array(limit);
   let size = 0;
   try {
     for (;;) {
@@ -106,6 +106,25 @@ export default {
       const user = await authorizedUser(env, ctx);
       if (!user) return json({error: "access_required"}, 403);
       if (isFile) return await privateFile(request, env, receiptMatch);
+      if (request.method !== "GET" && (url.pathname === "/api/customers" || (customerMatch && !customerMatch[2]))) {
+        const id = customerMatch ? Number(customerMatch[1]) : null;
+        if (id !== null && (!Number.isSafeInteger(id) || id < 1)) return json({error:"not_found"}, 404);
+        const methods = id === null ? ["POST"] : ["PUT", "DELETE"];
+        if (!methods.includes(request.method)) return json({error:"method_not_allowed"}, 405);
+        if (request.headers.get("Origin") !== url.origin) return json({error:"invalid_origin"}, 403);
+        let result;
+        if (request.method === "DELETE") {
+          result = await archiveCustomer(env.DB, id, user);
+        } else {
+          if (request.headers.get("Content-Type")?.split(";", 1)[0].trim().toLowerCase() !== "application/json") {
+            return json({error:"invalid_content_type"}, 415);
+          }
+          const form = await smallJson(request, 12288);
+          if (!form) return json({error:"invalid"}, 400);
+          result = await saveCustomer(env.DB, id, form, user);
+        }
+        return json(result, {created:201,saved:200,archived:200,invalid:400,not_found:404}[result.status]);
+      }
       if (!match && !depositMatch) {
         if (request.method !== "GET") return json({error: "method_not_allowed"}, 405);
         if (url.pathname === "/") return outstandingPage();
