@@ -1,4 +1,4 @@
-export function settingsScreen({node,results,message,themeLabels,thaiDate,reload,isActive,openLedger}) {
+export function settingsScreen({node,results,message,themeLabels,thaiDate,reload,isActive,openLedger,applyTheme,openCoupons}) {
   const services = {
     overnight:["ฝากค้างคืน","บาท/คืน"],daycare:["ฝากระหว่างวัน","บาท/วัน"],monthly:["ฝากรายเดือน","บาท/เดือน"],
   };
@@ -158,7 +158,7 @@ export function settingsScreen({node,results,message,themeLabels,thaiDate,reload
 
   function render(value) {
     data = value;
-    document.documentElement.dataset.theme = value.theme;
+    applyTheme(value.theme);
     const view = node("article");
     const menu = grid("settings-menu");
     menu.setAttribute("role","group");
@@ -178,6 +178,9 @@ export function settingsScreen({node,results,message,themeLabels,thaiDate,reload
     const ledger = button("รายรับ–รายจ่าย");
     ledger.onclick = openLedger;
     menu.append(ledger);
+    const coupons = button("คูปอง");
+    coupons.onclick = openCoupons;
+    menu.append(coupons);
     const refresh = button("โหลดการตั้งค่าล่าสุด");
     refresh.onclick = () => { message.textContent = ""; reload(); };
     const panel = node("section");

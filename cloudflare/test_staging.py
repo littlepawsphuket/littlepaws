@@ -12,8 +12,10 @@ from PIL import Image
 
 from cloudflare.export_data import export
 from cloudflare.sync_terms import contents
+from cloudflare.sync_ui import contents as ui_contents
 
 assert Path(__file__).with_name("stay_terms.mjs").read_text(encoding="utf-8") == contents()
+assert Path(__file__).with_name("ui_assets.mjs").read_text(encoding="utf-8") == ui_contents()
 
 with TemporaryDirectory() as folder:
     root = Path(folder)

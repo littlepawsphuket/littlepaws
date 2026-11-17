@@ -4,6 +4,8 @@ import {ledgerScreen} from "./ledger_ui.mjs";
 import {ledgerKinds,ledgerCategories} from "./ledger.mjs";
 import {themes,themeName} from "./system_settings.mjs";
 import {intakeGroups} from "./stay_terms.mjs";
+import {dashboardScreen} from "./dashboard_ui.mjs";
+import {applyStaffTheme,staffHeader,staffFooter,macStyleBridge} from "./staff_shell.mjs";
 
 const css = `
   :root{--page:#f2f7f3;--wash:#e2f0e8;--line:#c8ded4;--ink:#203c30;--accent:#155747}
@@ -82,7 +84,7 @@ const css = `
   #stays>article>button{margin-top:1rem}
 `;
 
-function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,themeLabels,ledgerKinds,ledgerCategories,canExport) {
+function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScreen,applyTheme,themeLabels,ledgerKinds,ledgerCategories,canExport) {
   const results = document.getElementById("stays");
   const message = document.getElementById("message");
   const more = document.getElementById("more");
@@ -96,7 +98,7 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,themeLabels,
   const searchLabel = document.getElementById("directory-search-label");
   let cursor = null;
   let requestNumber = 0;
-  let selected = "outstanding";
+  let selected = "dashboard";
   const modes = document.querySelectorAll("[data-mode]");
   const baht = new Intl.NumberFormat("th-TH", {style:"currency", currency:"THB"});
   const parts = new Intl.DateTimeFormat("en-CA", {timeZone:"Asia/Bangkok",
@@ -104,7 +106,9 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,themeLabels,
   const statuses = {booked:"จอง", checked_in:"เข้าพัก", completed:"กลับบ้านแล้ว", cancelled:"ยกเลิกแล้ว"};
   const errors = {invalid:"กรุณาตรวจยอดและวันที่", forbidden:"สิทธิ์บัญชีถูกยกเลิก",
     balance_exceeded:"ยอดเกินยอดค้างหรือรายการถูกยกเลิก", not_found:"ไม่พบรายการเข้าพัก"};
-  const node = (tag, text) => Object.assign(document.createElement(tag), {textContent: text});
+  const node = (tag, text) => Object.assign(document.createElement(tag), {
+    textContent:text, className:tag === "article" ? "card" : "",
+  });
   const key = () => Array.from(crypto.getRandomValues(new Uint8Array(16)),
     (byte) => byte.toString(16).padStart(2, "0")).join("");
 
@@ -181,7 +185,13 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,themeLabels,
       const cell = node("section");
       cell.className = "calendar-day";
       if (view === "month" && day.getUTCMonth() !== range.anchor.getUTCMonth()) cell.dataset.muted = "";
-      cell.append(node("strong", calendarWeekday.format(day) + " " + calendarDay.format(day)));
+      if (view === "month") {
+        const heading = Object.assign(node("time"),{dateTime:date,className:"calendar-date"});
+        heading.setAttribute("aria-label",bookingDate.format(day));
+        heading.append(node("small",["อา.","จ.","อ.","พ.","พฤ.","ศ.","ส."][day.getUTCDay()]),
+          node("strong",String(day.getUTCDate())));
+        cell.append(heading);
+      } else cell.append(node("strong", calendarWeekday.format(day) + " " + calendarDay.format(day)));
       for (const holiday of data.holidays) {
         if (date < holiday.starts_on || date > holiday.ends_on) continue;
         const label = node("span", "วันหยุด · " + holiday.name);
@@ -244,10 +254,22 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,themeLabels,
     const requestId = ++requestNumber;
     if (reset) {
       cursor = null;
+      document.getElementById("finance-home").append(financeToolbar);
       results.replaceChildren();
     }
     more.disabled = true;
     try {
+      if (selected === "dashboard") {
+        more.hidden = true;
+        const query = new URLSearchParams({from:financeFrom.value,to:financeTo.value});
+        const response = await fetch("/api/dashboard?"+query);
+        if (requestId !== requestNumber) return;
+        if (response.status === 400) { message.textContent = "กรุณาตรวจช่วงเดือน (ไม่เกิน 120 เดือน)"; return; }
+        if (!response.ok) throw Error();
+        const data = await response.json();
+        if (requestId === requestNumber) dashboard.render(data);
+        return;
+      }
       if (selected === "finance") {
         more.hidden = true;
         const query = new URLSearchParams({from:financeFrom.value,to:financeTo.value});
@@ -798,7 +820,7 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,themeLabels,
           await showBooking(bookingId);
           status.textContent = "ลบรายการมัดจำแล้ว";
         }
-        if (selected === "bookings" || selected === "calendar") await load(true);
+        if (["bookings","calendar","dashboard"].includes(selected)) await load(true);
       } catch {
         if (button.isConnected) status.textContent = "ยังยืนยันการลบไม่ได้ กรุณาตรวจรายการแล้วลองใหม่";
       } finally {
@@ -1412,7 +1434,7 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,themeLabels,
           return;
         }
         if (form.isConnected && bookingDialog.open) await showStay(result.stayId);
-        if (selected === "calendar" || selected === "bookings" || selected === "current" || selected === "outstanding") await load(true);
+        if (["calendar","bookings","current","outstanding","dashboard"].includes(selected)) await load(true);
         message.textContent = "เช็กอินแล้ว";
       } catch {
         status.textContent = "ยังยืนยันผลไม่ได้ กรุณาตรวจรายการหรือส่งข้อมูลเดิมอีกครั้ง";
@@ -1424,6 +1446,8 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,themeLabels,
   }
 
   function showCareTimeline(stayId, dog) {
+    if (!bookingDialog.open) bookingDialog.showModal();
+    document.getElementById("booking-status").textContent = "";
     bookingRequest?.abort();
     const controller = bookingRequest = new AbortController();
     const endpoint = "/api/stays/" + stayId + "/dogs/" + dog.id + "/timeline";
@@ -2177,33 +2201,88 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,themeLabels,
   const couponAdmin = couponScreen({node,key,baht,results,message,thaiDate:bookingDate,
     reload:() => { message.textContent = ""; return load(true); },isActive:() => selected === "coupons"});
   const settingsAdmin = settingsScreen({node,results,message,themeLabels,thaiDate:bookingDate,
-    reload:() => load(true),isActive:() => selected === "settings",openLedger:() => setMode("ledger")});
+    reload:() => load(true),isActive:() => selected === "settings",openLedger:() => setMode("ledger"),
+    applyTheme,openCoupons:() => setMode("coupons")});
   const ledger = ledgerScreen({node,results,message,reload:() => load(true),isActive:() => selected === "ledger",
     today:() => parts.format(new Date()),dateLabel:(day) => bookingDate.format(new Date(day)),key,baht,
     openStay:showStay,openBooking:showBooking,labels:ledgerKinds,categories:ledgerCategories});
+  const dashboard = dashboardScreen({node,results,baht,today:() => parts.format(new Date()),
+    dateLabel:(day) => bookingDate.format(new Date(day+"T00:00:00Z")),
+    monthLabel:(month) => calendarMonth.format(new Date(month+"-01T00:00:00Z")),
+    openStay:showStay,openCustomer:showCustomer,openTimeline:showCareTimeline,viewBooking:showBooking,setMode,
+    checkInBooking:async (id) => {
+      try {
+        const response = await fetch("/api/bookings/"+id);
+        if (!response.ok) throw Error();
+        const booking = await response.json();
+        if (booking.balance_cents === null) { await showBooking(id); return; }
+        bookingRequest?.abort();
+        bookingRequest = new AbortController();
+        if (!bookingDialog.open) bookingDialog.showModal();
+        bookingCheckIn(booking);
+      } catch { message.textContent = "โหลดข้อมูลการจองไม่ได้ กรุณาลองใหม่"; }
+    },
+    checkout:async (id,button) => {
+      if (!confirm("ยืนยันเช็กเอาต์สุนัขทุกตัวในรายการนี้หรือไม่?")) return;
+      button.disabled = true;
+      try {
+        const response = await fetch("/api/stays/"+id+"/check-out",{method:"POST"});
+        if (!response.ok) throw Error();
+        if (selected === "dashboard") await load(true);
+        message.textContent = "เช็กเอาต์แล้ว";
+      } catch { message.textContent = "เช็กเอาต์ไม่สำเร็จ กรุณาตรวจสถานะแล้วลองใหม่"; }
+      finally { button.disabled = false; }
+    },
+  });
+  const screenTitles = {dashboard:["ภาพรวมธุรกิจ","รายรับ รายจ่าย และการเข้าพักของ Little Paws"],
+    current:["ฝากเลี้ยง","บันทึกการเข้าพักและดูแลน้องหมา"],history:["ประวัติการเข้าพัก","ค้นหาการเข้าพักและตรวจยอดชำระ"],
+    calendar:["การจอง","ปฏิทินการจองและข้อมูลรอเช็กอิน"],bookings:["การจอง","รายการจองทั้งหมดที่รอเช็กอิน"],
+    customers:["ลูกค้า","ข้อมูลเจ้าของ น้องหมา และประวัติการเข้าพัก"],settings:["ตั้งค่าระบบ","ราคา วันหยุด ธีม และการตั้งค่าร้าน"],
+    ledger:["รายรับ–รายจ่าย","รายการรับและจ่ายตามวันที่เงินจริง"],coupons:["คูปอง","สร้างและจัดการคูปองส่วนลด"],
+    outstanding:["ยอดค้างชำระ","การเข้าพักที่รอรับชำระเพิ่มเติม"],finance:["ภาพรวมการเงิน","รายรับคงเหลือและรายจ่ายรายเดือน"]};
   function setMode(mode) {
     if (selected === mode) return;
     selected = mode;
+    if (location.hash !== "#"+mode) history.pushState(null,"","#"+mode);
     couponAdmin.visible(selected === "coupons");
     ledger.visible(selected === "ledger");
-    financeToolbar.hidden = selected !== "finance";
+    financeToolbar.hidden = !["finance","dashboard"].includes(selected);
     historyToolbar.hidden = selected !== "history";
     addBooking.hidden = selected !== "bookings" && selected !== "calendar";
     calendarToolbar.hidden = selected !== "calendar";
     addCustomer.hidden = selected !== "customers";
+    document.getElementById("direct-checkin").hidden = selected !== "current";
     bookingSearch.hidden = selected !== "bookings" && selected !== "customers";
     searchLabel.textContent = selected === "customers" ? "ชื่อลูกค้าหรือชื่อสุนัข" : "เลขจอง ชื่อลูกค้า หรือชื่อสุนัข";
     bookingQuery.value = queries[selected] || "";
-    const activeMode = mode === "ledger" ? (document.getElementById("ledger-back").hidden ? "finance" : "settings") : mode;
-    for (const option of modes) option.setAttribute("aria-pressed",String(option.dataset.mode === activeMode));
+    const activeMode = ({ledger:"settings",coupons:"settings",bookings:"calendar",outstanding:"history",finance:"dashboard"})[mode] || mode;
+    for (const option of modes) {
+      option.setAttribute("aria-pressed",String(option.dataset.mode === mode));
+      if (option.matches(".primary-nav a")) {
+        if (option.dataset.mode === activeMode) option.setAttribute("aria-current","page");
+        else option.removeAttribute("aria-current");
+      }
+    }
+    const [title,subtitle] = screenTitles[mode];
+    document.getElementById("screen-title").textContent = title;
+    document.getElementById("screen-subtitle").textContent = subtitle;
+    document.getElementById("stay-actions").hidden = !["current","history","outstanding"].includes(mode);
+    document.getElementById("booking-tabs").hidden = !["calendar","bookings"].includes(mode);
+    document.title = title+" · Little Paws Homestay Phuket";
     message.textContent = "";
     load(true);
   }
-  for (const mode of modes) mode.addEventListener("click",() => setMode(mode.dataset.mode));
+  for (const mode of modes) mode.addEventListener("click",(event) => {event.preventDefault();setMode(mode.dataset.mode);});
   document.getElementById("ledger-back").onclick = () => setMode("settings");
   const openStaffLedger = document.getElementById("open-staff-ledger");
   if (openStaffLedger) openStaffLedger.onclick = () => setMode("ledger");
-  bookingDialog.addEventListener("close", () => bookingRequest?.abort());
+  bookingDialog.addEventListener("close", () => {
+    bookingRequest?.abort();
+    if (selected === "dashboard") load(true);
+  });
+  customerDialog.addEventListener("close", () => {
+    if (selected === "dashboard") load(true);
+  });
   document.getElementById("close-booking").addEventListener("click", () => bookingDialog.close());
   bookingSearch.addEventListener("submit", (event) => {
     event.preventDefault();
@@ -2212,31 +2291,42 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,themeLabels,
     load(true);
   });
   more.addEventListener("click", () => load());
-  load();
+  function restoreNavigation() {
+    const mode = location.hash.slice(1);
+    if (Object.hasOwn(screenTitles,mode) &&
+      (!["settings","coupons"].includes(mode) || document.querySelector(".nav-settings-icon"))) setMode(mode);
+  }
+  addEventListener("popstate",restoreNavigation);
+  addEventListener("hashchange",restoreNavigation);
+  restoreNavigation();
+  if (selected === "dashboard") load();
 }
 
-export function outstandingPage(isAdmin = false,canExport = false,theme = "classic") {
+export function outstandingPage(isAdmin = false,canExport = false,theme = "classic",displayName = "") {
   const nonce = crypto.randomUUID().replaceAll("-", "");
   return new Response(`<!doctype html><html lang="th" data-theme="${themeName(theme)}"><meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
-    <title>ยอดค้างชำระ · Little Paws</title><style nonce="${nonce}">${css}</style>
-    <main><p>Little Paws Homestay Phuket</p><h1>จัดการการเข้าพัก</h1>
-    <div role="group" class="workspace-menu" aria-label="มุมมองการเข้าพัก">
-      <button type="button" data-mode="outstanding" aria-pressed="true">ยอดค้างชำระ</button>
-      <button type="button" data-mode="finance" aria-pressed="false">ภาพรวมการเงิน</button>
+    <title>ภาพรวมธุรกิจ · Little Paws Homestay Phuket</title>
+    <link rel="icon" href="/static/little-paws-icon.png">
+    <style nonce="${nonce}">${css}</style>
+    <link rel="stylesheet" href="/static/style.css?v=80">
+    <style nonce="${nonce}">${macStyleBridge}</style>
+    <body class="staff-app" data-theme="${themeName(theme)}">
+    ${staffHeader(theme,isAdmin,displayName)}
+    <main>
+    <div id="stay-actions" class="staff-subnav" hidden>
       <button type="button" data-mode="current" aria-pressed="false">กำลังเข้าพัก</button>
-      <button type="button" data-mode="history" aria-pressed="false">ประวัติการเข้าพัก</button>
-      <button type="button" data-mode="customers" aria-pressed="false">ลูกค้า</button>
-      <button type="button" data-mode="calendar" aria-pressed="false">ปฏิทินการจอง</button>
-      <button type="button" data-mode="bookings" aria-pressed="false">การจองที่รอเช็กอิน</button>
-      ${isAdmin ? '<button type="button" data-mode="coupons" aria-pressed="false">คูปอง</button>' : ''}
-      ${isAdmin ? '<button type="button" class="settings-icon" data-mode="settings" aria-pressed="false" aria-label="ตั้งค่าระบบ" title="ตั้งค่าระบบ">⚙</button>' : ''}
+      <button type="button" data-mode="outstanding" aria-pressed="false">ยอดค้างชำระ</button>
+    </div>
+    <div id="booking-tabs" class="staff-subnav" role="group" aria-label="มุมมองการจอง" hidden>
+      <button type="button" data-mode="calendar" aria-pressed="false">ปฏิทิน</button>
+      <button type="button" data-mode="bookings" aria-pressed="false">รายการจองทั้งหมดที่รอเช็กอิน</button>
     </div>
     <form id="booking-search" hidden>
       <label><span id="directory-search-label">เลขจอง ชื่อลูกค้า หรือชื่อสุนัข</span><input type="search" maxlength="100" id="booking-query"></label>
       <button type="submit">ค้นหา</button>
     </form>
-    <p><button id="direct-checkin" type="button">เช็กอินโดยตรง</button><button id="add-booking" type="button" hidden>สร้างการจอง</button><button id="add-customer" type="button" hidden>เพิ่มลูกค้า</button></p>
+    <p id="page-actions"><button id="direct-checkin" type="button" hidden>บันทึกการเข้าพัก</button><button id="add-booking" type="button" hidden>สร้างการจอง</button><button id="add-customer" type="button" hidden>เพิ่มลูกค้า</button></p>
     <p><a id="payment-qr" href="/api/payment-qr.jpg" target="_blank" rel="noopener" hidden>เปิด QR สำหรับชำระเงิน</a></p>
     <div id="calendar-toolbar" class="calendar-toolbar" hidden>
       <button type="button" id="calendar-prev" aria-label="ก่อนหน้า">‹</button>
@@ -2247,12 +2337,12 @@ export function outstandingPage(isAdmin = false,canExport = false,theme = "class
         <option value="week">รายสัปดาห์</option><option value="day">รายวัน</option></select></label>
       <strong id="calendar-title" aria-live="polite"></strong>
     </div>
-    <form id="finance-toolbar" hidden>
+    <div id="finance-home"><form id="finance-toolbar" hidden>
       <label>ตั้งแต่เดือน<input id="finance-from" type="month" required></label>
       <label>ถึงเดือน<input id="finance-to" type="month" required></label>
       <button>แสดงผล</button>
       ${isAdmin ? "" : '<button type="button" id="open-staff-ledger">รายรับ–รายจ่าย</button>'}
-    </form>
+    </form></div>
     <section id="ledger-toolbar" hidden>
       <h2>รายรับ–รายจ่าย</h2>
       <div class="workspace-menu">
@@ -2305,11 +2395,12 @@ export function outstandingPage(isAdmin = false,canExport = false,theme = "class
       <h2 id="ledger-title">รายรับ–รายจ่าย</h2><button type="button" id="ledger-close" autofocus>ปิด</button>
       <div id="ledger-content" aria-live="polite"></div>
     </dialog>
-    <script nonce="${nonce}">(${main.toString()})(${JSON.stringify(intakeGroups)},${couponScreen.toString()},${settingsScreen.toString()},${ledgerScreen.toString()},${JSON.stringify(themes)},${JSON.stringify(ledgerKinds)},${JSON.stringify(ledgerCategories)},${canExport})</script></html>`, {
+    ${staffFooter}
+    <script nonce="${nonce}">(${main.toString()})(${JSON.stringify(intakeGroups)},${couponScreen.toString()},${settingsScreen.toString()},${ledgerScreen.toString()},${dashboardScreen.toString()},${applyStaffTheme.toString()},${JSON.stringify(themes)},${JSON.stringify(ledgerKinds)},${JSON.stringify(ledgerCategories)},${canExport})</script></body></html>`, {
     headers: {
       "Content-Type":"text/html; charset=utf-8", "Cache-Control":"private, no-store",
       "X-Content-Type-Options":"nosniff",
-      "Content-Security-Policy":`default-src 'none'; script-src 'nonce-${nonce}'; style-src 'nonce-${nonce}'; connect-src 'self'; img-src 'self' blob:; base-uri 'none'; frame-ancestors 'none'; form-action 'none'`,
+      "Content-Security-Policy":`default-src 'none'; script-src 'nonce-${nonce}'; style-src 'self' 'nonce-${nonce}'; style-src-attr 'unsafe-inline'; connect-src 'self'; img-src 'self' blob: data:; font-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'`,
     },
   });
 }

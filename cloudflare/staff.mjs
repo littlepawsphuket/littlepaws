@@ -6,6 +6,8 @@ import { staffTimeline, staffCarePhoto, manageTimelineLink, writeCareEvent, time
 import { exportCare } from "./care_exports.mjs";
 import { exportDocument } from "./document_exports.mjs";
 import { dashboardFinance } from "./dashboard_finance.mjs";
+import { dashboardOverview } from "./dashboard.mjs";
+import { staffAsset } from "./staff_assets.mjs";
 import { ledgerBodyLimit, ledgerChoices, ledgerList, saveLedgerEntry, deleteLedgerEntry } from "./ledger.mjs";
 import { staySummary } from "./stay_summary.mjs";
 import { stayHistory } from "./stay_history.mjs";
@@ -142,10 +144,13 @@ export default {
     const history = url.pathname === "/api/stays/history";
     const stayChangeMatch = /^\/api\/stays\/(\d+)\/(cancel|refund|payments\/(\d+))$/.exec(url.pathname);
     const ledgerMatch = /^\/api\/transactions(?:\/(new|\d+))?$/.exec(url.pathname);
-    if (!match && !stayChangeMatch && !depositMatch && !dogMatch && !customerMatch && !bookingMatch && !checkInMatch && !couponMatch && !documentMatch && !directCheckIn && !directPreview && !couponPreview && !staySummaryMatch && !timelineMatch && !careMediaMatch && !careExportMatch && !isFile && !settings && !holidayMatch && !history && !ledgerMatch && !["/", "/api/account", "/api/dashboard/finance", "/api/customers", "/api/bookings", "/api/bookings/rates", "/api/bookings/calendar", "/api/bookings/pending", "/api/stays/outstanding", "/api/stays/current"].includes(url.pathname)) return json({error: "not_found"}, 404);
+    const assetMatch = /^\/static\/([a-zA-Z0-9._-]+)$/.exec(url.pathname);
+    const overview = url.pathname === "/api/dashboard";
+    if (!match && !stayChangeMatch && !depositMatch && !dogMatch && !customerMatch && !bookingMatch && !checkInMatch && !couponMatch && !documentMatch && !directCheckIn && !directPreview && !couponPreview && !staySummaryMatch && !timelineMatch && !careMediaMatch && !careExportMatch && !isFile && !settings && !holidayMatch && !history && !ledgerMatch && !assetMatch && !overview && !["/", "/api/account", "/api/dashboard/finance", "/api/customers", "/api/bookings", "/api/bookings/rates", "/api/bookings/calendar", "/api/bookings/pending", "/api/stays/outstanding", "/api/stays/current"].includes(url.pathname)) return json({error: "not_found"}, 404);
     try {
       const user = await authorizedUser(env, ctx);
       if (!user) return json({error: "access_required"}, 403);
+      if (assetMatch) return staffAsset(request,assetMatch[1]);
       if (ledgerMatch) {
         const raw = ledgerMatch[1];
         const id = raw && raw !== "new" ? Number(raw) : null;
@@ -421,12 +426,16 @@ export default {
       }
       if (!match && !depositMatch) {
         if (request.method !== "GET") return json({error: "method_not_allowed"}, 405);
-        if (url.pathname === "/") return outstandingPage(Boolean(user.is_admin),Boolean(env.BROWSER),await selectedTheme(env.DB));
+        if (url.pathname === "/") return outstandingPage(Boolean(user.is_admin),Boolean(env.BROWSER),await selectedTheme(env.DB),user.display_name);
         if (url.pathname === "/api/account") {
           return json({id: user.id, displayName: user.display_name, isAdmin: !!user.is_admin});
         }
         if (url.pathname === "/api/dashboard/finance") {
           const period = await dashboardFinance(env.DB,url.searchParams.get("from"),url.searchParams.get("to"));
+          return period ? json(period) : json({error:"invalid_range"},400);
+        }
+        if (overview) {
+          const period = await dashboardOverview(env.DB,url.searchParams.get("from"),url.searchParams.get("to"));
           return period ? json(period) : json({error:"invalid_range"},400);
         }
         if (history) {
