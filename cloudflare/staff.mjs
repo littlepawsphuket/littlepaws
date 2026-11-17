@@ -3,6 +3,7 @@ import { validDay, pendingBookings, bookingCalendar, bookingDetails, receiveBook
 import { listCoupons, couponDetails, saveCoupon, archiveCoupon } from "./coupon_admin.mjs";
 import { addCarePhoto, removeCarePhoto } from "./care_media.mjs";
 import { staffTimeline, staffCarePhoto, manageTimelineLink, writeCareEvent, timelineOrigin } from "./care_staff.mjs";
+import { exportCare } from "./care_exports.mjs";
 import { exportDocument } from "./document_exports.mjs";
 import { dashboardFinance } from "./dashboard_finance.mjs";
 import { staySummary } from "./stay_summary.mjs";
@@ -119,6 +120,7 @@ export default {
     const depositMatch = /^\/api\/bookings\/(\d+)\/deposits(?:\/(\d+))?$/.exec(url.pathname);
     const dogMatch = /^\/api\/customers\/(\d+)\/dogs(?:\/(\d+))?$/.exec(url.pathname);
     const customerMatch = /^\/api\/customers\/(\d+)(?:\/dogs\/(\d+)\/photo)?$/.exec(url.pathname);
+    const careExportMatch = /^\/api\/stays\/(\d+)\/dogs\/(\d+)\/timeline\/export\.(html|pdf|png)$/.exec(url.pathname);
     const careMediaMatch = /^\/api\/stays\/(\d+)\/dogs\/(\d+)\/timeline\/events\/(\d+)\/photos(?:\/(\d+))?$/.exec(url.pathname);
     const timelineMatch = /^\/api\/stays\/(\d+)\/dogs\/(\d+)\/timeline(?:\/photos\/(\d+))?$/.exec(url.pathname);
     const staySummaryMatch = /^\/api\/stays\/(\d+)$/.exec(url.pathname);
@@ -131,11 +133,24 @@ export default {
     const bookingMatch = /^\/api\/bookings\/(\d+)$/.exec(url.pathname);
     const receiptMatch = /^\/api\/receipts\/(\d+)$/.exec(url.pathname);
     const isFile = receiptMatch || url.pathname === "/api/payment-qr.jpg";
-    if (!match && !depositMatch && !dogMatch && !customerMatch && !bookingMatch && !checkInMatch && !couponMatch && !documentMatch && !directCheckIn && !directPreview && !couponPreview && !staySummaryMatch && !timelineMatch && !careMediaMatch && !isFile && !["/", "/api/account", "/api/dashboard/finance", "/api/customers", "/api/bookings", "/api/bookings/rates", "/api/bookings/calendar", "/api/bookings/pending", "/api/stays/outstanding", "/api/stays/current"].includes(url.pathname)) return json({error: "not_found"}, 404);
+    if (!match && !depositMatch && !dogMatch && !customerMatch && !bookingMatch && !checkInMatch && !couponMatch && !documentMatch && !directCheckIn && !directPreview && !couponPreview && !staySummaryMatch && !timelineMatch && !careMediaMatch && !careExportMatch && !isFile && !["/", "/api/account", "/api/dashboard/finance", "/api/customers", "/api/bookings", "/api/bookings/rates", "/api/bookings/calendar", "/api/bookings/pending", "/api/stays/outstanding", "/api/stays/current"].includes(url.pathname)) return json({error: "not_found"}, 404);
     try {
       const user = await authorizedUser(env, ctx);
       if (!user) return json({error: "access_required"}, 403);
       if (isFile) return await privateFile(request, env, receiptMatch);
+      if (careExportMatch) {
+        if (request.method !== "GET") return json({error:"method_not_allowed"},405);
+        if (request.headers.get("Sec-Fetch-Site") === "cross-site") return json({error:"invalid_origin"},403);
+        const [,rawStay,rawDog,format] = careExportMatch;
+        const stayId = Number(rawStay), dogId = Number(rawDog);
+        if (![stayId,dogId].every((id) => Number.isSafeInteger(id) && id > 0)) return json({error:"not_found"},404);
+        const day = url.searchParams.get("day") || new Intl.DateTimeFormat("en-CA",{
+          timeZone:"Asia/Bangkok",year:"numeric",month:"2-digit",day:"2-digit",
+        }).format(new Date());
+        if (day !== "all" && !validDay(day)) return json({error:"invalid_day"},400);
+        const lang = url.searchParams.get("lang") === "en" ? "en" : "th";
+        return await exportCare(env,stayId,dogId,{day,lang,format});
+      }
       if (documentMatch) {
         if (request.method !== "GET") return json({error:"method_not_allowed"},405);
         if (request.headers.get("Sec-Fetch-Site") === "cross-site") return json({error:"invalid_origin"},403);

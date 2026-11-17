@@ -1,6 +1,6 @@
 import {intakeGroups,intakeGroupsEn} from "./stay_terms.mjs";
 
-const palette = {
+export const palette = {
   classic:["#153c32","#e7f2e9"], christmas:["#153c32","#eaf1eb"], valentine:["#702845","#f8e3eb"],
   halloween:["#412657","#f1e6f8"], songkran:["#124b63","#dff6f6"], buddhist:["#784817","#fbefd9"],
   japan:["#703750","#f8edf0"],
@@ -38,13 +38,13 @@ const labels = {
   },
 };
 
-const escape = (value) => String(value ?? "").replace(/[&<>"']/g,(character) => ({
+export const escape = (value) => String(value ?? "").replace(/[&<>"']/g,(character) => ({
   "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;",
 }[character]));
 const cell = (label,value) => `<div class="fact"><small>${escape(label)}</small><strong>${escape(value)}</strong></div>`;
-const picture = (src,alt,css="") => src ? `<img class="${css}" src="${escape(src)}" alt="${escape(alt)}">` : "";
+export const picture = (src,alt,css="") => src ? `<img class="${css}" src="${escape(src)}" alt="${escape(alt)}">` : "";
 const money = (cents) => "฿"+new Intl.NumberFormat("en-US",{minimumFractionDigits:2,maximumFractionDigits:2}).format(cents/100);
-const dogIcon = `<span class="dog-icon" aria-hidden="true"><svg viewBox="0 0 48 48">
+export const dogIcon = `<span class="dog-icon" aria-hidden="true"><svg viewBox="0 0 48 48">
   <path fill="#d49a62" d="M12 18 9 7 Q20 7 23 16M25 16Q31 7 40 7L38 21"/>
   <path fill="#efc18e" d="M9 28C9 18 15 13 24 13S39 18 39 28s-6 14-15 14S9 38 9 28"/>
   <path fill="#f9e8cf" d="M15 33q9-12 18 0a9 9 0 0 1-18 0"/>

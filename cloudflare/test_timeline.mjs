@@ -240,6 +240,45 @@ assert.equal((await staffCall(staffCarePath,timelineEdit("edit-event",editEvent)
 assert.equal((await staffCall(staffCarePath,timelineEdit("edit-event",editEvent),context)).status,409);
 assert.match(await (await get(newLinkPath+"?day=2026-01-01")).text(),/Published activity fixture/);
 const editedEvent = (await (await staffCall(staffCarePath+"?day=2026-01-01",{},context)).json()).events[0];
+const careExportPath = staffCarePath+"/export.";
+assert.equal((await staffCall(careExportPath+"html?day=all")).status,403);
+assert.equal((await get(careExportPath+"html?day=all")).status,404);
+assert.equal((await staffCall(careExportPath+"html?day=2026-02-31",{},context)).status,400);
+assert.equal((await staffCall("/api/stays/2/dogs/2/timeline/export.html?day=all",{},context)).status,404);
+const viewsBeforeExport = sqlite.prepare("SELECT view_count FROM care_share_links WHERE token=?")
+  .get(newLinkPath.split("/").at(-1)).view_count;
+const carePrint = await staffCall(careExportPath+"html?day=all&lang=th",{},context);
+assert.equal(carePrint.status,200);
+const printedCare = await carePrint.text();
+assert.match(printedCare,/สรุปกิจกรรมของน้อง/);
+assert.match(printedCare,/เจ้าของ · Fixture owner/);
+assert.match(printedCare,/&lt;script&gt;Fixture dog/);
+assert.match(printedCare,new RegExp("/timeline/photos/"+fixtureUpload.id));
+assert.doesNotMatch(printedCare,/private note|other dog note/);
+assert.ok(printedCare.indexOf("&lt;b&gt;Visible&lt;/b&gt;") < printedCare.indexOf("Published activity fixture"));
+const careRenderCalls = [];
+const renderedCareEnv = {...staffEnv,BROWSER:{
+  async quickAction(action,options) {
+    careRenderCalls.push({action,options});
+    return action === "pdf" ? new Response("%PDF-sample",{headers:{"Content-Type":"application/pdf"}})
+      : new Response(new Uint8Array([137,80,78,71]),{headers:{"Content-Type":"image/png"}});
+  },
+}};
+const renderCare = (path) => staff.fetch(new Request("https://staff.example.test"+path),renderedCareEnv,context);
+const selectedCarePdf = await renderCare(careExportPath+"pdf?day=2026-01-01&lang=en");
+assert.equal(selectedCarePdf.status,200);
+assert.match(selectedCarePdf.headers.get("Content-Disposition"),/little-paws-care-1-1-2026-01-01-en\.pdf/);
+assert.equal(careRenderCalls[0].action,"pdf");
+assert.match(careRenderCalls[0].options.html,/Owner · Fixture owner/);
+assert.match(careRenderCalls[0].options.html,/data:image\/jpeg;base64,/);
+assert.match(careRenderCalls[0].options.html,/Published activity fixture/);
+assert.doesNotMatch(careRenderCalls[0].options.html,/Visible/);
+const carePng = await renderCare(careExportPath+"png?day=all&lang=th");
+assert.equal(carePng.status,200);
+assert.equal(careRenderCalls[1].action,"screenshot");
+assert.match(careRenderCalls[1].options.html,/สรุปกิจกรรมของน้อง/);
+assert.equal(sqlite.prepare("SELECT view_count FROM care_share_links WHERE token=?")
+  .get(newLinkPath.split("/").at(-1)).view_count,viewsBeforeExport);
 const publicFixture = await get(newLinkPath+"/photos/"+fixtureUpload.id);
 assert.equal(publicFixture.status,200);
 assert.deepEqual(new Uint8Array(await publicFixture.arrayBuffer()),eventJpeg);

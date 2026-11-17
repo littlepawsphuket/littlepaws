@@ -74,3 +74,6 @@ Activity editing supports changing the timestamp, type, text and visibility whil
 
 
 Staff document exports support booking confirmation, per-payment deposit receipt and stay summary in Thai and English. The HTML print version works without Browser Run. The `BROWSER` binding enables PDF and PNG exports. The migration bundle supplies the logo at `brand/little-paws-logo.png` and themed artwork at `brand/mascot-<theme>.webp` for upload to private R2. An authorized Sukhumvit Set web font may be supplied as `brand/sukhumvit-set.woff2`. Until then the renderer uses system and Thai fallback fonts. The HTML sent to the renderer embeds images from R2 and does not use a public URL or send session credentials.
+
+
+The staff timeline exports its selected day or all days as an HTML print view, PDF or PNG, with the dog profile, owner and shared activity photos. Staff-only notes stay out of customer deliverables. Long or photo-heavy ranges can exceed renderer limits; use a shorter selection or the HTML print view, which loads photos through authenticated staff URLs.

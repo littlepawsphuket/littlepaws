@@ -1358,6 +1358,8 @@ function main(intakeGroups,couponScreen,canExport) {
     const status = node("p","กำลังโหลด…");
     status.setAttribute("role","status");
     bookingContent.replaceChildren(title,toolbar,sharing,status,editor,feed,more);
+    let exportController;
+    controller.signal.addEventListener("abort",() => exportController?.abort(),{once:true});
     let showingPublic = false;
     let next;
     let pending = false;
@@ -1418,7 +1420,9 @@ function main(intakeGroups,couponScreen,canExport) {
       const refresh = Object.assign(node("button","อัปเดตยอดเปิด"),{type:"button"});
       refresh.onclick = () => loadTimeline(true);
       controls.append(refresh);
-      sharing.append(controls);
+      exportController?.abort();
+      exportController = new AbortController();
+      sharing.append(controls,documentActions("care",stayId,exportController,null,{dogId:dog.id,day:day.value,today}));
     }
     async function submitCare(body) {
       const response = await fetch(endpoint,{method:"POST",headers:{"Content-Type":"application/json"},
@@ -1607,21 +1611,35 @@ function main(intakeGroups,couponScreen,canExport) {
     loadTimeline(true);
   }
 
-  function documentActions(kind,id,controller,paymentId=null) {
+  function documentActions(kind,id,controller,paymentId=null,care=null) {
     const group = node("section");
     group.className = "intake-details";
-    const heading = {stay:"เอกสารสรุปการเข้าพัก",booking:"ใบยืนยันการจอง",deposit:"ใบรับมัดจำ"}[kind];
+    const heading = {stay:"เอกสารสรุปการเข้าพัก",booking:"ใบยืนยันการจอง",deposit:"ใบรับมัดจำ",care:"ส่งสรุปกิจกรรมที่แชร์ให้ลูกค้า"}[kind];
     group.append(node("h4",heading));
     const language = node("select");
     language.append(new Option("ไทย","th"),new Option("English","en"));
     const languageLabel = node("label","ภาษาเอกสาร");
     languageLabel.append(language);
-    const base = "/api/documents/"+kind+"/"+id+(paymentId === null ? "" : "/"+paymentId);
-    const formatUrl = (kind) => base+"."+kind+"?lang="+language.value;
+    const base = care ? "/api/stays/"+id+"/dogs/"+care.dogId+"/timeline/export"
+      : "/api/documents/"+kind+"/"+id+(paymentId === null ? "" : "/"+paymentId);
+    const period = care ? node("select") : null;
+    if (period) {
+      if (care.day && care.day !== care.today) period.append(new Option("วันที่เลือก · "+bookingDate.format(new Date(care.day)),care.day));
+      period.append(new Option("วันนี้",care.today),new Option("ทุกวัน","all"));
+      period.value = care.day || "all";
+    }
+    const formatUrl = (kind) => base+"."+kind+"?"+new URLSearchParams(period
+      ? {lang:language.value,day:period.value} : {lang:language.value});
     const print = Object.assign(node("a","เปิดแบบพิมพ์"),{href:formatUrl("html"),target:"_blank",rel:"noopener"});
     const actions = node("div");
     actions.className = "photo-actions";
-    actions.append(languageLabel,print);
+    actions.append(languageLabel);
+    if (period) {
+      const field = node("label","ช่วงกิจกรรม");
+      field.append(period);
+      actions.append(field);
+    }
+    actions.append(print);
     group.append(actions);
     const preview = node("div");
     const status = node("p","");
@@ -1636,16 +1654,20 @@ function main(intakeGroups,couponScreen,canExport) {
       preview.replaceChildren();
     }
     controller.signal.addEventListener("abort",clearImage,{once:true});
-    language.addEventListener("change",() => {
+    function refreshLinks() {
       print.href = formatUrl("html");
       status.textContent = "";
       clearImage();
-    });
+    }
+    language.addEventListener("change",refreshLinks);
+    period?.addEventListener("change",refreshLinks);
     if (canExport) {
       const pdf = Object.assign(node("a","ดาวน์โหลด PDF"),{href:formatUrl("pdf"),target:"_blank",rel:"noopener"});
       const png = Object.assign(node("button","ดูรูป PNG"),{type:"button"});
       actions.append(pdf,png);
-      language.addEventListener("change",() => { pdf.href = formatUrl("pdf"); });
+      const refreshPdf = () => { pdf.href = formatUrl("pdf"); };
+      language.addEventListener("change",refreshPdf);
+      period?.addEventListener("change",refreshPdf);
       png.onclick = async () => {
         clearImage();
         const attempt = generation;
@@ -1653,17 +1675,20 @@ function main(intakeGroups,couponScreen,canExport) {
         status.textContent = "กำลังสร้างรูป…";
         try {
           const response = await fetch(formatUrl("png"),{signal:controller.signal});
+          if (response.status === 422) throw Error("รูปยาวหรือไฟล์แนบใหญ่เกินขนาด ลองเลือกวันเดียวหรือเปิดแบบพิมพ์");
           if (!response.ok || !response.headers.get("Content-Type")?.startsWith("image/png")) throw Error();
           const blob = await response.blob();
           if (attempt !== generation || controller.signal.aborted) return;
           imageUrl = URL.createObjectURL(blob);
           const img = Object.assign(node("img"),{src:imageUrl,alt:heading,className:"coupon-preview"});
-          const fileName = "little-paws-"+kind+"-"+id+(paymentId === null ? "" : "-"+paymentId)+"-"+language.value+".png";
+          const documentRef = care ? id+"-"+care.dogId+"-"+period.value : id+(paymentId === null ? "" : "-"+paymentId);
+          const fileName = "little-paws-"+kind+"-"+documentRef+"-"+language.value+".png";
           const download = Object.assign(node("a","ดาวน์โหลดรูป"),{href:imageUrl,download:fileName});
           preview.append(img,download,node("p","บนมือถือ แตะค้างที่รูปเพื่อบันทึกหรือแชร์"));
           status.textContent = "";
-        } catch {
-          if (attempt === generation && !controller.signal.aborted) status.textContent = "สร้างรูปไม่ได้ กรุณาลองใหม่หรือเปิดแบบพิมพ์";
+        } catch (error) {
+          if (attempt === generation && !controller.signal.aborted) status.textContent =
+            error.message || "สร้างรูปไม่ได้ กรุณาลองใหม่หรือเปิดแบบพิมพ์";
         } finally { png.disabled = false; }
       };
     }

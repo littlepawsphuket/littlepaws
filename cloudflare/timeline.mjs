@@ -40,6 +40,11 @@ const labels = {
 };
 const defaultLabels = {food: "ให้อาหารแล้ว", medicine: "ให้ยาแล้ว", custom: "กิจกรรมอื่น"};
 
+export function careActivityName(event,lang) {
+  const label = event.activity_label || defaultLabels[event.kind] || defaultLabels.custom;
+  return lang === "en" ? labels[label] || label : label;
+}
+
 async function timeline(env, token, url, printable = false) {
   const today = thaiToday.format(new Date());
   const day = url.searchParams.get("day") || today;
@@ -74,11 +79,11 @@ async function timeline(env, token, url, printable = false) {
     const eventDay = event.recorded_at.slice(0, 10);
     const heading = eventDay !== lastDay ? `<h2>${escape(dateLabel(eventDay))}</h2>` : "";
     lastDay = eventDay;
-    const label = event.activity_label || defaultLabels[event.kind] || defaultLabels.custom;
+    const label = careActivityName(event,lang);
     const photos = (event.photos || "").split(",").filter((id) => /^\d+$/.test(id));
     const photoPath = printable ? url.origin + route : route;
     return `${heading}<article><h3><time>${escape(event.recorded_at.slice(11, 16))}</time>
-      ${escape(en ? labels[label] || label : label)}</h3><p>${escape(event.note)}</p>
+      ${escape(label)}</h3><p>${escape(event.note)}</p>
       <div class="photos">${photos.map((id) => `<img loading="${printable ? "eager" : "lazy"}" src="${photoPath}/photos/${id}"
       alt="${en ? "Activity photo" : "รูปกิจกรรม"}">`).join("")}</div></article>`;
   }).join("");

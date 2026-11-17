@@ -22,8 +22,32 @@ async function inlineAsset(media,key,type,limit) {
 
 const themes = ["classic","christmas","valentine","halloween","songkran","buddhist","japan"];
 
+export async function documentAssets(env) {
+  const row = await env.DB.prepare("SELECT value FROM system_settings WHERE key='theme'").bind().first();
+  let theme = "classic";
+  try {
+    const value = JSON.parse(row?.value);
+    if (themes.includes(value)) theme = value;
+  } catch {}
+  let budget = 5 * 1024 * 1024;
+  async function asset(key,type,limit) {
+    if (budget < 64) return null;
+    const value = await inlineAsset(env.MEDIA,key,type,Math.min(limit,Math.floor((budget-64)*3/4)));
+    if (value) budget -= value.length;
+    return value;
+  }
+  const font = await asset("brand/sukhumvit-set.woff2","font/woff2",512*1024);
+  const logo = await asset("brand/little-paws-logo.png","image/png",512*1024);
+  const mascot = theme === "classic" ? null : await asset("brand/mascot-"+theme+".webp","image/webp",768*1024);
+  return {theme,font,logo,mascot,asset};
+}
+
+export function validDogPhotoKey(key,id) {
+  return typeof key === "string" && new RegExp(`^dogs/${id}(?:/[a-f0-9-]{36})?\\.jpg$`).test(key);
+}
+
 export async function documentData(env, kind, id, paymentId, format, lang) {
-  const {DB:db,MEDIA:media} = env;
+  const db = env.DB;
   const record = kind === "stay" ? await staySummary(db,id) : await bookingDetails(db,id);
   if (!record) return null;
   let deposit;
@@ -32,8 +56,7 @@ export async function documentData(env, kind, id, paymentId, format, lang) {
     if (!deposit) return null;
   }
   const dogIds = record.dogs.map((dog) => dog.id);
-  const [setting,photos,stayExtras] = await db.batch([
-    db.prepare("SELECT value FROM system_settings WHERE key='theme'").bind(),
+  const [photos,stayExtras] = await db.batch([
     db.prepare(`SELECT dog_id,object_key FROM dog_photos WHERE dog_id IN (SELECT value FROM json_each(?))`)
       .bind(JSON.stringify(dogIds)),
     db.prepare(`SELECT c.owner_phone,c.line_id,
@@ -42,28 +65,13 @@ export async function documentData(env, kind, id, paymentId, format, lang) {
        FROM transactions t WHERE t.stay_id=s.id AND t.kind='refund') AS refunds
       FROM stays s JOIN customers c ON c.id=s.customer_id WHERE s.id=?`).bind(kind === "stay" ? id : null),
   ]);
-  let theme = "classic";
-  try {
-    const value = JSON.parse(setting.results[0]?.value);
-    if (themes.includes(value)) theme = value;
-  } catch {}
+  const {theme,font,logo,mascot,asset} = await documentAssets(env);
   const extras = stayExtras.results[0] || {};
   const photoMap = new Map(photos.results.map((row) => [row.dog_id,row.object_key]));
-  let budget = 5 * 1024 * 1024;
-  async function asset(key,type,limit) {
-    if (budget < 64) return null;
-    const value = await inlineAsset(media,key,type,Math.min(limit,Math.floor((budget-64)*3/4)));
-    if (value) budget -= value.length;
-    return value;
-  }
-  const font = await asset("brand/sukhumvit-set.woff2","font/woff2",512*1024);
-  const logo = await asset("brand/little-paws-logo.png","image/png",512*1024);
-  const mascot = theme === "classic" ? null : await asset("brand/mascot-"+theme+".webp","image/webp",768*1024);
   const dogs = [];
   for (const dog of record.dogs) {
     const key = photoMap.get(dog.id);
-    const valid = typeof key === "string" && new RegExp(`^dogs/${dog.id}(?:/[a-f0-9-]{36})?\\.jpg$`).test(key);
-    dogs.push({...dog,image:valid ? await asset(key,"image/jpeg",512*1024) : null});
+    dogs.push({...dog,image:validDogPhotoKey(key,dog.id) ? await asset(key,"image/jpeg",512*1024) : null});
   }
   const qr = kind === "stay" && record.status !== "cancelled" && record.due_cents > 0 ? await asset("payment/payment-qr.jpg","image/jpeg",512*1024) : null;
   function parse(value,fallback) {
