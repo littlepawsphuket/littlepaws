@@ -3,6 +3,7 @@ const css = `
   main{margin:auto;max-width:52rem;padding:1rem}h1{margin:.2rem 0 1rem}
   article{background:#fff;border:1px solid #c8ded4;border-radius:1rem;margin:.6rem 0;padding:1rem}
   dialog{width:min(34rem,calc(100% - 4rem));max-height:80vh;padding:1rem;border:1px solid #a7cbb9;border-radius:1rem;color:inherit}
+  .customer-dog-photo{width:6rem;height:6rem;object-fit:cover;border-radius:1rem}
   .delete-deposit{margin-inline-start:.75rem;background:#fff1ed;color:#8b3225;border-color:#e6a99b}
   dialog::backdrop{background:#203c3066}
   h2,p{margin:.15rem 0 .6rem}form{display:flex;flex-wrap:wrap;align-items:end;gap:.7rem}
@@ -20,7 +21,8 @@ function main() {
   }).catch(() => {});
   const bookingSearch = document.getElementById("booking-search");
   const bookingQuery = document.getElementById("booking-query");
-  let activeBookingQuery = "";
+  const queries = {bookings:"", customers:""};
+  const searchLabel = document.getElementById("directory-search-label");
   let cursor = null;
   let requestNumber = 0;
   let selected = "outstanding";
@@ -43,23 +45,25 @@ function main() {
     }
     more.disabled = true;
     try {
-      const bookings = selected === "bookings";
-      const url = bookings
-        ? "/api/bookings/pending?" + new URLSearchParams({after:cursor || 0, q:activeBookingQuery})
+      const directory = selected === "bookings" || selected === "customers";
+      const directoryPath = selected === "bookings" ? "/api/bookings/pending" : "/api/customers";
+      const url = directory
+        ? directoryPath + "?" + new URLSearchParams({after:cursor || 0, q:queries[selected]})
         : "/api/stays/" + selected + (cursor ? "?before=" + cursor : "");
       const response = await fetch(url);
       if (!response.ok) throw Error();
       const data = await response.json();
       if (requestId !== requestNumber) return;
-      if (bookings) {
+      if (directory) {
         cursor = data.nextAfter;
-        for (const booking of data.bookings) results.append(bookingCard(booking));
+        const render = selected === "bookings" ? bookingCard : customerCard;
+        for (const record of data[selected]) results.append(render(record));
       } else {
         cursor = data.nextBefore;
         for (const stay of data.stays) results.append(card(stay));
       }
       if (!results.childElementCount) results.append(node("p", {
-        bookings:"ไม่พบการจองที่รอเช็กอิน", current:"ไม่มีสุนัขที่กำลังเข้าพัก", outstanding:"ไม่มียอดค้างชำระ",
+        customers:"ไม่พบลูกค้า", bookings:"ไม่พบการจองที่รอเช็กอิน", current:"ไม่มีสุนัขที่กำลังเข้าพัก", outstanding:"ไม่มียอดค้างชำระ",
       }[selected]));
       more.hidden = cursor === null;
     } catch {
@@ -72,6 +76,93 @@ function main() {
   }
 
   const bookingDate = new Intl.DateTimeFormat("th-TH", {dateStyle:"medium", timeZone:"UTC"});
+  const customerDialog = document.getElementById("customer-detail");
+  const customerContent = document.getElementById("customer-content");
+  let customerRequest;
+  document.getElementById("close-customer").addEventListener("click", () => customerDialog.close());
+  customerDialog.addEventListener("close", () => customerRequest?.abort());
+
+  function customerCard(customer) {
+    const article = node("article");
+    const details = Object.assign(node("button", "ดูข้อมูลลูกค้า"), {type:"button"});
+    details.addEventListener("click", () => showCustomer(customer.id));
+    article.append(node("h2", customer.name), node("p", "สุนัข " + customer.dog_count + " ตัว"), details);
+    return article;
+  }
+
+  function dogCard(customerId, dog) {
+    const item = node("article");
+    item.append(node("h4", dog.name));
+    if (dog.has_photo) {
+      const photo = Object.assign(node("img"), {className:"customer-dog-photo", alt:dog.name, loading:"lazy"});
+      photo.src = "/api/customers/" + customerId + "/dogs/" + dog.id + "/photo";
+      item.append(photo);
+    }
+    let profile = {};
+    try { profile = JSON.parse(dog.profile) || {}; } catch {}
+    const birth = new Date(profile.birth_date);
+    const facts = [
+      {small:"เล็ก",medium:"กลาง",large:"ใหญ่"}[dog.size], profile.breed,
+      {male:"เพศผู้",female:"เพศเมีย"}[profile.gender],
+      {yes:"ทำหมันแล้ว",no:"ยังไม่ทำหมัน"}[profile.neutered],
+      profile.birth_date && Number.isFinite(birth.getTime())
+        ? (profile.birth_estimated ? "วันเกิดโดยประมาณ " : "วันเกิด ") + bookingDate.format(birth) : "",
+    ].filter(Boolean);
+    if (facts.length) item.append(node("p", facts.join(" · ")));
+    if (dog.note) item.append(node("p", dog.note));
+    return item;
+  }
+
+  async function showCustomer(id) {
+    customerRequest?.abort();
+    const controller = customerRequest = new AbortController();
+    customerContent.replaceChildren(node("p", "กำลังโหลด…"));
+    customerDialog.showModal();
+    async function loadHistory(offset, nextButton) {
+      if (nextButton) nextButton.disabled = true;
+      try {
+        const response = await fetch("/api/customers/" + id + "?offset=" + offset, {signal:controller.signal});
+        if (!response.ok) throw Error();
+        const data = await response.json();
+        if (controller.signal.aborted) return;
+        if (!offset) {
+          const customer = data.customer;
+          customerContent.replaceChildren(node("h3", customer.name));
+          for (const [label,value] of [["โทร",customer.owner_phone], ["Line ID / Facebook",customer.line_id],
+            ["ที่อยู่ฉุกเฉิน",customer.emergency_address], ["หมายเหตุ",customer.note]]) {
+            if (value) customerContent.append(node("p", label + " · " + value));
+          }
+          customerContent.append(node("h3", "สุนัข"));
+          for (const dog of data.dogs) customerContent.append(dogCard(customer.id, dog));
+          if (!data.dogs.length) customerContent.append(node("p", "ยังไม่มีข้อมูลสุนัข"));
+          customerContent.append(node("h3", "ประวัติการเข้าพัก"));
+          if (!data.stays.length) customerContent.append(node("p", "ยังไม่มีประวัติการเข้าพัก"));
+        }
+        nextButton?.remove();
+        for (const stay of data.stays) {
+          const item = node("article");
+          item.append(node("h4", [stay.stay_number || "#" + stay.id, statuses[stay.status] || stay.status].join(" · ")),
+            node("p", stay.dogs || "—"),
+            node("p", [stay.checkin, stay.checkout].map((day) => bookingDate.format(new Date(day))).join(" – ")));
+          if (stay.due_cents > 0) item.append(node("strong", "ค้างชำระ " + baht.format(stay.due_cents / 100)));
+          customerContent.append(item);
+        }
+        if (data.nextOffset !== null) {
+          const moreHistory = Object.assign(node("button", "ดูประวัติเพิ่มเติม"), {type:"button"});
+          moreHistory.addEventListener("click", () => loadHistory(data.nextOffset, moreHistory));
+          customerContent.append(moreHistory);
+        }
+      } catch {
+        if (controller.signal.aborted) return;
+        if (nextButton) {
+          nextButton.disabled = false;
+          nextButton.textContent = "โหลดไม่สำเร็จ ลองใหม่";
+        } else customerContent.replaceChildren(node("p", "โหลดข้อมูลลูกค้าไม่ได้ กรุณาลองใหม่"));
+      }
+    }
+    await loadHistory(0);
+  }
+
   const bookingDialog = document.getElementById("booking-detail");
   const bookingContent = document.getElementById("booking-content");
   const services = {overnight:["ฝากค้างคืน","คืน"], daycare:["ฝากระหว่างวัน","วัน"], monthly:["ฝากรายเดือน","เดือน"]};
@@ -308,7 +399,9 @@ function main() {
     mode.addEventListener("click", () => {
       if (selected === mode.dataset.mode) return;
       selected = mode.dataset.mode;
-      bookingSearch.hidden = selected !== "bookings";
+      bookingSearch.hidden = selected !== "bookings" && selected !== "customers";
+      searchLabel.textContent = selected === "customers" ? "ชื่อลูกค้าหรือชื่อสุนัข" : "เลขจอง ชื่อลูกค้า หรือชื่อสุนัข";
+      bookingQuery.value = queries[selected] || "";
       for (const option of modes) option.setAttribute("aria-pressed", option === mode);
       message.textContent = "";
       load(true);
@@ -318,7 +411,7 @@ function main() {
   document.getElementById("close-booking").addEventListener("click", () => bookingDialog.close());
   bookingSearch.addEventListener("submit", (event) => {
     event.preventDefault();
-    activeBookingQuery = bookingQuery.value;
+    queries[selected] = bookingQuery.value;
     message.textContent = "";
     load(true);
   });
@@ -335,10 +428,11 @@ export function outstandingPage() {
     <div role="group" aria-label="มุมมองการเข้าพัก">
       <button type="button" data-mode="outstanding" aria-pressed="true">ยอดค้างชำระ</button>
       <button type="button" data-mode="current" aria-pressed="false">กำลังเข้าพัก</button>
+      <button type="button" data-mode="customers" aria-pressed="false">ลูกค้า</button>
       <button type="button" data-mode="bookings" aria-pressed="false">การจองที่รอเช็กอิน</button>
     </div>
     <form id="booking-search" hidden>
-      <label>เลขจอง ชื่อลูกค้า หรือชื่อสุนัข <input type="search" maxlength="100" id="booking-query"></label>
+      <label><span id="directory-search-label">เลขจอง ชื่อลูกค้า หรือชื่อสุนัข</span><input type="search" maxlength="100" id="booking-query"></label>
       <button type="submit">ค้นหา</button>
     </form>
     <p><a id="payment-qr" href="/api/payment-qr.jpg" target="_blank" rel="noopener" hidden>เปิด QR สำหรับชำระเงิน</a></p>
@@ -349,11 +443,15 @@ export function outstandingPage() {
       <p id="booking-status" role="status"></p>
       <div id="booking-content" aria-live="polite"></div>
     </dialog>
+    <dialog id="customer-detail" aria-labelledby="customer-title">
+      <h2 id="customer-title">ข้อมูลลูกค้า</h2><button type="button" id="close-customer" autofocus>ปิด</button>
+      <div id="customer-content" aria-live="polite"></div>
+    </dialog>
     <script nonce="${nonce}">(${main.toString()})()</script></html>`, {
     headers: {
       "Content-Type":"text/html; charset=utf-8", "Cache-Control":"private, no-store",
       "X-Content-Type-Options":"nosniff",
-      "Content-Security-Policy":`default-src 'none'; script-src 'nonce-${nonce}'; style-src 'nonce-${nonce}'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'`,
+      "Content-Security-Policy":`default-src 'none'; script-src 'nonce-${nonce}'; style-src 'nonce-${nonce}'; connect-src 'self'; img-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'`,
     },
   });
 }

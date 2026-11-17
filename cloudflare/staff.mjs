@@ -1,5 +1,6 @@
 import { receiveStayPayment, stayBalance, authorizedStaff } from "./stay_payments.mjs";
 import { pendingBookings, bookingDetails, receiveBookingDeposit, deleteBookingDeposit } from "./bookings.mjs";
+import { searchCustomers, customerDetails, dogPhoto } from "./customers.mjs";
 import { outstandingPage } from "./staff_ui.mjs";
 
 const JSON_HEADERS = {
@@ -96,10 +97,11 @@ export default {
     const url = new URL(request.url);
     const match = /^\/api\/stays\/(\d+)\/(payments|check-out)$/.exec(url.pathname);
     const depositMatch = /^\/api\/bookings\/(\d+)\/deposits(?:\/(\d+))?$/.exec(url.pathname);
+    const customerMatch = /^\/api\/customers\/(\d+)(?:\/dogs\/(\d+)\/photo)?$/.exec(url.pathname);
     const bookingMatch = /^\/api\/bookings\/(\d+)$/.exec(url.pathname);
     const receiptMatch = /^\/api\/receipts\/(\d+)$/.exec(url.pathname);
     const isFile = receiptMatch || url.pathname === "/api/payment-qr.jpg";
-    if (!match && !depositMatch && !bookingMatch && !isFile && !["/", "/api/account", "/api/bookings/pending", "/api/stays/outstanding", "/api/stays/current"].includes(url.pathname)) return json({error: "not_found"}, 404);
+    if (!match && !depositMatch && !customerMatch && !bookingMatch && !isFile && !["/", "/api/account", "/api/customers", "/api/bookings/pending", "/api/stays/outstanding", "/api/stays/current"].includes(url.pathname)) return json({error: "not_found"}, 404);
     try {
       const user = await authorizedUser(env, ctx);
       if (!user) return json({error: "access_required"}, 403);
@@ -110,19 +112,35 @@ export default {
         if (url.pathname === "/api/account") {
           return json({id: user.id, displayName: user.display_name, isAdmin: !!user.is_admin});
         }
+        if (customerMatch) {
+          const id = Number(customerMatch[1]);
+          if (!Number.isSafeInteger(id) || id < 1) return json({error: "not_found"}, 404);
+          if (customerMatch[2]) {
+            const dogId = Number(customerMatch[2]);
+            if (!Number.isSafeInteger(dogId) || dogId < 1) return json({error: "not_found"}, 404);
+            if (!env.MEDIA) return json({error: "temporarily_unavailable"}, 503);
+            const photo = await dogPhoto(env.DB, env.MEDIA, id, dogId);
+            return photo ? new Response(photo.body, {headers:{...JSON_HEADERS,"Content-Type":"image/jpeg"}})
+              : json({error: "not_found"}, 404);
+          }
+          const offset = Number(url.searchParams.get("offset") || 0);
+          if (!Number.isSafeInteger(offset) || offset < 0) return json({error: "invalid_cursor"}, 400);
+          const details = await customerDetails(env.DB, id, offset);
+          return details ? json(details) : json({error: "not_found"}, 404);
+        }
         if (bookingMatch) {
           const id = Number(bookingMatch[1]);
           if (!Number.isSafeInteger(id) || id < 1) return json({error: "not_found"}, 404);
           const details = await bookingDetails(env.DB, id);
           return details ? json(details) : json({error: "not_found"}, 404);
         }
-        if (url.pathname === "/api/bookings/pending") {
+        if (["/api/customers", "/api/bookings/pending"].includes(url.pathname)) {
           const after = Number(url.searchParams.get("after") || 0);
           const search = (url.searchParams.get("q") || "").trim().toLowerCase();
           if (!Number.isSafeInteger(after) || after < 0 || search.length > 100) {
             return json({error: "invalid_search"}, 400);
           }
-          return json(await pendingBookings(env.DB, after, search));
+          return json(await (url.pathname === "/api/customers" ? searchCustomers : pendingBookings)(env.DB, after, search));
         }
         const cursor = Number(url.searchParams.get("before") || Number.MAX_SAFE_INTEGER);
         if (!Number.isSafeInteger(cursor) || cursor < 1) return json({error: "invalid_cursor"}, 400);

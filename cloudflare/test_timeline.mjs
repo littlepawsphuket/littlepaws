@@ -120,6 +120,27 @@ assert.equal((await staffCall("/api/account", {}, {access:{...context.access, au
 const account = await (await staffCall("/api/account", {}, context)).json();
 assert.equal(account.isAdmin, true);
 assert.ok(!("email" in account));
+const customersPath = "/api/customers";
+const customerPath = customersPath + "/1";
+const customerDogPhoto = customerPath + "/dogs/2/photo";
+for (const privatePath of [customersPath, customerPath, customerDogPhoto]) {
+  assert.equal((await staffCall(privatePath)).status, 403);
+  assert.equal((await get(privatePath)).status, 404);
+}
+const directory = await (await staffCall(customersPath + "?q=Other%20dog", {}, context)).json();
+assert.deepEqual(directory.customers, [{id:1,name:"Fixture owner",dog_count:2}]);
+const archived = await (await staffCall(customersPath + "?q=Archived", {}, context)).json();
+assert.deepEqual(archived.customers, []);
+assert.equal((await staffCall(customersPath + "/2", {}, context)).status, 404);
+const customer = await (await staffCall(customerPath, {}, context)).json();
+assert.equal(customer.customer.owner_phone, "0810000000");
+assert.equal(customer.dogs.length, 2);
+assert.equal(customer.stays.length, 2);
+assert.match(customer.stays.find((stay) => stay.id === 1).dogs, /Other dog/);
+assert.equal((await staffCall("/api/customers/3/dogs/2/photo", {}, context)).status, 404);
+const profilePhoto = await staffCall(customerDogPhoto, {}, context);
+assert.equal(profilePhoto.headers.get("Cache-Control"), "private, no-store");
+assert.equal(await profilePhoto.text(), "fixture-dog-photo");
 const bookingPath = "/api/bookings/pending";
 assert.equal((await staffCall(bookingPath)).status, 403);
 for (const search of ["", "ab12cd", "Fixture owner", "Other dog"]) {
