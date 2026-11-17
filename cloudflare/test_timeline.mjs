@@ -90,6 +90,13 @@ assert.equal((await pdfGet(pdfPath,"https://unexpected.example.test")).status,40
 assert.equal((await pdfGet(path("c")+"/timeline.pdf")).status,404);
 assert.equal(pdfCalls,1);
 assert.equal(viewCount(),1); // Includes one HTML render, with no photo or PDF increment.
+const thaiTimeline = await get(path("a")+"?day=all&lang=th");
+assert.equal(thaiTimeline.headers.get("Content-Type"),"text/html; charset=utf-8");
+const thaiHtml = await thaiTimeline.text();
+assert.match(thaiHtml, /<h1>ไทม์ไลน์กิจกรรม · /);
+assert.match(thaiHtml, />ทั้งหมด<\/a>/);
+assert.match(thaiHtml, /ให้อาหารแล้ว/);
+assert.match(thaiHtml, /ลิงก์นี้จะหมดอายุภายใน 48 ชั่วโมงหลังเช็กเอาต์/);
 const countBeforeRequests = viewCount();
 assert.equal((await get(path("a"))).status,200);
 assert.equal((await get(path("a")+"/photos/1")).status,200);

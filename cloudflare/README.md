@@ -63,3 +63,6 @@ Administrators can create, edit and archive coupons, and switch between active, 
 
 
 The public timeline records successful HTML page openings against the share link. Photo and PDF routes and speculative prefetches do not increment the counter. Stay summaries expose counts to authorized staff. The staff finance overview attributes linked refunds back to their original receipt months in receipt order. The cash-flow total keeps actual transaction dates.
+
+
+When updating the Worker in the dashboard editor, copy source from a UTF-8-aware editor or use an ASCII transport with JavaScript Unicode escapes. Browsers can use a legacy encoding for plain text served without a charset, corrupting Thai strings before upload. After deployment, open the synthetic timeline in both languages and verify the Thai title, activity labels and expiry text on the served page.
