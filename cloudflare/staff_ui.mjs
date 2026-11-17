@@ -12,6 +12,9 @@ function main() {
   const message = document.getElementById("message");
   const more = document.getElementById("more");
   let cursor = null;
+  let requestNumber = 0;
+  let selected = "outstanding";
+  const modes = document.querySelectorAll("[data-mode]");
   const baht = new Intl.NumberFormat("th-TH", {style:"currency", currency:"THB"});
   const parts = new Intl.DateTimeFormat("en-CA", {timeZone:"Asia/Bangkok",
     year:"numeric", month:"2-digit", day:"2-digit"});
@@ -23,24 +26,27 @@ function main() {
     (byte) => byte.toString(16).padStart(2, "0")).join("");
 
   async function load(reset = false) {
+    const requestId = ++requestNumber;
     if (reset) {
       cursor = null;
       results.replaceChildren();
     }
     more.disabled = true;
     try {
-      const response = await fetch("/api/stays/outstanding" + (cursor ? "?before=" + cursor : ""));
+      const response = await fetch("/api/stays/" + selected + (cursor ? "?before=" + cursor : ""));
       if (!response.ok) throw Error();
       const data = await response.json();
+      if (requestId !== requestNumber) return;
       cursor = data.nextBefore;
       for (const stay of data.stays) results.append(card(stay));
-      if (!results.childElementCount) results.append(node("p","ไม่มียอดค้างชำระ"));
+      if (!results.childElementCount) results.append(node("p", selected === "current" ? "ไม่มีสุนัขที่กำลังเข้าพัก" : "ไม่มียอดค้างชำระ"));
       more.hidden = cursor === null;
     } catch {
+      if (requestId !== requestNumber) return;
       message.textContent = "โหลดรายการไม่ได้ กรุณาลองใหม่";
       more.hidden = false;
     } finally {
-      more.disabled = false;
+      if (requestId === requestNumber) more.disabled = false;
     }
   }
 
@@ -49,6 +55,27 @@ function main() {
     article.append(node("h2", stay.customer),
       node("p", [stay.stay_number || "#" + stay.id, statuses[stay.status] || stay.status,
         baht.format(stay.due_cents / 100)].join(" · ")));
+    if (stay.dogs) article.append(node("p", stay.dogs));
+    if (stay.status === "checked_in") {
+      const checkout = node("button", "เช็กเอาต์");
+      checkout.type = "button";
+      checkout.addEventListener("click", async () => {
+        if (!confirm("ยืนยันเช็กเอาต์สุนัขทุกตัวในรายการนี้หรือไม่?")) return;
+        checkout.disabled = true;
+        try {
+          const response = await fetch("/api/stays/" + stay.id + "/check-out", {method:"POST"});
+          if (!response.ok) throw Error();
+          message.textContent = "เช็กเอาต์แล้ว";
+          await load(true);
+        } catch {
+          message.textContent = "เช็กเอาต์ไม่สำเร็จ กรุณาตรวจสถานะแล้วลองใหม่";
+        } finally {
+          checkout.disabled = false;
+        }
+      });
+      article.append(checkout);
+    }
+    if (!stay.due_cents) return article;
     const form = node("form");
     const amount = Object.assign(node("input"), {type:"number", step:"0.01", min:"0.01",
       value:(stay.due_cents/100).toFixed(2), max:(stay.due_cents/100).toFixed(2), required:true});
@@ -92,6 +119,15 @@ function main() {
     return article;
   }
 
+  for (const mode of modes) {
+    mode.addEventListener("click", () => {
+      if (selected === mode.dataset.mode) return;
+      selected = mode.dataset.mode;
+      for (const option of modes) option.setAttribute("aria-pressed", option === mode);
+      message.textContent = "";
+      load(true);
+    });
+  }
   more.addEventListener("click", () => load());
   load();
 }
@@ -101,7 +137,11 @@ export function outstandingPage() {
   return new Response(`<!doctype html><html lang="th"><meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <title>ยอดค้างชำระ · Little Paws</title><style nonce="${nonce}">${css}</style>
-    <main><p>Little Paws Homestay Phuket</p><h1>ยอดค้างชำระ</h1>
+    <main><p>Little Paws Homestay Phuket</p><h1>จัดการการเข้าพัก</h1>
+    <div role="group" aria-label="มุมมองการเข้าพัก">
+      <button type="button" data-mode="outstanding" aria-pressed="true">ยอดค้างชำระ</button>
+      <button type="button" data-mode="current" aria-pressed="false">กำลังเข้าพัก</button>
+    </div>
     <p id="message" role="status"></p><div id="stays"></div>
     <button id="more" type="button" hidden>โหลดเพิ่มเติม</button></main>
     <script nonce="${nonce}">(${main.toString()})()</script></html>`, {

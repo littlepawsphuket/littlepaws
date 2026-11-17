@@ -68,7 +68,7 @@ export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const match = /^\/api\/stays\/(\d+)\/(payments|check-out)$/.exec(url.pathname);
-    if (!match && !["/", "/api/account", "/api/stays/outstanding"].includes(url.pathname)) return json({error: "not_found"}, 404);
+    if (!match && !["/", "/api/account", "/api/stays/outstanding", "/api/stays/current"].includes(url.pathname)) return json({error: "not_found"}, 404);
     try {
       const user = await authorizedUser(env, ctx);
       if (!user) return json({error: "access_required"}, 403);
@@ -80,11 +80,18 @@ export default {
         }
         const cursor = Number(url.searchParams.get("before") || Number.MAX_SAFE_INTEGER);
         if (!Number.isSafeInteger(cursor) || cursor < 1) return json({error: "invalid_cursor"}, 400);
+        const current = url.pathname === "/api/stays/current";
+        const predicate = current
+          ? "s.status='checked_in' AND COALESCE(substr(s.actual_checkin_at,1,10),s.checkin)<=date('now','+7 hours')"
+          : `s.payment_tracking=1 AND s.status!='cancelled' AND ${stayBalance}>0`;
         const {results} = await env.DB.prepare(`SELECT s.id,s.stay_number,s.status,s.checkin,s.checkout,
-            c.name AS customer,${stayBalance} AS due_cents
+            c.name AS customer,
+            (SELECT group_concat(d.name, ', ') FROM stay_dogs sd JOIN dogs d ON d.id=sd.dog_id
+              WHERE sd.stay_id=s.id) AS dogs,
+            CASE WHEN s.payment_tracking=1 THEN ${stayBalance} ELSE 0 END AS due_cents
           FROM stays s JOIN customers c ON c.id=s.customer_id
-          WHERE s.id<? AND s.payment_tracking=1 AND s.status!='cancelled' AND s.cancelled_at IS NULL
-            AND ${stayBalance}>0 ORDER BY s.id DESC LIMIT 26`).bind(cursor).all();
+          WHERE s.id<? AND s.cancelled_at IS NULL AND ${predicate}
+          ORDER BY s.id DESC LIMIT 26`).bind(cursor).all();
         const stays = results.slice(0, 25);
         return json({stays, nextBefore: results.length > stays.length ? stays.at(-1).id : null});
       }
