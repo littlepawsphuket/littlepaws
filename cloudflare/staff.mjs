@@ -1,5 +1,7 @@
 import { receiveStayPayment, stayBalance, authorizedStaff } from "./stay_payments.mjs";
 import { pendingBookings, bookingCalendar, bookingDetails, receiveBookingDeposit, deleteBookingDeposit } from "./bookings.mjs";
+import { staySummary } from "./stay_summary.mjs";
+import { checkInBooking, checkInTerms } from "./check_in.mjs";
 import { saveBooking, archiveBooking, bookingRates } from "./booking_writes.mjs";
 import { searchCustomers, customerDetails, saveCustomer, archiveCustomer } from "./customers.mjs";
 import { dogPhoto, saveDogPhoto, photoLimit } from "./dog_photos.mjs";
@@ -112,14 +114,30 @@ export default {
     const depositMatch = /^\/api\/bookings\/(\d+)\/deposits(?:\/(\d+))?$/.exec(url.pathname);
     const dogMatch = /^\/api\/customers\/(\d+)\/dogs(?:\/(\d+))?$/.exec(url.pathname);
     const customerMatch = /^\/api\/customers\/(\d+)(?:\/dogs\/(\d+)\/photo)?$/.exec(url.pathname);
+    const staySummaryMatch = /^\/api\/stays\/(\d+)$/.exec(url.pathname);
+    const checkInMatch = /^\/api\/bookings\/(\d+)\/check-in$/.exec(url.pathname);
     const bookingMatch = /^\/api\/bookings\/(\d+)$/.exec(url.pathname);
     const receiptMatch = /^\/api\/receipts\/(\d+)$/.exec(url.pathname);
     const isFile = receiptMatch || url.pathname === "/api/payment-qr.jpg";
-    if (!match && !depositMatch && !dogMatch && !customerMatch && !bookingMatch && !isFile && !["/", "/api/account", "/api/customers", "/api/bookings", "/api/bookings/rates", "/api/bookings/calendar", "/api/bookings/pending", "/api/stays/outstanding", "/api/stays/current"].includes(url.pathname)) return json({error: "not_found"}, 404);
+    if (!match && !depositMatch && !dogMatch && !customerMatch && !bookingMatch && !checkInMatch && !staySummaryMatch && !isFile && !["/", "/api/account", "/api/customers", "/api/bookings", "/api/bookings/rates", "/api/bookings/calendar", "/api/bookings/pending", "/api/stays/outstanding", "/api/stays/current"].includes(url.pathname)) return json({error: "not_found"}, 404);
     try {
       const user = await authorizedUser(env, ctx);
       if (!user) return json({error: "access_required"}, 403);
       if (isFile) return await privateFile(request, env, receiptMatch);
+      if (checkInMatch) {
+        const id = Number(checkInMatch[1]);
+        if (!Number.isSafeInteger(id) || id < 1) return json({error:"not_found"},404);
+        if (request.method === "GET") return json(checkInTerms(url.searchParams.get("lang")));
+        if (request.method !== "POST") return json({error:"method_not_allowed"},405);
+        if (request.headers.get("Origin") !== url.origin) return json({error:"invalid_origin"},403);
+        if (request.headers.get("Content-Type")?.split(";",1)[0].trim().toLowerCase() !== "application/json") {
+          return json({error:"invalid_content_type"},415);
+        }
+        const form = await smallJson(request, 65536);
+        if (!form) return json({error:"invalid"},400);
+        const result = await checkInBooking(env.DB,id,form,user);
+        return json(result, {created:201,saved:200,invalid:400,consent_required:422,not_found:404,conflict:409}[result.status]);
+      }
       if (request.method !== "GET" && (bookingMatch || url.pathname === "/api/bookings")) {
         const id = bookingMatch ? Number(bookingMatch[1]) : null;
         if (id !== null && (!Number.isSafeInteger(id) || id < 1)) return json({error:"not_found"}, 404);
@@ -193,6 +211,12 @@ export default {
         if (url.pathname === "/") return outstandingPage();
         if (url.pathname === "/api/account") {
           return json({id: user.id, displayName: user.display_name, isAdmin: !!user.is_admin});
+        }
+        if (staySummaryMatch) {
+          const id = Number(staySummaryMatch[1]);
+          if (!Number.isSafeInteger(id) || id < 1) return json({error:"not_found"},404);
+          const summary = await staySummary(env.DB,id);
+          return summary ? json(summary) : json({error:"not_found"},404);
         }
         if (customerMatch) {
           const id = Number(customerMatch[1]);

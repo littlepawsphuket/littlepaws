@@ -11,6 +11,9 @@ from zipfile import ZipFile
 from PIL import Image
 
 from cloudflare.export_data import export
+from cloudflare.sync_terms import contents
+
+assert Path(__file__).with_name("stay_terms.mjs").read_text(encoding="utf-8") == contents()
 
 with TemporaryDirectory() as folder:
     root = Path(folder)

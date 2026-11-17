@@ -1,4 +1,4 @@
-import {validDay} from "./bookings.mjs";
+import {validDay, randomReference} from "./bookings.mjs";
 import {bookingSnapshot, bookingWarnings} from "./booking_warnings.mjs";
 import {authorizedStaff} from "./stay_payments.mjs";
 
@@ -9,7 +9,6 @@ const defaultRates = {
 const pending = "a.status='pending' AND a.stay_id IS NULL";
 const hasPayments = "EXISTS (SELECT 1 FROM transactions t WHERE t.deposit_appointment_id=a.id AND t.payment_type!='')";
 const keyPattern = /^[0-9a-f]{32}$/;
-const numberChars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
 function bookingValues(form) {
   const {customerId,checkin,checkout,service,quantity100,discountCents,dogs,note} = form;
@@ -75,7 +74,7 @@ export async function saveBooking(db, id, form, actor) {
       return await replay() || {status:"warning",warnings:check.warnings,token:check.token};
     }
     const unchanged = [ ...check.params,check.snapshot ];
-    const code = [...crypto.getRandomValues(new Uint8Array(6))].map((byte) => numberChars[byte % numberChars.length]).join("");
+    const code = randomReference();
     const primary = id === null
       ? db.prepare(`INSERT INTO appointments(customer_id,checkin,checkout,charged_nights,agreed_total,note,
           discount_cents,rounding_cents,service_type,create_key,booking_number,booked_at,cloud_revision)

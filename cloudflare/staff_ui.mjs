@@ -11,6 +11,9 @@ const css = `
   .calendar-day button{display:block;width:100%;margin:.2rem 0;padding:.25rem;text-align:start;overflow-wrap:anywhere;font-size:.85rem}
   .calendar-holiday{display:block;background:#fff1d9;color:#593d19;border-radius:.35rem;padding:.2rem;overflow-wrap:anywhere;font-size:.85rem}
   @media(max-width:37rem){.calendar-grid:not([data-view="day"]){grid-template-columns:repeat(7,minmax(0,1fr));gap:.15rem}.calendar-day{padding:.2rem}.calendar-day button{font-size:.72rem}}
+  .checkin-terms{flex-basis:100%;border:1px solid #c8ded4;border-radius:.6rem;padding:.6rem}
+  .checkin-signature{flex-basis:100%;min-width:0}
+  .signature-canvas{display:block;width:100%;height:auto;border:1px solid #a7cbb9;border-radius:.55rem;background:white;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
   .booking-warnings{flex-basis:100%;border:1px solid #d8ad6f;background:#fff7e9;color:#604119;border-radius:.7rem;padding:.55rem .65rem .55rem 2rem;margin:0}
   .photo-actions{display:flex;flex-wrap:wrap;gap:.5rem;margin:.6rem 0}
   .customer-dog-photo{width:6rem;height:6rem;object-fit:cover;border-radius:1rem}
@@ -860,8 +863,252 @@ function main() {
         status.textContent = "ยังยืนยันการลบไม่ได้ กรุณาลองใหม่";
       } finally { remove.disabled = false; }
     });
-    actions.append(edit,remove);
+    const checkIn = Object.assign(node("button","เช็กอิน"),{type:"button"});
+    checkIn.disabled = booking.balance_cents === null;
+    if (checkIn.disabled) checkIn.title = "กรุณาระบุราคาของสุนัขทุกตัวก่อนเช็กอิน";
+    checkIn.addEventListener("click", () => bookingCheckIn(booking));
+    actions.append(checkIn,edit,remove);
     return actions;
+  }
+
+  function signatureCanvas() {
+    const canvas = Object.assign(node("canvas"),{width:720,height:240,className:"signature-canvas"});
+    canvas.setAttribute("aria-label","ช่องลายเซ็นลูกค้า");
+    return canvas;
+  }
+
+  function paintSignature(canvas, strokes) {
+    const context = canvas.getContext("2d");
+    context.clearRect(0,0,canvas.width,canvas.height);
+    context.lineWidth = 3;
+    context.lineCap = "round";
+    context.lineJoin = "round";
+    context.strokeStyle = "#203c30";
+    for (const stroke of strokes) {
+      if (!stroke.length) continue;
+      context.beginPath();
+      context.moveTo(...stroke[0]);
+      for (const point of stroke.slice(1)) context.lineTo(...point);
+      context.stroke();
+    }
+  }
+
+  function bookingCheckIn(booking) {
+    bookingRequest?.abort();
+    const controller = bookingRequest = new AbortController();
+    const form = node("form");
+    const status = node("p","");
+    status.setAttribute("role","status");
+    const today = parts.format(new Date());
+    const now = bangkokTime.format(new Date());
+    function field(label,type,value,required=true) {
+      const input = Object.assign(node("input"),{type,value,required});
+      const wrapper = node("label",label);
+      wrapper.append(input);
+      form.append(wrapper);
+      return input;
+    }
+    const arrival = field("วันที่เช็กอินจริง","date",today);
+    arrival.max = today < booking.checkout ? today : booking.checkout;
+    const arrivalTime = field("เวลาเช็กอินจริง","time",now);
+    const returnTime = field("เวลานัดรับกลับ","time","",false);
+    const amount = field("ยอดรับเพิ่ม (บาท)","number",(booking.balance_cents/100).toFixed(2));
+    Object.assign(amount,{min:"0",step:"0.01",max:(booking.balance_cents/100).toFixed(2)});
+    const paymentDay = field("วันที่ชำระ","date",today);
+    paymentDay.max = today;
+    const paymentTime = field("เวลาชำระ","time",now);
+    const termsBox = node("section");
+    termsBox.className = "checkin-terms";
+    const picker = node("select");
+    picker.append(new Option("ไทย","th"),new Option("English","en"));
+    const languageLabel = node("label","ภาษาเงื่อนไข");
+    languageLabel.append(picker);
+    const termsContent = node("div");
+    termsBox.append(languageLabel,termsContent);
+
+    const accept = Object.assign(node("input"),{type:"checkbox",required:true});
+    const acknowledgement = node("span","ลูกค้ารับทราบและยอมรับเงื่อนไข");
+    const acceptLabel = node("label");
+    acceptLabel.append(accept,acknowledgement);
+    const signatureArea = node("section");
+    signatureArea.className = "checkin-signature";
+    const canvas = signatureCanvas();
+    const clear = Object.assign(node("button","ล้างลายเซ็น"),{type:"button"});
+    signatureArea.append(node("h4","ลายเซ็นลูกค้า"),canvas,clear);
+    const submit = node("button","ยืนยันเช็กอิน");
+    submit.disabled = true;
+    const back = Object.assign(node("button","กลับไปดูการจอง"),{type:"button"});
+    back.addEventListener("click", () => showBooking(booking.id));
+    form.append(termsBox,acceptLabel,signatureArea,submit,back,status);
+    bookingContent.replaceChildren(node("h3","เช็กอิน · " + booking.customer),
+      node("p","ยอดสุทธิ " + baht.format(booking.total_cents/100) +
+        " · รับมัดจำแล้ว " + baht.format(booking.paid_cents/100) +
+        " · คงเหลือ " + baht.format(booking.balance_cents/100)),form);
+
+    const strokes = [];
+    let active = null;
+    let points = 0;
+    const clearSignature = () => {
+      strokes.length = 0;
+      active = null;
+      points = 0;
+      paintSignature(canvas,strokes);
+    };
+    clear.addEventListener("click",clearSignature);
+    function point(event) {
+      const rect = canvas.getBoundingClientRect();
+      return [Math.round(Math.max(0,Math.min(720,(event.clientX-rect.left)*720/rect.width))),
+        Math.round(Math.max(0,Math.min(240,(event.clientY-rect.top)*240/rect.height)))];
+    }
+    canvas.addEventListener("pointerdown",(event) => {
+      if (active !== null || event.button !== 0 || strokes.length >= 150 || points >= 4000) return;
+      if (event.pointerType === "touch" && (event.width > 40 || event.height > 40)) return;
+      event.preventDefault();
+      active = event.pointerId;
+      canvas.setPointerCapture(active);
+      strokes.push([point(event)]);
+      points++;
+    });
+    canvas.addEventListener("pointermove",(event) => {
+      if (event.pointerId !== active || points >= 4000) return;
+      const stroke = strokes.at(-1);
+      const next = point(event);
+      const previous = stroke.at(-1);
+      if (next[0] === previous[0] && next[1] === previous[1]) return;
+      stroke.push(next);
+      points++;
+      const context = canvas.getContext("2d");
+      context.lineWidth = 3;
+      context.lineCap = "round";
+      context.strokeStyle = "#203c30";
+      context.beginPath();
+      context.moveTo(...previous);
+      context.lineTo(...next);
+      context.stroke();
+    });
+    for (const event of ["pointerup","pointercancel","lostpointercapture"]) {
+      canvas.addEventListener(event,(pointer) => { if (pointer.pointerId === active) active = null; });
+    }
+    canvas.addEventListener("contextmenu",(event) => event.preventDefault());
+
+    let termsVersion;
+    let termsRequest = 0;
+    async function loadTerms() {
+      const request = ++termsRequest;
+      const lang = picker.value;
+      termsVersion = null;
+      accept.checked = false;
+      clearSignature();
+      acknowledgement.textContent = lang === "en" ? "I have read and accept the boarding terms."
+        : "ลูกค้ารับทราบและยอมรับเงื่อนไข";
+      submit.disabled = true;
+      termsContent.replaceChildren(node("p","กำลังโหลดเงื่อนไข…"));
+      try {
+        const response = await fetch("/api/bookings/" + booking.id + "/check-in?lang=" + lang,{signal:controller.signal});
+        if (!response.ok) throw Error();
+        const data = await response.json();
+        if (request !== termsRequest || controller.signal.aborted) return;
+        termsVersion = data.version;
+        const details = node("details");
+        details.open = true;
+        details.append(node("summary",data.terms.title),node("p",data.terms.business),node("p",data.terms.intro));
+        for (const section of data.terms.sections) {
+          const list = node("ul");
+          for (const item of section.items) list.append(node("li",item));
+          details.append(node("h4",section.heading),list);
+        }
+        termsContent.replaceChildren(details);
+        submit.disabled = false;
+      } catch {
+        if (!controller.signal.aborted && request === termsRequest) {
+          const retry = Object.assign(node("button","โหลดเงื่อนไขอีกครั้ง"),{type:"button"});
+          retry.addEventListener("click",loadTerms);
+          termsContent.replaceChildren(retry);
+        }
+      }
+    }
+    picker.addEventListener("change",loadTerms);
+    loadTerms();
+
+    const paymentKey = key();
+    let saving = false;
+    form.addEventListener("submit",async (event) => {
+      event.preventDefault();
+      if (saving || !termsVersion) return;
+      if (!strokes.some((stroke) => stroke.length > 1)) { status.textContent = "กรุณาให้ลูกค้าเซ็นลายเซ็น"; return; }
+      saving = true;
+      submit.disabled = true;
+      const body = {language:picker.value,version:termsVersion,accepted:accept.checked,signature:strokes,
+        revision:booking.cloud_revision, arrivalDay:arrival.value,arrivalTime:arrivalTime.value,pickupTime:returnTime.value,
+        expectedBalance:booking.balance_cents,amountCents:Math.round(Number(amount.value)*100),
+        paymentDate:paymentDay.value,receivedTime:paymentTime.value,key:paymentKey};
+      try {
+        const response = await fetch("/api/bookings/" + booking.id + "/check-in",{
+          method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body),
+        });
+        const result = await response.json();
+        if (!response.ok) {
+          status.textContent = result.status === "conflict" ? "การจองหรือยอดมัดจำเปลี่ยนแล้ว กรุณาเปิดรายละเอียดล่าสุด"
+            : result.status === "consent_required" ? "กรุณาตรวจการยอมรับเงื่อนไขและลายเซ็น"
+            : "เช็กอินไม่ได้ กรุณาตรวจวัน เวลา และยอดรับชำระ";
+          return;
+        }
+        if (form.isConnected && bookingDialog.open) await showStay(result.stayId);
+        if (selected === "calendar" || selected === "bookings" || selected === "current" || selected === "outstanding") await load(true);
+        message.textContent = "เช็กอินแล้ว";
+      } catch {
+        status.textContent = "ยังยืนยันผลไม่ได้ กรุณาตรวจรายการหรือส่งข้อมูลเดิมอีกครั้ง";
+      } finally {
+        saving = false;
+        submit.disabled = !termsVersion;
+      }
+    });
+  }
+
+  async function showStay(id) {
+    bookingRequest?.abort();
+    const controller = bookingRequest = new AbortController();
+    if (!bookingDialog.open) bookingDialog.showModal();
+    bookingContent.replaceChildren(node("p","กำลังโหลด…"));
+    document.getElementById("booking-status").textContent = "";
+    try {
+      const response = await fetch("/api/stays/" + id,{signal:controller.signal});
+      if (!response.ok) throw Error();
+      const stay = await response.json();
+      if (controller.signal.aborted) return;
+      const [service,unit] = services[stay.service_type] || [stay.service_type,"วัน"];
+      const money = (cents) => baht.format(cents / 100);
+      bookingContent.replaceChildren(node("h3","สรุปการเข้าพัก · " + stay.customer),
+        node("p",[stay.stay_number,stay.booking_number,statuses[stay.status]].filter(Boolean).join(" · ")),
+        node("p",[stay.checkin,stay.checkout].map((day) => bookingDate.format(new Date(day))).join(" – ")),
+        node("p",service + " · " + stay.charged_nights + " " + unit),
+        node("p","ยอดสุทธิ " + money(stay.total_cents)));
+      for (const [label,value] of [["เช็กอินจริง",stay.actual_checkin_at],["เช็กเอาต์จริง",stay.actual_checkout_at]]) {
+        if (!value) continue;
+        const moment = new Date(value);
+        if (!Number.isFinite(moment.valueOf())) continue;
+        const display = value.length === 10 ? bookingDate.format(moment)
+          : bookingDate.format(new Date(parts.format(moment))) + " · " + bangkokTime.format(moment);
+        bookingContent.append(node("p",label + " " + display));
+      }
+      if (stay.due_cents !== null) bookingContent.append(node("strong","ยอดคงเหลือ " + money(stay.due_cents)));
+      const dogs = node("ul");
+      for (const dog of stay.dogs) dogs.append(node("li",dog.name + " · " +
+        (dog.nightly_rate_cents === null ? "—" : money(dog.nightly_rate_cents) + " / " + unit)));
+      bookingContent.append(node("h4","สุนัขที่เข้าพัก"),dogs,node("h4","ประวัติการชำระเงิน"));
+      if (!stay.payments.length) bookingContent.append(node("p","ยังไม่มีรายการชำระ"));
+      for (const payment of stay.payments) {
+        bookingContent.append(node("p",[bookingDate.format(new Date(payment.occurred_on)),payment.received_time,
+          paymentLabels[payment.payment_type] || payment.payment_type,money(payment.amount_cents)].filter(Boolean).join(" · ")));
+      }
+      if (stay.consent) {
+        bookingContent.append(node("h4","ลายเซ็นลูกค้า"),node("p",stay.consent.customer_name));
+        const canvas = signatureCanvas();
+        try { paintSignature(canvas,JSON.parse(stay.consent.signature)); bookingContent.append(canvas); } catch {}
+      }
+    } catch {
+      if (!controller.signal.aborted) bookingContent.replaceChildren(node("p","โหลดสรุปการเข้าพักไม่ได้"));
+    }
   }
 
   async function showBooking(id) {
@@ -885,6 +1132,11 @@ function main() {
         node("p", service + " · " + data.charged_nights + " " + unit),
       );
       if (!data.stay_id && data.status === "pending") bookingContent.append(bookingActions(data));
+      if (data.stay_id) {
+        const stay = Object.assign(node("button","ดูสรุปการเข้าพัก"),{type:"button"});
+        stay.addEventListener("click",() => showStay(data.stay_id));
+        bookingContent.append(stay);
+      }
       if (data.note) bookingContent.append(node("p", data.note));
       bookingContent.append(node("h3", "สุนัขที่จอง"));
       const dogs = node("ul");
@@ -940,6 +1192,9 @@ function main() {
       node("p", [stay.stay_number || "#" + stay.id, statuses[stay.status] || stay.status,
         baht.format(stay.due_cents / 100)].join(" · ")));
     if (stay.dogs) article.append(node("p", stay.dogs));
+    const summary = Object.assign(node("button","ดูสรุปการเข้าพัก"),{type:"button"});
+    summary.addEventListener("click",() => showStay(stay.id));
+    article.append(summary);
     if (stay.status === "checked_in") {
       const checkout = node("button", "เช็กเอาต์");
       checkout.type = "button";
@@ -1061,7 +1316,7 @@ export function outstandingPage() {
     <p id="message" role="status"></p><div id="stays"></div>
     <button id="more" type="button" hidden>โหลดเพิ่มเติม</button></main>
     <dialog id="booking-detail" aria-labelledby="booking-title">
-      <h2 id="booking-title">รายละเอียดการจอง</h2><button type="button" id="close-booking" autofocus>ปิด</button>
+      <h2 id="booking-title">การจองและการเข้าพัก</h2><button type="button" id="close-booking" autofocus>ปิด</button>
       <p id="booking-status" role="status"></p>
       <div id="booking-content" aria-live="polite"></div>
     </dialog>

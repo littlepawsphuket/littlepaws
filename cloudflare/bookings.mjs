@@ -119,6 +119,11 @@ export async function deleteBookingDeposit(db, bookingId, transactionId, {key}, 
   return booking.checked_in ? "booking_closed" : "not_found";
 }
 
+export function randomReference() {
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  return [...crypto.getRandomValues(new Uint8Array(6))].map((byte) => alphabet[byte % alphabet.length]).join("");
+}
+
 export function validDay(value) {
   if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value) || value.startsWith("0000")) return false;
   const date = new Date(value + "T00:00:00Z");
