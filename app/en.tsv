@@ -772,3 +772,7 @@ QR Code สำหรับโอนเงิน	Payment QR code
 ตั้งรหัสผ่านชั่วคราวแล้ว	Temporary password set.
 รหัสผ่านที่กรอกทั้งสองช่องไม่ตรงกัน	The two passwords do not match.
 ผู้ใช้ต้องใช้รหัสชั่วคราวเข้าสู่ระบบและตั้งรหัสผ่านของตนเองอีกครั้ง	The user must sign in with the temporary password and choose a new password.
+รายรับคงเหลือหลังหักส่วนที่คืน	Income retained after refunds
+รายรับคงเหลือเทียบรายจ่าย · รายเดือน	Monthly retained income and expenses
+🟢 รายรับคงเหลือ	🟢 Retained income
+จำนวนครั้งที่เปิดไทม์ไลน์	Timeline page views

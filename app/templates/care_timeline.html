@@ -50,6 +50,9 @@
 </section>
 <section class="card" id="share-timeline">
   <h2>{{ _('แชร์ไทม์ไลน์ให้ลูกค้า') }}</h2>
+  {% if share_exists %}
+    <p id="timeline-view-count">{{ _('จำนวนครั้งที่เปิดไทม์ไลน์') }} <strong>{{ '{:,}'.format(share_views) }}</strong></p>
+  {% endif %}
   {% if share_url %}
     <label>{{ _('ลิงก์สำหรับลูกค้า') }}<input type="url" readonly value="{{share_url}}" data-share-url></label>
     <p role="status" data-share-status></p>

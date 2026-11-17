@@ -6,6 +6,12 @@ const css = `
   main{margin:auto;max-width:52rem;padding:1rem}h1{margin:.2rem 0 1rem}
   article{background:#fff;border:1px solid #c8ded4;border-radius:1rem;margin:.6rem 0;padding:1rem}
   dialog{width:min(34rem,calc(100% - 4rem));max-height:80vh;padding:1rem;border:1px solid #a7cbb9;border-radius:1rem;color:inherit}
+  .finance-totals{display:grid;grid-template-columns:repeat(auto-fit,minmax(10rem,1fr));gap:.5rem}
+  .finance-totals article{margin:0}
+  .finance-month{display:grid;gap:.35rem}
+  .finance-bar{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:.35rem .65rem;align-items:center}
+  .finance-bar progress{width:100%;grid-column:1/-1;accent-color:#24785a}
+  .finance-bar[data-expense] progress{accent-color:#a47134}
   .coupon-preview{display:block;width:min(100%,30rem);height:auto;border-radius:1rem;margin:1rem auto .5rem}
   .coupon-code{font-size:1.6rem;letter-spacing:.18em}
   .calendar-toolbar{display:flex;flex-wrap:wrap;gap:.45rem;align-items:center;margin:1rem 0}
@@ -132,6 +138,46 @@ function main(intakeGroups,couponScreen) {
     results.replaceChildren(grid);
   }
 
+  const financeToolbar = document.getElementById("finance-toolbar");
+  const financeFrom = document.getElementById("finance-from");
+  const financeTo = document.getElementById("finance-to");
+  financeFrom.value = financeTo.value = parts.format(new Date()).slice(0,7);
+  financeToolbar.addEventListener("submit", (event) => {
+    event.preventDefault();
+    message.textContent = "";
+    load(true);
+  });
+
+  function renderFinance(data) {
+    const money = (cents) => baht.format(cents/100);
+    const labels = {income_cents:"รายรับคงเหลือหลังหักส่วนที่คืน",refund_cents:"คืนเงิน",
+      expense_cents:"รายจ่าย",cash_flow_cents:"กระแสเงินสดสุทธิ"};
+    const cards = node("div");
+    cards.className = "finance-totals";
+    for (const [kind,label] of Object.entries(labels)) {
+      const card = node("article");
+      card.append(node("p",label),node("strong",money(data.totals[kind])));
+      cards.append(card);
+    }
+    const maximum = Math.max(1,...data.trend.flatMap((month) => [month.income_cents,month.expense_cents]));
+    results.replaceChildren(cards,node("h2","รายรับคงเหลือเทียบรายจ่าย · รายเดือน"));
+    for (const month of data.trend) {
+      const row = node("article");
+      row.className = "finance-month";
+      row.append(node("h3",calendarMonth.format(new Date(month.month + "-01"))));
+      for (const [label,value] of [["รายรับคงเหลือ",month.income_cents],["รายจ่าย",month.expense_cents]]) {
+        const bar = node("div");
+        bar.className = "finance-bar";
+        if (label === "รายจ่าย") bar.dataset.expense = "";
+        const progress = Object.assign(node("progress"),{max:maximum,value:Math.max(0,value)});
+        progress.setAttribute("aria-label",label);
+        bar.append(node("span",label),node("strong",money(value)),progress);
+        row.append(bar);
+      }
+      results.append(row);
+    }
+  }
+
   async function load(reset = false) {
     const requestId = ++requestNumber;
     if (reset) {
@@ -140,6 +186,17 @@ function main(intakeGroups,couponScreen) {
     }
     more.disabled = true;
     try {
+      if (selected === "finance") {
+        more.hidden = true;
+        const query = new URLSearchParams({from:financeFrom.value,to:financeTo.value});
+        const response = await fetch("/api/dashboard/finance?" + query);
+        if (requestId !== requestNumber) return;
+        if (response.status === 400) { message.textContent = "กรุณาตรวจช่วงเดือน (ไม่เกิน 120 เดือน)"; return; }
+        if (!response.ok) throw Error();
+        const data = await response.json();
+        if (requestId === requestNumber) renderFinance(data);
+        return;
+      }
       if (selected === "coupons") {
         const response = await fetch("/api/coupons?" + couponAdmin.query(cursor));
         if (!response.ok) throw Error();
@@ -1332,6 +1389,12 @@ function main(intakeGroups,couponScreen) {
           }));
         }
       }
+      if (stay.timeline_views.length) {
+        bookingContent.append(node("h4","จำนวนครั้งที่เปิดไทม์ไลน์"));
+        for (const link of stay.timeline_views) {
+          bookingContent.append(node("p",link.dog_name + " · " + link.view_count.toLocaleString("th-TH") + " ครั้ง"));
+        }
+      }
       if (stay.consent) {
         bookingContent.append(node("h4","ลายเซ็นลูกค้า"),node("p",stay.consent.customer_name));
         const canvas = signatureCanvas();
@@ -1515,6 +1578,7 @@ function main(intakeGroups,couponScreen) {
       if (selected === mode.dataset.mode) return;
       selected = mode.dataset.mode;
       couponAdmin.visible(selected === "coupons");
+      financeToolbar.hidden = selected !== "finance";
       addBooking.hidden = selected !== "bookings" && selected !== "calendar";
       calendarToolbar.hidden = selected !== "calendar";
       addCustomer.hidden = selected !== "customers";
@@ -1546,6 +1610,7 @@ export function outstandingPage(isAdmin = false) {
     <main><p>Little Paws Homestay Phuket</p><h1>จัดการการเข้าพัก</h1>
     <div role="group" aria-label="มุมมองการเข้าพัก">
       <button type="button" data-mode="outstanding" aria-pressed="true">ยอดค้างชำระ</button>
+      <button type="button" data-mode="finance" aria-pressed="false">ภาพรวมการเงิน</button>
       <button type="button" data-mode="current" aria-pressed="false">กำลังเข้าพัก</button>
       <button type="button" data-mode="customers" aria-pressed="false">ลูกค้า</button>
       <button type="button" data-mode="calendar" aria-pressed="false">ปฏิทินการจอง</button>
@@ -1567,6 +1632,11 @@ export function outstandingPage(isAdmin = false) {
         <option value="week">รายสัปดาห์</option><option value="day">รายวัน</option></select></label>
       <strong id="calendar-title" aria-live="polite"></strong>
     </div>
+    <form id="finance-toolbar" hidden>
+      <label>ตั้งแต่เดือน<input id="finance-from" type="month" required></label>
+      <label>ถึงเดือน<input id="finance-to" type="month" required></label>
+      <button>แสดงผล</button>
+    </form>
     <div id="coupon-toolbar" class="calendar-toolbar" hidden>
       <label>สถานะคูปอง<select id="coupon-group"><option value="active">ใช้งานอยู่</option>
         <option value="used">ใช้แล้ว</option><option value="expired">หมดอายุ</option></select></label>

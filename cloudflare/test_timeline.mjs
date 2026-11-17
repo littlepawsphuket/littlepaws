@@ -19,7 +19,7 @@ const env = {
         first: async () => stmt.get(...args),
         all: async () => ({results: stmt.all(...args)}),
         run: () => {
-          if (/^SELECT/.test(sql)) return {results: stmt.all(...args)};
+          if (/^\s*(?:SELECT|WITH)\b/i.test(sql)) return {results: stmt.all(...args)};
           return {results: [], meta: {changes: stmt.run(...args).changes}};
         },
       })};
@@ -50,6 +50,11 @@ const env = {
 };
 const path = (letter) => `/updates/${letter.repeat(43)}`;
 const get = (route) => worker.fetch(new Request("https://example.test"+route), env);
+const viewCount = (letter = "a") => sqlite.prepare("SELECT view_count FROM care_share_links WHERE token=?").get(letter.repeat(43)).view_count;
+assert.equal(viewCount(),0);
+const prefetched = await worker.fetch(new Request("https://example.test"+path("a"),{headers:{"Sec-Purpose":"prefetch"}}),env);
+assert.equal(prefetched.status,200);
+assert.equal(viewCount(),0);
 const all = await get(path("a")+"?day=all&lang=en");
 assert.equal(all.status, 200);
 assert.equal(all.headers.get("Content-Language"), "en");
@@ -84,6 +89,15 @@ assert.equal(await rendered.text(),"%PDF-fixture");
 assert.equal((await pdfGet(pdfPath,"https://unexpected.example.test")).status,404);
 assert.equal((await pdfGet(path("c")+"/timeline.pdf")).status,404);
 assert.equal(pdfCalls,1);
+assert.equal(viewCount(),1); // Includes one HTML render, with no photo or PDF increment.
+const countBeforeRequests = viewCount();
+assert.equal((await get(path("a"))).status,200);
+assert.equal((await get(path("a")+"/photos/1")).status,200);
+assert.equal((await get(path("a")+"?day=invalid")).status,400);
+assert.equal(viewCount(),countBeforeRequests+1);
+
+assert.equal((await get(path("b"))).status,200);
+assert.equal(viewCount("b"),1);
 sqlite.exec("DELETE FROM care_share_links WHERE dog_id=1");
 assert.equal((await pdfGet(pdfPath)).status,404);
 assert.equal((await get(path("a"))).status, 404);
@@ -132,6 +146,24 @@ assert.equal((await staffCall("/api/account", {}, {access:{...context.access, au
 const account = await (await staffCall("/api/account", {}, context)).json();
 assert.equal(account.isAdmin, true);
 assert.ok(!("email" in account));
+const financePath = "/api/dashboard/finance?from=2002-03&to=2002-04";
+assert.equal((await get(financePath)).status,404);
+assert.equal((await staffCall(financePath)).status,403);
+const financeRows = [
+  ["2002-03-10","income",100,1],["2002-04-01","income",50,1],["2002-04-20","refund",120,1],
+  ["2002-03-12","income",250,2],["2002-04-21","refund",250,2],["2002-03-02","income",40,null],
+  ["2002-04-22","refund",15,null],
+];
+const insertFinance = sqlite.prepare(`INSERT INTO transactions(occurred_on,kind,amount,stay_id,category,description)
+  VALUES(?,?,?,?,'test','dashboard finance fixture')`);
+for (const row of financeRows) insertFinance.run(...row);
+const finance = await (await staffCall(financePath,{},context)).json();
+assert.deepEqual(finance.totals,{income_cents:7000,refund_cents:38500,expense_cents:0,cash_flow_cents:5500});
+assert.deepEqual(finance.trend.map((month) => month.income_cents),[4000,3000]);
+assert.equal((await staffCall("/api/dashboard/finance?from=2002-13&to=2002-04",{},context)).status,400);
+sqlite.exec("DELETE FROM transactions WHERE description='dashboard finance fixture'");
+const summaryWithViews = await (await staffCall("/api/stays/1",{},context)).json();
+assert.ok(summaryWithViews.timeline_views.some((link) => link.view_count === viewCount("b")));
 const customersPath = "/api/customers";
 const customerPath = customersPath + "/1";
 const customerDogPhoto = customerPath + "/dogs/2/photo";

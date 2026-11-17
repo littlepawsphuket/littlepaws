@@ -1,0 +1,1 @@
+ALTER TABLE care_share_links ADD COLUMN view_count INTEGER NOT NULL DEFAULT 0;

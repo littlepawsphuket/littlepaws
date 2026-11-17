@@ -203,8 +203,10 @@ with conn() as db:
     db.execute("""CREATE TABLE IF NOT EXISTS care_share_links (
         stay_id INTEGER NOT NULL REFERENCES stays(id) ON DELETE CASCADE,
         dog_id INTEGER NOT NULL REFERENCES dogs(id) ON DELETE CASCADE,
-        token TEXT NOT NULL UNIQUE, PRIMARY KEY(stay_id,dog_id)
+        token TEXT NOT NULL UNIQUE, view_count INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(stay_id,dog_id)
     )""")
+    if 'view_count' not in {row['name'] for row in db.execute('PRAGMA table_info(care_share_links)')}:
+        db.execute('ALTER TABLE care_share_links ADD COLUMN view_count INTEGER NOT NULL DEFAULT 0')
     db.execute('CREATE INDEX IF NOT EXISTS ix_care_photos_event ON care_photos(event_id)')
     db.execute('CREATE INDEX IF NOT EXISTS ix_care_dog_stay ON care_events(stay_id,dog_id,recorded_at)')
     db.execute('CREATE UNIQUE INDEX IF NOT EXISTS ix_payment_key ON transactions(stay_id,payment_key)')
@@ -287,6 +289,28 @@ def next_month(month):
     return date(month.year + (month.month == 12), month.month % 12 + 1, 1)
 
 
+def monthly_refunded_income(db, period):
+    # Refunds refer to a stay, so allocate them to its actual receipts in date
+    # and ID order. A refund can reduce income in an earlier dashboard month.
+    rows = db.execute("""WITH refunded AS (
+            SELECT stay_id, SUM(CAST(ROUND(amount*100) AS INTEGER)) AS cents
+            FROM transactions
+            WHERE kind='refund' AND stay_id IS NOT NULL AND amount>0
+            GROUP BY stay_id
+        ), receipts AS (
+            SELECT t.occurred_on, r.cents AS refunded_cents, CAST(ROUND(t.amount*100) AS INTEGER) AS paid_cents,
+                   SUM(CAST(ROUND(t.amount*100) AS INTEGER)) OVER (
+                       PARTITION BY t.stay_id ORDER BY t.occurred_on,t.id ROWS UNBOUNDED PRECEDING
+                   ) AS cumulative_cents
+            FROM refunded r JOIN transactions t ON t.stay_id=r.stay_id
+            WHERE t.kind='income' AND t.auto_stay=0 AND t.occurred_on<?
+        )
+        SELECT substr(occurred_on,1,7) AS month,
+               SUM(MIN(paid_cents,MAX(0,refunded_cents-(cumulative_cents-paid_cents)))) AS cents
+        FROM receipts WHERE occurred_on>=? GROUP BY month""", (period[1], period[0]))
+    return {row['month']: row['cents']/100 for row in rows}
+
+
 @app.get('/')
 def dashboard():
     current = now_local().date()
@@ -296,13 +320,16 @@ def dashboard():
         first, last = last, first
     period = (first.isoformat(), next_month(last).isoformat())
     with conn() as db:
+        db.execute('BEGIN')
         monthly = {}
         for row in db.execute("""SELECT substr(occurred_on,1,7) month,kind,SUM(amount) total
                                   FROM transactions WHERE occurred_on>=? AND occurred_on<?
                                   GROUP BY month,kind""", period):
             monthly.setdefault(row['month'], {})[row['kind']] = row['total']
-        income, refunds, expenses = (sum(row.get(kind, 0) for row in monthly.values())
+        gross_income, refunds, expenses = (sum(row.get(kind, 0) for row in monthly.values())
                                      for kind in ('income', 'refund', 'expense'))
+        refunded_income = monthly_refunded_income(db, period)
+        income = round(gross_income - sum(refunded_income.values()), 2)
         tx = db.execute("""SELECT t.*,c.name customer FROM transactions t
                            LEFT JOIN customers c ON c.id=t.customer_id
                            WHERE occurred_on>=? AND occurred_on<?
@@ -355,12 +382,12 @@ def dashboard():
     while month <= last:
         key = month.isoformat()[:7]
         values = monthly.get(key, {})
-        trend.append(dict(month=key, label=display_month(key), income=round(values.get('income', 0)-values.get('refund', 0), 2),
+        trend.append(dict(month=key, label=display_month(key), income=round(values.get('income', 0)-refunded_income.get(key, 0), 2),
                           expense=round(values.get('expense', 0), 2)))
         month = next_month(month)
     return render_template('dashboard.html', from_month=first.isoformat()[:7], to_month=last.isoformat()[:7],
                            transaction_period=dict(start=period[0], end=(next_month(last)-timedelta(days=1)).isoformat()),
-                           income=income, refunds=refunds, expenses=expenses, net=income-refunds-expenses,
+                           income=income, refunds=refunds, expenses=expenses, net=gross_income-refunds-expenses,
                            tx=tx, cats=cats, stats=stats, boarding=boarding, upcoming=upcoming, trend=trend, care_options=care_options)
 
 
@@ -1542,7 +1569,7 @@ def care_timeline(sid, dog_id):
         if not all_days:
             days.add(day)
         options = care_activity_options(db)
-        share = db.execute('SELECT token FROM care_share_links WHERE stay_id=? AND dog_id=?',(sid,dog_id)).fetchone()
+        share = db.execute('SELECT token,view_count FROM care_share_links WHERE stay_id=? AND dog_id=?',(sid,dog_id)).fetchone()
         expiry_hours = care_link_hours(db)
     share_allowed = care_link_active(dog, now_local(), expiry_hours)
     share_path = url_for('public_care_timeline', token=share['token']) if share and share_allowed else None
@@ -1550,6 +1577,7 @@ def care_timeline(sid, dog_id):
     return render_template('care_timeline.html', dog=dog, sid=sid, dog_id=dog_id, day=day, events=events,
                            all_days=all_days, days=sorted(days, reverse=True), care_options=options,
                            share_url=share_url, share_path=share_path, share_exists=bool(share),
+                           share_views=share['view_count'] if share else None,
                            share_allowed=share_allowed, expiry_hours=expiry_hours)
 
 
@@ -1665,15 +1693,29 @@ def public_care_language():
     return selected if selected in LANGUAGES else 'th'
 
 
+def record_public_care_view(token):
+    if request.method != 'GET' or any('prefetch' in request.headers.get(header, '').lower()
+                                      for header in ('Purpose', 'Sec-Purpose')):
+        return
+    with closing(conn()) as db, db:
+        db.execute('BEGIN IMMEDIATE')
+        public_care_link(db, token)
+        db.execute("""UPDATE care_share_links SET view_count=view_count+1 WHERE token=?
+                      AND NOT EXISTS (SELECT 1 FROM app_users WHERE id=? AND session_version=? AND active=1)""",
+                   (token, session.get('user_id'), session.get('user_version')))
+
+
 @app.get('/updates/<token>')
 def public_care_timeline(token):
     dog, today, selected, days, events, _, expiry_hours = public_care_data(token)
     guest_lang = public_care_language()
-    return Response(render_template('public_care_timeline.html', dog_name=dog['name'], events=events, token=token,
+    response = Response(render_template('public_care_timeline.html', dog_name=dog['name'], events=events, token=token,
                                     selected=selected, days=days, today=today, guest_lang=guest_lang, expiry_hours=expiry_hours,
                                     guest_text=partial(translate,lang=guest_lang),
                                     guest_date=partial(display_date,lang=guest_lang)),
                     mimetype='text/html', headers={'Content-Language':guest_lang})
+    record_public_care_view(token)
+    return response
 
 
 @app.get('/updates/<token>/timeline.pdf')

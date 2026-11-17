@@ -155,7 +155,16 @@ export default {
     const token = path[2];
     if (path[1] !== "updates" || !tokenPattern.test(token || "")) return missing();
     try {
-      if (path.length === 3) return await timeline(env, token, url);
+      if (path.length === 3) {
+        const page = await timeline(env, token, url);
+        const speculative = ["Purpose","Sec-Purpose"].some((name) =>
+          request.headers.get(name)?.toLowerCase().includes("prefetch"));
+        if (page.ok && !speculative) {
+          await env.DB.prepare(`UPDATE care_share_links SET view_count=view_count+1
+            WHERE token IN (SELECT l.token ${activeLink} WHERE ${activeCondition})`).bind(token).run();
+        }
+        return page;
+      }
       if (path.length === 4 && path[3] === "timeline.pdf") return await timelinePdf(env, token, url);
       if (path.length === 5 && path[3] === "photos" && /^\d+$/.test(path[4])) {
         const id = Number(path[4]);

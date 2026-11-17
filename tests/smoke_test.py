@@ -386,6 +386,32 @@ with tempfile.TemporaryDirectory() as temp:
             ('2000-02-01', 'refund', 'Filter refund'),
             ('2000-02-02', 'expense', 'Filter outside'),
         ])
+    with conn() as db:
+        refund_stay_ids = [db.execute(
+            "INSERT INTO stays(customer_id,checkin,checkout) VALUES(?,'2002-03-01','2002-04-01')",
+            (owner_id,)).lastrowid for _ in range(2)]
+        partial, full = refund_stay_ids
+        finance_rows = [
+            ('2002-03-10', 'income', 100, partial), ('2002-04-01', 'income', 50, partial),
+            ('2002-04-20', 'refund', 120, partial), ('2002-03-12', 'income', 250, full),
+            ('2002-04-21', 'refund', 250, full), ('2002-03-02', 'income', 40, None),
+            ('2002-04-22', 'refund', 15, None),
+        ]
+        ids = [db.execute("""INSERT INTO transactions(occurred_on,kind,amount,stay_id,category,description)
+                             VALUES(?,?,?,?,'test','Dashboard refund fixture')""", row).lastrowid for row in finance_rows]
+    dashboard_range = client.get('/?from_month=2002-03&to_month=2002-04').text
+    assert 'id="dashboard-income">฿70.00<' in dashboard_range
+    assert 'กระแสเงินสดสุทธิ</small><strong class="green">฿55.00<' in dashboard_range
+    from html import unescape
+    chart = json.loads(unescape(re.search(r"data-values='([^']+)'", dashboard_range)[1]))
+    assert [month['income'] for month in chart] == [40, 30]
+    march_only = client.get('/?month=2002-03').text
+    assert 'id="dashboard-income">฿40.00<' in march_only
+    april_only = client.get('/?month=2002-04').text
+    assert 'id="dashboard-income">฿30.00<' in april_only
+    with conn() as db:
+        db.executemany('DELETE FROM transactions WHERE id=?', [(ident,) for ident in ids])
+        db.executemany('DELETE FROM stays WHERE id=?', [(ident,) for ident in refund_stay_ids])
     base = '/transactions?start=2000-01-31&end=2000-02-01'
     all_rows = client.get(base).text
     assert all(name in all_rows for name in ('Filter income', 'Filter expense', 'Filter refund'))
@@ -904,7 +930,18 @@ with tempfile.TemporaryDirectory() as temp:
     share_path = re.search(r'href="(/updates/[A-Za-z0-9_-]+)"',client.get(care_base).text)[1]
     assert post(share_form, action='create').status_code == 302
     assert share_path in client.get(care_base).text
+    def share_views():
+        with conn() as db:
+            return db.execute('SELECT view_count FROM care_share_links WHERE stay_id=? AND dog_id=?',
+                              (sid,dog_id)).fetchone()[0]
+    assert share_views() == 0
+    assert client.get(share_path).status_code == 200
+    assert guest.head(share_path).status_code == 200
+    assert guest.get(share_path, headers={'Sec-Purpose': 'prefetch'}).status_code == 200
+    assert guest.get(share_path+'?day=2001-02-30').status_code == 400
+    assert share_views() == 0
     assert 'Care fixture' not in guest.get(share_path).text
+    assert share_views() == 1
     assert post(care_base, kind='walk', note='Guest-visible fixture', customer_visible='1',
                 photos=(io.BytesIO((assets/'little-paws-icon.png').read_bytes()),'update.png')).status_code == 302
     public_page = guest.get(share_path)
@@ -913,7 +950,10 @@ with tempfile.TemporaryDirectory() as temp:
     assert 'Care fixture' not in public_page.text and 'primary-nav' not in public_page.text
     assert guest.get('/customers').location == '/login'
     public_photo = re.search(r'src="(' + share_path + r'/photos/\d+)"',public_page.text)[1]
+    assert share_views() == 2
+    assert re.search(r'id="timeline-view-count"[^>]*>[^<]+<strong>2</strong>', client.get(care_base).text)
     assert guest.get(public_photo).mimetype == 'image/jpeg'
+    assert share_views() == 2
     other_photo = re.search(r'src="/care/photos/(\d+)"', modified_page)[1]
     assert guest.get(share_path+'/photos/'+other_photo).status_code == 404
     assert guest.get('/care/photos/'+other_photo).location == '/login'
@@ -933,6 +973,7 @@ with tempfile.TemporaryDirectory() as temp:
     assert 'Retrospective fixture' in english and re.search(r'day=all&amp;lang=en"\s+aria-current="page"', english)
     from unittest.mock import patch
     from app.care_export import build_care_export
+    before_pdf_views = share_views()
     with patch('app.care_export.build_care_export', wraps=build_care_export) as render_pdf:
         pdf_url = share_path+'/timeline.pdf?day='+past_day+'&lang=en'
         pdf = guest.get(pdf_url)
@@ -949,6 +990,7 @@ with tempfile.TemporaryDirectory() as temp:
         timestamps = [event['recorded_at'] for event in events]
         assert len({stamp[:10] for stamp in timestamps}) > 1
         assert timestamps == sorted(timestamps, reverse=True)
+    assert share_views() == before_pdf_views
     assert post(share_form, action='revoke').status_code == 302
     assert guest.get(share_path).status_code == 404
     assert guest.get(public_photo).status_code == 404
@@ -956,6 +998,7 @@ with tempfile.TemporaryDirectory() as temp:
     assert post(share_form, action='create').status_code == 302
     fresh_share = re.search(r'href="(/updates/[A-Za-z0-9_-]+)"',client.get(care_base).text)[1]
     assert fresh_share != share_path
+    assert share_views() == 0
     filter_url = '/stays/history?start=2000-01-01&end=2099-12-31'
     summary_href = f'href="/stays/{sid}/summary?'
     assert summary_href in client.get(filter_url + '&status=checked_in').text
@@ -971,7 +1014,9 @@ with tempfile.TemporaryDirectory() as temp:
     assert guest.get(fresh_share).status_code == 200
     assert post('/settings/capacity', capacity='1', care_link_hours='24').status_code == 302
     assert guest.get(fresh_share).status_code == 404
+    expired_views = share_views()
     assert guest.get(fresh_share+'/timeline.pdf').status_code == 404
+    assert share_views() == expired_views == 2
     assert post('/settings/capacity', capacity='1', care_link_hours='36').status_code == 302
     assert 'ลิงก์นี้จะหมดอายุภายใน 36 ชั่วโมงหลังเช็กเอาต์' in guest.get(fresh_share).text
     assert post(care_base, kind='food').status_code == 409

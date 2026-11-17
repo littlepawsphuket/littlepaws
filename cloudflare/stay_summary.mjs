@@ -1,7 +1,7 @@
 import {stayBalance} from "./stay_payments.mjs";
 
 export async function staySummary(db, id) {
-  const [record,dogs,payments,consent] = await db.batch([
+  const [record,dogs,payments,consent,links] = await db.batch([
     db.prepare(`SELECT s.id,s.stay_number,s.status,s.checkin,s.checkout,s.actual_checkin_at,s.actual_checkout_at,
         s.charged_nights,
         CASE WHEN json_valid(s.intake) THEN COALESCE(json_extract(s.intake,'$.service_type'),'overnight')
@@ -19,9 +19,12 @@ export async function staySummary(db, id) {
       WHERE stay_id=? AND payment_type!='' ORDER BY occurred_on,received_time,id`).bind(id),
     db.prepare(`SELECT customer_name,signed_at,signed_language,signature FROM stay_consents
       WHERE stay_id=? ORDER BY id DESC LIMIT 1`).bind(id),
+    db.prepare(`SELECT d.name AS dog_name,l.view_count FROM care_share_links l
+      JOIN stay_dogs sd ON sd.stay_id=l.stay_id AND sd.dog_id=l.dog_id JOIN dogs d ON d.id=l.dog_id
+      WHERE l.stay_id=? ORDER BY d.name,d.id`).bind(id),
   ]);
   const stay = record.results[0];
   if (!stay) return null;
   try { stay.intake = JSON.parse(stay.intake) || {}; } catch { stay.intake = {}; }
-  return {...stay, dogs:dogs.results, payments:payments.results, consent:consent.results[0] || null};
+  return {...stay, dogs:dogs.results, payments:payments.results, consent:consent.results[0] || null,timeline_views:links.results};
 }

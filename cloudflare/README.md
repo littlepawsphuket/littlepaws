@@ -31,7 +31,7 @@ Receipt attachments retain their original bytes under `receipts/` in R2 with ref
 1. Create a dedicated staging D1 database and private R2 bucket if the Cloudflare account supports them. Do not enable public R2 access.
 2. Copy `wrangler.toml` to a private configuration file beside it or provide environment-specific configuration in deployment. Replace the example UUID and resource names with your staging bindings. Preserve binding names `DB` and `MEDIA`. To enable timeline PDF, bind `BROWSER` and set `PUBLIC_ORIGIN` to the exact HTTPS origin of this Worker. The PDF endpoint uses only the already-authorized view and R2 image routes, and checks link activity again before returning the file.
 3. Use `wrangler d1 execute <staging-db> --remote --file <private-directory>/data.sql` against an empty staging D1 database. Upload the files under `objects/` to the matching private R2 keys, without the local `objects/` prefix. Verify counts and checksums before inviting staging testers.
-4. From `cloudflare/`, deploy with `npx wrangler deploy --config <staging-config>`. Test a synthetic token, a different dog's photo ID, and an expired/revoked token. Only the timeline, optional PDF, and scoped photo routes are exposed.
+4. For a pre-existing staging D1 without `care_share_links.view_count`, apply `timeline_views.sql` before deploying. New exports include that field. From `cloudflare/`, deploy with `npx wrangler deploy --config <staging-config>`. Test a synthetic token, a different dog's photo ID, and an expired/revoked token. Only the timeline, optional PDF, and scoped photo routes are exposed.
 5. Production deployment also needs the staff application port, write parity, export parity and source-to-cloud migration rehearsal. See the project handoff.
 
 D1 transactions use batches. Port staff write operations individually so checks and writes stay atomic, including concurrent checkout, deposits, balances and coupon redemption. Reuse the existing business rules and test duplicate submissions. Port authentication/session controls and move PDF/PNG rendering to a route that fits the target plan's CPU and rendering limits. A browser staging deployment does not migrate or start serving the Mac's database.
@@ -60,3 +60,6 @@ Walk-in check-in reuses the booking form's rate and dog selection, then collects
 
 
 Administrators can create, edit and archive coupons, and switch between active, used and expired listings. The coupon preview renders a shareable PNG in the browser with the six-digit code and a numeric QR, expiration, use limit and optional minimum spend. The Cloudflare preview currently uses the Little Paws green palette.
+
+
+The public timeline records successful HTML page openings against the share link. Photo and PDF routes and speculative prefetches do not increment the counter. Stay summaries expose counts to authorized staff. The staff finance overview attributes linked refunds back to their original receipt months in receipt order. The cash-flow total keeps actual transaction dates.
