@@ -15,6 +15,9 @@ function main() {
   fetch(qr.href, {method:"HEAD"}).then((response) => {
     qr.hidden = !response.ok || !response.headers.get("Content-Type")?.startsWith("image/jpeg");
   }).catch(() => {});
+  const bookingSearch = document.getElementById("booking-search");
+  const bookingQuery = document.getElementById("booking-query");
+  let activeBookingQuery = "";
   let cursor = null;
   let requestNumber = 0;
   let selected = "outstanding";
@@ -37,13 +40,24 @@ function main() {
     }
     more.disabled = true;
     try {
-      const response = await fetch("/api/stays/" + selected + (cursor ? "?before=" + cursor : ""));
+      const bookings = selected === "bookings";
+      const url = bookings
+        ? "/api/bookings/pending?" + new URLSearchParams({after:cursor || 0, q:activeBookingQuery})
+        : "/api/stays/" + selected + (cursor ? "?before=" + cursor : "");
+      const response = await fetch(url);
       if (!response.ok) throw Error();
       const data = await response.json();
       if (requestId !== requestNumber) return;
-      cursor = data.nextBefore;
-      for (const stay of data.stays) results.append(card(stay));
-      if (!results.childElementCount) results.append(node("p", selected === "current" ? "ไม่มีสุนัขที่กำลังเข้าพัก" : "ไม่มียอดค้างชำระ"));
+      if (bookings) {
+        cursor = data.nextAfter;
+        for (const booking of data.bookings) results.append(bookingCard(booking));
+      } else {
+        cursor = data.nextBefore;
+        for (const stay of data.stays) results.append(card(stay));
+      }
+      if (!results.childElementCount) results.append(node("p", {
+        bookings:"ไม่พบการจองที่รอเช็กอิน", current:"ไม่มีสุนัขที่กำลังเข้าพัก", outstanding:"ไม่มียอดค้างชำระ",
+      }[selected]));
       more.hidden = cursor === null;
     } catch {
       if (requestId !== requestNumber) return;
@@ -52,6 +66,21 @@ function main() {
     } finally {
       if (requestId === requestNumber) more.disabled = false;
     }
+  }
+
+  const bookingDate = new Intl.DateTimeFormat("th-TH", {dateStyle:"medium", timeZone:"UTC"});
+  function bookingCard(booking) {
+    const article = node("article");
+    article.append(node("h2", booking.customer),
+      node("p", [booking.booking_number || "#" + booking.id, booking.dogs].filter(Boolean).join(" · ")),
+      node("p", [booking.checkin, booking.checkout].map((day) => bookingDate.format(new Date(day))).join(" – ")));
+    if (booking.quote_pending) article.append(node("p", "รอระบุราคา"));
+    else article.append(node("p", "ยอดรวม " + baht.format(booking.total_cents / 100)));
+    article.append(node("p", "รับมัดจำ " + baht.format(booking.deposit_cents / 100)));
+    if (!booking.quote_pending) {
+      article.append(node("p", "ยอดคงเหลือ " + baht.format(Math.max(0, booking.total_cents - booking.deposit_cents) / 100)));
+    }
+    return article;
   }
 
   function card(stay) {
@@ -127,11 +156,18 @@ function main() {
     mode.addEventListener("click", () => {
       if (selected === mode.dataset.mode) return;
       selected = mode.dataset.mode;
+      bookingSearch.hidden = selected !== "bookings";
       for (const option of modes) option.setAttribute("aria-pressed", option === mode);
       message.textContent = "";
       load(true);
     });
   }
+  bookingSearch.addEventListener("submit", (event) => {
+    event.preventDefault();
+    activeBookingQuery = bookingQuery.value;
+    message.textContent = "";
+    load(true);
+  });
   more.addEventListener("click", () => load());
   load();
 }
@@ -145,7 +181,12 @@ export function outstandingPage() {
     <div role="group" aria-label="มุมมองการเข้าพัก">
       <button type="button" data-mode="outstanding" aria-pressed="true">ยอดค้างชำระ</button>
       <button type="button" data-mode="current" aria-pressed="false">กำลังเข้าพัก</button>
+      <button type="button" data-mode="bookings" aria-pressed="false">การจองที่รอเช็กอิน</button>
     </div>
+    <form id="booking-search" hidden>
+      <label>เลขจอง ชื่อลูกค้า หรือชื่อสุนัข <input type="search" maxlength="100" id="booking-query"></label>
+      <button type="submit">ค้นหา</button>
+    </form>
     <p><a id="payment-qr" href="/api/payment-qr.jpg" target="_blank" rel="noopener" hidden>เปิด QR สำหรับชำระเงิน</a></p>
     <p id="message" role="status"></p><div id="stays"></div>
     <button id="more" type="button" hidden>โหลดเพิ่มเติม</button></main>

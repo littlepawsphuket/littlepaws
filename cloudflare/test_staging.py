@@ -31,6 +31,13 @@ with TemporaryDirectory() as folder:
                        [(1,1,b'fixture-photo'),(2,2,b'private-photo'),(3,3,b'other-photo')])
         db.execute("""INSERT INTO transactions(id,occurred_on,kind,category,description,amount,stay_id,receipt)
                       VALUES(1,'2026-01-02','income','boarding','Fixture',500,1,'fixture.pdf')""")
+        db.execute("""INSERT INTO appointments(id,customer_id,checkin,checkout,charged_nights,agreed_total,status,booking_number,stay_id)
+                      VALUES(1,1,'2026-01-10','2026-01-13',2,1200,'pending','AB12CD',NULL),
+                            (2,1,'2026-01-10','2026-01-13',3,1500,'cancelled','EF34GH',NULL),
+                            (3,1,'2026-01-01','2026-01-03',2,500,'pending','IJ56KL',1)""")
+        db.execute("INSERT INTO appointment_dogs(appointment_id,dog_id,nightly_rate_cents) VALUES(1,2,60000)")
+        db.execute("""INSERT INTO transactions(id,occurred_on,kind,category,description,amount,deposit_appointment_id,payment_type)
+                      VALUES(2,'2026-01-02','income','boarding','Fixture deposit',350,1,'deposit')""")
     qr = b'fixture-qr-original'
     snapshot = root / 'snapshot.sqlite3'
     with sqlite3.connect(DB) as source, sqlite3.connect(snapshot) as dest:
@@ -47,7 +54,7 @@ with TemporaryDirectory() as folder:
         db.execute('PRAGMA foreign_keys=ON')
         db.executescript((destination / 'data.sql').read_text())
         assert db.execute('PRAGMA foreign_key_check').fetchall() == []
-        assert db.execute("SELECT stay_id,amount,receipt FROM transactions").fetchone() == (1,500,'fixture.pdf')
+        assert db.execute("SELECT stay_id,amount,receipt FROM transactions WHERE id=1").fetchone() == (1,500,'fixture.pdf')
         assert db.execute("SELECT object_key FROM care_photos WHERE id=1").fetchone() == ('care/1.jpg',)
     assert (destination / 'objects/receipts/fixture.pdf').read_bytes() == b'%PDF-1.0\nfixture'
     assert (destination / 'objects/payment/payment-qr.jpg').read_bytes() == qr
