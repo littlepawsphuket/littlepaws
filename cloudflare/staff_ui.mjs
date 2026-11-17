@@ -3,6 +3,7 @@ const css = `
   main{margin:auto;max-width:52rem;padding:1rem}h1{margin:.2rem 0 1rem}
   article{background:#fff;border:1px solid #c8ded4;border-radius:1rem;margin:.6rem 0;padding:1rem}
   dialog{width:min(34rem,calc(100% - 4rem));max-height:80vh;padding:1rem;border:1px solid #a7cbb9;border-radius:1rem;color:inherit}
+  .photo-actions{display:flex;flex-wrap:wrap;gap:.5rem;margin:.6rem 0}
   .customer-dog-photo{width:6rem;height:6rem;object-fit:cover;border-radius:1rem}
   .delete-deposit{margin-inline-start:.75rem;background:#fff1ed;color:#8b3225;border-color:#e6a99b}
   dialog::backdrop{background:#203c3066}
@@ -299,6 +300,74 @@ function main() {
     return Math.floor(months / 12) + " ปี " + (months % 12) + " เดือน";
   }
 
+  async function resizedDogPhoto(file) {
+    if (file.size > 7 * 1024 * 1024) throw Error("กรุณาเลือกรูปไม่เกิน 7 MB");
+    const url = URL.createObjectURL(file);
+    try {
+      const source = await new Promise((resolve, reject) => {
+        const image = new Image();
+        image.onload = () => resolve(image);
+        image.onerror = () => reject(Error("เปิดรูปนี้ไม่ได้ กรุณาเลือกรูปที่อุปกรณ์รองรับ"));
+        image.src = url;
+      });
+      const scale = Math.min(1, 1024 / Math.max(source.naturalWidth, source.naturalHeight));
+      const canvas = node("canvas");
+      canvas.width = Math.max(1, Math.round(source.naturalWidth * scale));
+      canvas.height = Math.max(1, Math.round(source.naturalHeight * scale));
+      const context = canvas.getContext("2d", {alpha:false});
+      context.fillStyle = "white";
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      context.drawImage(source, 0, 0, canvas.width, canvas.height);
+      for (const quality of [0.84,0.7,0.5]) {
+        const output = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", quality));
+        if (output?.type === "image/jpeg" && output.size <= 512 * 1024) return output;
+      }
+      throw Error("ย่อรูปให้มีขนาดเหมาะสมไม่ได้ กรุณาเลือกรูปอื่น");
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  }
+
+  function photoActions(customerId, dog) {
+    const actions = node("div");
+    actions.className = "photo-actions";
+    const status = node("span", "");
+    status.setAttribute("role", "status");
+    const buttons = [];
+    for (const [label,capture] of [["เลือกรูป",false],["📷 ถ่ายรูป",true]]) {
+      const input = Object.assign(node("input"), {type:"file",accept:"image/*",hidden:true});
+      if (capture) input.setAttribute("capture","environment");
+      const button = Object.assign(node("button", label), {type:"button"});
+      button.addEventListener("click", () => input.click());
+      buttons.push(button);
+      actions.append(input, button);
+      input.addEventListener("change", async () => {
+        const file = input.files[0];
+        input.value = "";
+        if (!file) return;
+        buttons.forEach((item) => { item.disabled = true; });
+        status.textContent = "กำลังย่อและบันทึกรูป…";
+        try {
+          const photo = await resizedDogPhoto(file);
+          const response = await fetch("/api/customers/" + customerId + "/dogs/" + dog.id + "/photo", {
+            method:"PUT", headers:{"Content-Type":"image/jpeg"}, body:photo,
+          });
+          if (!response.ok) throw Error("บันทึกรูปไม่ได้ กรุณาลองใหม่");
+          if (actions.isConnected && customerDialog.open) {
+            await showCustomer(customerId);
+            document.getElementById("customer-status").textContent = "บันทึกรูปสุนัขแล้ว";
+          }
+        } catch (error) {
+          status.textContent = error.message || "บันทึกรูปไม่ได้ กรุณาลองใหม่";
+        } finally {
+          buttons.forEach((item) => { item.disabled = false; });
+        }
+      });
+    }
+    actions.append(status);
+    return actions;
+  }
+
   function dogCard(customerId, dog) {
     const item = node("article");
     item.append(node("h4", dog.name));
@@ -320,7 +389,7 @@ function main() {
     edit.addEventListener("click", () => dogEditor(customerId, dog));
     const remove = Object.assign(node("button", "นำออกจากรายชื่อ"), {type:"button",className:"delete-deposit"});
     remove.addEventListener("click", () => removeDog(customerId, dog, remove));
-    item.append(edit, remove);
+    item.append(photoActions(customerId, dog), edit, remove);
     return item;
   }
 
@@ -672,7 +741,7 @@ export function outstandingPage() {
     headers: {
       "Content-Type":"text/html; charset=utf-8", "Cache-Control":"private, no-store",
       "X-Content-Type-Options":"nosniff",
-      "Content-Security-Policy":`default-src 'none'; script-src 'nonce-${nonce}'; style-src 'nonce-${nonce}'; connect-src 'self'; img-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'`,
+      "Content-Security-Policy":`default-src 'none'; script-src 'nonce-${nonce}'; style-src 'nonce-${nonce}'; connect-src 'self'; img-src 'self' blob:; base-uri 'none'; frame-ancestors 'none'; form-action 'none'`,
     },
   });
 }

@@ -1,6 +1,7 @@
 import { receiveStayPayment, stayBalance, authorizedStaff } from "./stay_payments.mjs";
 import { pendingBookings, bookingDetails, receiveBookingDeposit, deleteBookingDeposit } from "./bookings.mjs";
-import { searchCustomers, customerDetails, dogPhoto, saveCustomer, archiveCustomer } from "./customers.mjs";
+import { searchCustomers, customerDetails, saveCustomer, archiveCustomer } from "./customers.mjs";
+import { dogPhoto, saveDogPhoto, photoLimit } from "./dog_photos.mjs";
 import { saveDog, archiveDog } from "./dogs.mjs";
 import { outstandingPage } from "./staff_ui.mjs";
 
@@ -24,7 +25,7 @@ async function authorizedUser(env, ctx) {
     .bind(identity.email.trim().toLowerCase()).first();
 }
 
-async function smallJson(request, limit = 2048) {
+async function boundedBody(request, limit) {
   const reader = request.body?.getReader();
   if (!reader) return null;
   const buffer = new Uint8Array(limit);
@@ -40,12 +41,22 @@ async function smallJson(request, limit = 2048) {
       buffer.set(value, size);
       size += value.byteLength;
     }
-    const data = JSON.parse(new TextDecoder("utf-8", {fatal: true}).decode(buffer.subarray(0, size)));
-    return data && !Array.isArray(data) && typeof data === "object" ? data : null;
+    return buffer.subarray(0, size);
   } catch {
     return null;
   } finally {
     reader.releaseLock();
+  }
+}
+
+async function smallJson(request, limit = 2048) {
+  const bytes = await boundedBody(request, limit);
+  if (!bytes) return null;
+  try {
+    const data = JSON.parse(new TextDecoder("utf-8", {fatal:true}).decode(bytes));
+    return data && !Array.isArray(data) && typeof data === "object" ? data : null;
+  } catch {
+    return null;
   }
 }
 
@@ -108,6 +119,17 @@ export default {
       const user = await authorizedUser(env, ctx);
       if (!user) return json({error: "access_required"}, 403);
       if (isFile) return await privateFile(request, env, receiptMatch);
+      if (customerMatch?.[2] && request.method === "PUT") {
+        if (request.headers.get("Origin") !== url.origin) return json({error:"invalid_origin"}, 403);
+        if (request.headers.get("Content-Type") !== "image/jpeg") return json({error:"invalid_content_type"}, 415);
+        if (!env.MEDIA) return json({error:"temporarily_unavailable"}, 503);
+        const [customerId,dogId] = customerMatch.slice(1).map(Number);
+        if (![customerId,dogId].every((id) => Number.isSafeInteger(id) && id > 0)) return json({error:"not_found"}, 404);
+        const bytes = await boundedBody(request, photoLimit);
+        if (!bytes) return json({error:"invalid_size"}, 413);
+        const status = await saveDogPhoto(env.DB, env.MEDIA, customerId, dogId, bytes, user);
+        return json({status}, {saved:200,invalid:400,not_found:404}[status]);
+      }
       if (dogMatch) {
         const customerId = Number(dogMatch[1]);
         const dogId = dogMatch[2] ? Number(dogMatch[2]) : null;

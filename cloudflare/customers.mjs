@@ -34,16 +34,6 @@ export async function customerDetails(db, id, offset) {
   return {customer, dogs:pets.results, stays, nextOffset:history.results.length > stays.length ? offset + stays.length : null};
 }
 
-export async function dogPhoto(db, media, customerId, dogId) {
-  const record = await db.prepare(`
-    SELECT p.object_key FROM dog_photos p JOIN dogs d ON d.id=p.dog_id
-    JOIN customers c ON c.id=d.customer_id
-    WHERE c.id=? AND d.id=? AND c.archived=0 AND d.archived=0
-  `).bind(customerId, dogId).first();
-  if (record?.object_key !== `dogs/${dogId}.jpg`) return null;
-  return media.get(record.object_key);
-}
-
 const fieldLimits = {name:120, owner_phone:50, line_id:120, emergency_address:500, note:800};
 
 export async function saveCustomer(db, id, form, actor) {

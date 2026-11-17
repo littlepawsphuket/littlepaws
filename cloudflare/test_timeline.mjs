@@ -8,6 +8,8 @@ import {receiveStayPayment} from "./stay_payments.mjs";
 
 const [file, media] = process.argv.slice(2);
 const sqlite = new DatabaseSync(file);
+const updatedMedia = new Map();
+const removedMedia = new Set();
 const env = {
   DB: {
     prepare(sql) {
@@ -35,9 +37,13 @@ const env = {
   },
   MEDIA: {
     async get(key) {
+      if (removedMedia.has(key)) return null;
+      if (updatedMedia.has(key)) return {body:updatedMedia.get(key)};
       try { return {body: await readFile(join(media, key))}; }
       catch (error) { if (error.code !== "ENOENT") throw error; return null; }
     },
+    async put(key, bytes) { updatedMedia.set(key, Uint8Array.from(bytes)); },
+    async delete(key) { updatedMedia.delete(key); removedMedia.add(key); },
     head: (key) => stat(join(media, key)),
   },
 };
@@ -142,7 +148,24 @@ assert.match(customer.stays.find((stay) => stay.id === 1).dogs, /Other dog/);
 assert.equal((await staffCall("/api/customers/3/dogs/2/photo", {}, context)).status, 404);
 const profilePhoto = await staffCall(customerDogPhoto, {}, context);
 assert.equal(profilePhoto.headers.get("Cache-Control"), "private, no-store");
-assert.equal(await profilePhoto.text(), "fixture-dog-photo");
+const originalDogPhoto = new Uint8Array(await profilePhoto.arrayBuffer());
+assert.equal(originalDogPhoto[0], 255);
+const photoUpload = (body, origin = "https://staff.example.test") => ({
+  method:"PUT", headers:{Origin:origin,"Content-Type":"image/jpeg"}, body,
+});
+assert.equal((await staffCall(customerDogPhoto, photoUpload(originalDogPhoto))).status, 403);
+assert.equal((await staffCall(customerDogPhoto, photoUpload(originalDogPhoto, "https://other.example.test"), context)).status, 403);
+assert.equal((await staffCall("/api/customers/3/dogs/2/photo", photoUpload(originalDogPhoto), context)).status, 404);
+assert.equal((await staffCall(customerDogPhoto, photoUpload(new Uint8Array(512 * 1024 + 1)), context)).status, 413);
+assert.equal((await staffCall(customerDogPhoto, photoUpload(new Uint8Array([255, 216, 255, 217])), context)).status, 400);
+assert.equal((await staffCall(customerDogPhoto, photoUpload(originalDogPhoto), context)).status, 200);
+const firstPhotoKey = sqlite.prepare("SELECT object_key FROM dog_photos WHERE dog_id=2").get().object_key;
+assert.match(firstPhotoKey, /^dogs\/2\/[a-f0-9-]{36}\.jpg$/);
+assert.equal(removedMedia.has("dogs/2.jpg"), true);
+assert.equal((await staffCall(customerDogPhoto, photoUpload(originalDogPhoto), context)).status, 200);
+assert.equal(removedMedia.has(firstPhotoKey), true);
+const replacedPhoto = await staffCall(customerDogPhoto, {}, context);
+assert.deepEqual(new Uint8Array(await replacedPhoto.arrayBuffer()), originalDogPhoto);
 const customerForm = {name:" ลูกค้าทดสอบ ",owner_phone:"0811234567",line_id:"test-line",
   emergency_address:"ภูเก็ต",note:"Test note",key:"e".repeat(32)};
 const customerWrite = (method, body, origin = "https://staff.example.test") => ({
