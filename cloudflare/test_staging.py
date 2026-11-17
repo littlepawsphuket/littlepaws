@@ -69,4 +69,6 @@ with TemporaryDirectory() as folder:
         assert db.execute("SELECT object_key FROM care_photos WHERE id=1").fetchone() == ('care/1.jpg',)
     assert (destination / 'objects/receipts/fixture.pdf').read_bytes() == b'%PDF-1.0\nfixture'
     assert (destination / 'objects/payment/payment-qr.jpg').read_bytes() == qr
+    logo = Path(__file__).resolve().parents[1] / 'app' / 'static' / 'little-paws-logo.png'
+    assert (destination / 'objects/brand/little-paws-logo.png').read_bytes() == logo.read_bytes()
     subprocess.run(['node', 'cloudflare/test_timeline.mjs', str(d1), str(destination/'objects')], check=True)

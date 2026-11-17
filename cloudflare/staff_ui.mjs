@@ -42,7 +42,7 @@ const css = `
   button{background:#155747;color:#fff;cursor:pointer}button:disabled{opacity:.65} [hidden]{display:none}
 `;
 
-function main(intakeGroups,couponScreen) {
+function main(intakeGroups,couponScreen,canExport) {
   const results = document.getElementById("stays");
   const message = document.getElementById("message");
   const more = document.getElementById("more");
@@ -1607,6 +1607,69 @@ function main(intakeGroups,couponScreen) {
     loadTimeline(true);
   }
 
+  function documentActions(kind,id,controller,paymentId=null) {
+    const group = node("section");
+    group.className = "intake-details";
+    const heading = {stay:"เอกสารสรุปการเข้าพัก",booking:"ใบยืนยันการจอง",deposit:"ใบรับมัดจำ"}[kind];
+    group.append(node("h4",heading));
+    const language = node("select");
+    language.append(new Option("ไทย","th"),new Option("English","en"));
+    const languageLabel = node("label","ภาษาเอกสาร");
+    languageLabel.append(language);
+    const base = "/api/documents/"+kind+"/"+id+(paymentId === null ? "" : "/"+paymentId);
+    const formatUrl = (kind) => base+"."+kind+"?lang="+language.value;
+    const print = Object.assign(node("a","เปิดแบบพิมพ์"),{href:formatUrl("html"),target:"_blank",rel:"noopener"});
+    const actions = node("div");
+    actions.className = "photo-actions";
+    actions.append(languageLabel,print);
+    group.append(actions);
+    const preview = node("div");
+    const status = node("p","");
+    status.setAttribute("role","status");
+    group.append(status,preview);
+    let imageUrl;
+    let generation = 0;
+    function clearImage() {
+      generation++;
+      if (imageUrl) URL.revokeObjectURL(imageUrl);
+      imageUrl = undefined;
+      preview.replaceChildren();
+    }
+    controller.signal.addEventListener("abort",clearImage,{once:true});
+    language.addEventListener("change",() => {
+      print.href = formatUrl("html");
+      status.textContent = "";
+      clearImage();
+    });
+    if (canExport) {
+      const pdf = Object.assign(node("a","ดาวน์โหลด PDF"),{href:formatUrl("pdf"),target:"_blank",rel:"noopener"});
+      const png = Object.assign(node("button","ดูรูป PNG"),{type:"button"});
+      actions.append(pdf,png);
+      language.addEventListener("change",() => { pdf.href = formatUrl("pdf"); });
+      png.onclick = async () => {
+        clearImage();
+        const attempt = generation;
+        png.disabled = true;
+        status.textContent = "กำลังสร้างรูป…";
+        try {
+          const response = await fetch(formatUrl("png"),{signal:controller.signal});
+          if (!response.ok || !response.headers.get("Content-Type")?.startsWith("image/png")) throw Error();
+          const blob = await response.blob();
+          if (attempt !== generation || controller.signal.aborted) return;
+          imageUrl = URL.createObjectURL(blob);
+          const img = Object.assign(node("img"),{src:imageUrl,alt:heading,className:"coupon-preview"});
+          const fileName = "little-paws-"+kind+"-"+id+(paymentId === null ? "" : "-"+paymentId)+"-"+language.value+".png";
+          const download = Object.assign(node("a","ดาวน์โหลดรูป"),{href:imageUrl,download:fileName});
+          preview.append(img,download,node("p","บนมือถือ แตะค้างที่รูปเพื่อบันทึกหรือแชร์"));
+          status.textContent = "";
+        } catch {
+          if (attempt === generation && !controller.signal.aborted) status.textContent = "สร้างรูปไม่ได้ กรุณาลองใหม่หรือเปิดแบบพิมพ์";
+        } finally { png.disabled = false; }
+      };
+    }
+    return group;
+  }
+
   async function showStay(id) {
     bookingRequest?.abort();
     const controller = bookingRequest = new AbortController();
@@ -1675,6 +1738,7 @@ function main(intakeGroups,couponScreen) {
           bookingContent.append(node("p",link.dog_name + " · " + link.view_count.toLocaleString("th-TH") + " ครั้ง"));
         }
       }
+      bookingContent.append(documentActions("stay",stay.id,controller));
       if (stay.consent) {
         bookingContent.append(node("h4","ลายเซ็นลูกค้า"),node("p",stay.consent.customer_name));
         const canvas = signatureCanvas();
@@ -1711,6 +1775,7 @@ function main(intakeGroups,couponScreen) {
         stay.addEventListener("click",() => showStay(data.stay_id));
         bookingContent.append(stay);
       }
+      bookingContent.append(documentActions("booking",data.id,controller));
       if (data.note) bookingContent.append(node("p", data.note));
       bookingContent.append(node("h3", "สุนัขที่จอง"));
       const dogs = node("ul");
@@ -1728,6 +1793,7 @@ function main(intakeGroups,couponScreen) {
           row.append(depositDeleteButton(data.id, payment));
         }
         bookingContent.append(row);
+        if (payment.payment_type === "deposit") bookingContent.append(documentActions("deposit",data.id,controller,payment.id));
       }
       bookingContent.append(node("p", "รับชำระแล้ว " + money(data.paid_cents)));
       if (data.balance_cents !== null) {
@@ -1882,7 +1948,7 @@ function main(intakeGroups,couponScreen) {
   load();
 }
 
-export function outstandingPage(isAdmin = false) {
+export function outstandingPage(isAdmin = false,canExport = false) {
   const nonce = crypto.randomUUID().replaceAll("-", "");
   return new Response(`<!doctype html><html lang="th"><meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -1938,7 +2004,7 @@ export function outstandingPage(isAdmin = false) {
       <h2 id="coupon-title">จัดการคูปอง</h2><button type="button" id="coupon-close" autofocus>ปิด</button>
       <p id="coupon-status" role="status"></p><div id="coupon-content"></div>
     </dialog>
-    <script nonce="${nonce}">(${main.toString()})(${JSON.stringify(intakeGroups)},${couponScreen.toString()})</script></html>`, {
+    <script nonce="${nonce}">(${main.toString()})(${JSON.stringify(intakeGroups)},${couponScreen.toString()},${canExport})</script></html>`, {
     headers: {
       "Content-Type":"text/html; charset=utf-8", "Cache-Control":"private, no-store",
       "X-Content-Type-Options":"nosniff",

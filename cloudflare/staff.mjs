@@ -3,6 +3,7 @@ import { validDay, pendingBookings, bookingCalendar, bookingDetails, receiveBook
 import { listCoupons, couponDetails, saveCoupon, archiveCoupon } from "./coupon_admin.mjs";
 import { addCarePhoto, removeCarePhoto } from "./care_media.mjs";
 import { staffTimeline, staffCarePhoto, manageTimelineLink, writeCareEvent, timelineOrigin } from "./care_staff.mjs";
+import { exportDocument } from "./document_exports.mjs";
 import { dashboardFinance } from "./dashboard_finance.mjs";
 import { staySummary } from "./stay_summary.mjs";
 import { checkInBooking, checkInDirect, previewDirectStay, previewCheckInCoupon, checkInTerms } from "./check_in.mjs";
@@ -121,6 +122,7 @@ export default {
     const careMediaMatch = /^\/api\/stays\/(\d+)\/dogs\/(\d+)\/timeline\/events\/(\d+)\/photos(?:\/(\d+))?$/.exec(url.pathname);
     const timelineMatch = /^\/api\/stays\/(\d+)\/dogs\/(\d+)\/timeline(?:\/photos\/(\d+))?$/.exec(url.pathname);
     const staySummaryMatch = /^\/api\/stays\/(\d+)$/.exec(url.pathname);
+    const documentMatch = /^\/api\/documents\/(booking|deposit|stay)\/(\d+)(?:\/(\d+))?\.(html|pdf|png)$/.exec(url.pathname);
     const couponMatch = /^\/api\/coupons(?:\/(\d+))?$/.exec(url.pathname);
     const directCheckIn = url.pathname === "/api/stays/check-in";
     const couponPreview = url.pathname === "/api/stays/check-in/coupon";
@@ -129,11 +131,22 @@ export default {
     const bookingMatch = /^\/api\/bookings\/(\d+)$/.exec(url.pathname);
     const receiptMatch = /^\/api\/receipts\/(\d+)$/.exec(url.pathname);
     const isFile = receiptMatch || url.pathname === "/api/payment-qr.jpg";
-    if (!match && !depositMatch && !dogMatch && !customerMatch && !bookingMatch && !checkInMatch && !couponMatch && !directCheckIn && !directPreview && !couponPreview && !staySummaryMatch && !timelineMatch && !careMediaMatch && !isFile && !["/", "/api/account", "/api/dashboard/finance", "/api/customers", "/api/bookings", "/api/bookings/rates", "/api/bookings/calendar", "/api/bookings/pending", "/api/stays/outstanding", "/api/stays/current"].includes(url.pathname)) return json({error: "not_found"}, 404);
+    if (!match && !depositMatch && !dogMatch && !customerMatch && !bookingMatch && !checkInMatch && !couponMatch && !documentMatch && !directCheckIn && !directPreview && !couponPreview && !staySummaryMatch && !timelineMatch && !careMediaMatch && !isFile && !["/", "/api/account", "/api/dashboard/finance", "/api/customers", "/api/bookings", "/api/bookings/rates", "/api/bookings/calendar", "/api/bookings/pending", "/api/stays/outstanding", "/api/stays/current"].includes(url.pathname)) return json({error: "not_found"}, 404);
     try {
       const user = await authorizedUser(env, ctx);
       if (!user) return json({error: "access_required"}, 403);
       if (isFile) return await privateFile(request, env, receiptMatch);
+      if (documentMatch) {
+        if (request.method !== "GET") return json({error:"method_not_allowed"},405);
+        if (request.headers.get("Sec-Fetch-Site") === "cross-site") return json({error:"invalid_origin"},403);
+        const [,kind,rawId,rawPayment,format] = documentMatch;
+        const id = Number(rawId);
+        const paymentId = rawPayment ? Number(rawPayment) : null;
+        if (![id,paymentId ?? 1].every((value) => Number.isSafeInteger(value) && value>0) ||
+            (kind === "deposit") !== (paymentId !== null)) return json({error:"not_found"},404);
+        const lang = url.searchParams.get("lang") === "en" ? "en" : "th";
+        return await exportDocument(env,{kind,id,paymentId,format,lang});
+      }
       if (careMediaMatch) {
         const [stayId,dogId,eventId,photoId] = careMediaMatch.slice(1).map((value) => value === undefined ? null : Number(value));
         if (![stayId,dogId,eventId,photoId ?? 1].every((id) => Number.isSafeInteger(id) && id > 0)) return json({error:"not_found"},404);
@@ -314,7 +327,7 @@ export default {
       }
       if (!match && !depositMatch) {
         if (request.method !== "GET") return json({error: "method_not_allowed"}, 405);
-        if (url.pathname === "/") return outstandingPage(Boolean(user.is_admin));
+        if (url.pathname === "/") return outstandingPage(Boolean(user.is_admin),Boolean(env.BROWSER));
         if (url.pathname === "/api/account") {
           return json({id: user.id, displayName: user.display_name, isAdmin: !!user.is_admin});
         }

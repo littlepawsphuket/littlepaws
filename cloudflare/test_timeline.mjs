@@ -358,6 +358,46 @@ assert.equal(detail.charged_nights, 2);
 const linkedBooking = await (await staffCall("/api/bookings/3", {}, context)).json();
 assert.equal(linkedBooking.stay_id, 1);
 assert.equal(linkedBooking.balance_cents, null);
+const renderedDocuments = [];
+const staffWithRenderer = {...staffEnv,BROWSER:{
+  async quickAction(action, options) {
+    renderedDocuments.push({action,options});
+    return action === "pdf"
+      ? new Response("%PDF-test",{headers:{"Content-Type":"application/pdf"}})
+      : new Response(new Uint8Array([137,80,78,71]),{headers:{"Content-Type":"image/png"}});
+  },
+}};
+const documentRequest = (path,options,identity=context) =>
+  staff.fetch(new Request("https://staff.example.test"+path,options),staffWithRenderer,identity);
+const bookingDocument = "/api/documents/booking/1";
+assert.equal((await staffCall(bookingDocument+".html")).status,403);
+assert.equal((await get(bookingDocument+".html")).status,404);
+assert.equal((await staffCall(bookingDocument+".pdf",{},context)).status,503);
+assert.equal((await documentRequest(bookingDocument+".pdf",{headers:{"Sec-Fetch-Site":"cross-site"}})).status,403);
+const previewDocument = await documentRequest(bookingDocument+".html?lang=th");
+assert.equal(previewDocument.status,200);
+assert.match(previewDocument.headers.get("Content-Security-Policy"),/default-src 'none'/);
+const previewBookingHtml = await previewDocument.text();
+assert.match(previewBookingHtml,/ใบยืนยันการจอง/);
+assert.match(previewBookingHtml,/AB12CD/);
+assert.match(previewBookingHtml,/081-426-6241/);
+assert.match(previewBookingHtml,/data:image\/jpeg;base64,/);
+assert.match(previewBookingHtml,/จำนวนวัน/);
+const bookingImage = await documentRequest(bookingDocument+".png?lang=en");
+assert.equal(bookingImage.headers.get("Content-Type"),"image/png");
+assert.match(bookingImage.headers.get("Content-Disposition"),/little-paws-booking-1-en\.png/);
+assert.equal(renderedDocuments.at(-1).action,"screenshot");
+assert.match(renderedDocuments.at(-1).options.html,/Booking confirmation/);
+const originalDepositId = detail.payments[0].id;
+const receiptDocument = await documentRequest("/api/documents/deposit/1/"+originalDepositId+".pdf?lang=en");
+assert.equal(receiptDocument.status,200);
+assert.equal(receiptDocument.headers.get("Cache-Control"),"private, no-store");
+assert.match(renderedDocuments.at(-1).options.html,/Deposit receipt/);
+assert.match(renderedDocuments.at(-1).options.html,/Remaining balance for check-in/);
+assert.match(renderedDocuments.at(-1).options.html,/฿850\.00/);
+assert.equal((await documentRequest("/api/documents/deposit/2/"+originalDepositId+".pdf")).status,404);
+const untrustedBooking = await (await documentRequest("/api/documents/booking/3.html?lang=en")).text();
+assert.doesNotMatch(untrustedBooking, /<script>/);
 const depositPath = "/api/bookings/1/deposits";
 const depositPayload = {amountCents:25000, paymentDate:"2026-01-02", receivedTime:"10:15", key:"a".repeat(32)};
 const depositRequest = (body, origin = "https://staff.example.test") => ({
@@ -588,6 +628,16 @@ assert.deepEqual(staySummary.intake,{food_packed:"1",food:"อาหารเม
 assert.equal(staySummary.consent.signed_language,"en");
 assert.deepEqual(JSON.parse(staySummary.consent.signature),checkIn.signature);
 assert.equal(sqlite.prepare("SELECT count(*) AS count FROM stay_consents WHERE stay_id=?").get(firstCheckIn.stayId).count,1);
+const stayDoc = await documentRequest("/api/documents/stay/"+firstCheckIn.stayId+".pdf?lang=en");
+assert.equal(stayDoc.status,200);
+const stayDocHtml = renderedDocuments.at(-1).options.html;
+assert.match(stayDocHtml,/Boarding summary/);
+assert.match(stayDocHtml,new RegExp(staySummary.stay_number));
+assert.match(stayDocHtml,/AB12CD/);
+assert.match(stayDocHtml,/Accepted and signed/);
+assert.match(stayDocHtml,/<polyline points="10,10 30,20"/);
+assert.match(stayDocHtml,/รับทราบ|Boarding terms|Terms and Conditions/i);
+assert.match(stayDocHtml,new RegExp(Buffer.from("fixture-qr-original").toString("base64")));
 assert.equal((await staffCall("/api/stays/" + firstCheckIn.stayId + "/check-out",checkoutOptions,context)).status,200);
 const finalPayment = customerWrite("POST",{amountCents:10000,paymentDate:"2026-01-13",receivedTime:"18:35",key:"7".repeat(32)});
 assert.equal((await staffCall(staySummaryPath+"/payments",finalPayment,context)).status,201);

@@ -173,3 +173,96 @@ export const intakeGroups = [
     ]
   }
 ];
+export const intakeGroupsEn = [
+  {
+    "title": "Belongings and care items",
+    "fields": [
+      [
+        "food",
+        "Food",
+        "item"
+      ],
+      [
+        "treats",
+        "Treats",
+        "item"
+      ],
+      [
+        "supplies",
+        "Medication / supplements brought in",
+        "item"
+      ],
+      [
+        "bedding",
+        "Bed, blanket, or toy",
+        "item"
+      ],
+      [
+        "other_items",
+        "Other belongings",
+        "textarea"
+      ]
+    ]
+  },
+  {
+    "title": "Physical examination",
+    "fields": [
+      [
+        "exam_eyes",
+        "Eyes",
+        "exam"
+      ],
+      [
+        "exam_ears",
+        "Ears",
+        "exam"
+      ],
+      [
+        "exam_skin",
+        "Skin",
+        "exam"
+      ],
+      [
+        "exam_coat",
+        "Coat",
+        "exam"
+      ],
+      [
+        "health",
+        "Eyes, ears, skin, and coat",
+        {
+          "normal": "Normal",
+          "abnormal": "Abnormal"
+        }
+      ],
+      [
+        "health_note",
+        "Health check findings",
+        "textarea"
+      ],
+      [
+        "behavior",
+        "Temperament at intake",
+        {
+          "friendly": "Friendly",
+          "anxious": "Anxious",
+          "aggressive": "Aggressive"
+        }
+      ],
+      [
+        "social",
+        "Socializing with other dogs",
+        {
+          "yes": "Yes",
+          "no": "No",
+          "special": "Requires special care"
+        }
+      ],
+      [
+        "staff_note",
+        "Staff notes",
+        "textarea"
+      ]
+    ]
+  }
+];

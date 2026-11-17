@@ -9,6 +9,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from app.backup_archive import DATABASE_NAME, PAYMENT_QR_NAME, validate_archive
+from app.settings import THEMES
 
 PHOTO_TABLES = {
     'dog_photos': ('dog_id', 'dogs'),
@@ -105,6 +106,12 @@ def export(archive, destination):
             if qr.is_file():
                 write_object(bundle, f'payment/{PAYMENT_QR_NAME}', qr.read_bytes(), manifest)
             write_sql(db, bundle / 'data.sql')
+        static = project / 'app' / 'static'
+        brand_names = ['little-paws-logo.png', *(f'mascot-{theme}.webp' for theme in THEMES if theme != 'classic')]
+        for name in brand_names:
+            image = static / name
+            if image.is_file():
+                write_object(bundle, f'brand/{name}', image.read_bytes(), manifest)
         (bundle / 'objects.json').write_text(json.dumps(manifest, indent=2) + '\n', encoding='utf-8')
         bundle.rename(destination)
 
