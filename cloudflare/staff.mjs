@@ -8,6 +8,7 @@ import { exportDocument } from "./document_exports.mjs";
 import { dashboardFinance } from "./dashboard_finance.mjs";
 import { staySummary } from "./stay_summary.mjs";
 import { stayHistory } from "./stay_history.mjs";
+import { removeStayPayment, cancelStay, recordStayRefund } from "./stay_payments.mjs";
 import { checkInBooking, checkInDirect, previewDirectStay, previewCheckInCoupon, checkInTerms } from "./check_in.mjs";
 import { saveBooking, archiveBooking, bookingRates } from "./booking_writes.mjs";
 import { searchCustomers, customerDetails, saveCustomer, archiveCustomer } from "./customers.mjs";
@@ -138,10 +139,29 @@ export default {
     const settings = url.pathname === "/api/settings";
     const holidayMatch = /^\/api\/settings\/holidays(?:\/(\d+))?$/.exec(url.pathname);
     const history = url.pathname === "/api/stays/history";
-    if (!match && !depositMatch && !dogMatch && !customerMatch && !bookingMatch && !checkInMatch && !couponMatch && !documentMatch && !directCheckIn && !directPreview && !couponPreview && !staySummaryMatch && !timelineMatch && !careMediaMatch && !careExportMatch && !isFile && !settings && !holidayMatch && !history && !["/", "/api/account", "/api/dashboard/finance", "/api/customers", "/api/bookings", "/api/bookings/rates", "/api/bookings/calendar", "/api/bookings/pending", "/api/stays/outstanding", "/api/stays/current"].includes(url.pathname)) return json({error: "not_found"}, 404);
+    const stayChangeMatch = /^\/api\/stays\/(\d+)\/(cancel|refund|payments\/(\d+))$/.exec(url.pathname);
+    if (!match && !stayChangeMatch && !depositMatch && !dogMatch && !customerMatch && !bookingMatch && !checkInMatch && !couponMatch && !documentMatch && !directCheckIn && !directPreview && !couponPreview && !staySummaryMatch && !timelineMatch && !careMediaMatch && !careExportMatch && !isFile && !settings && !holidayMatch && !history && !["/", "/api/account", "/api/dashboard/finance", "/api/customers", "/api/bookings", "/api/bookings/rates", "/api/bookings/calendar", "/api/bookings/pending", "/api/stays/outstanding", "/api/stays/current"].includes(url.pathname)) return json({error: "not_found"}, 404);
     try {
       const user = await authorizedUser(env, ctx);
       if (!user) return json({error: "access_required"}, 403);
+      if (stayChangeMatch) {
+        const stayId = Number(stayChangeMatch[1]);
+        const action = stayChangeMatch[2];
+        const paymentId = stayChangeMatch[3] === undefined ? null : Number(stayChangeMatch[3]);
+        if (![stayId,paymentId ?? 1].every((id) => Number.isSafeInteger(id) && id > 0)) return json({error:"not_found"},404);
+        if (request.method !== (paymentId === null ? "POST" : "DELETE")) return json({error:"method_not_allowed"},405);
+        if (request.headers.get("Origin") !== url.origin) return json({error:"invalid_origin"},403);
+        if (request.headers.get("Content-Type")?.split(";",1)[0].trim().toLowerCase() !== "application/json") {
+          return json({error:"invalid_content_type"},415);
+        }
+        const form = await smallJson(request,8192);
+        if (!form) return json({status:"invalid"},400);
+        const status = paymentId !== null ? await removeStayPayment(env.DB,stayId,paymentId,form,user)
+          : action === "cancel" ? await cancelStay(env.DB,stayId,form,user)
+          : await recordStayRefund(env.DB,stayId,form,user);
+        return json({status},{deleted:200,cancelled:200,duplicate:200,saved:201,invalid:400,forbidden:403,
+          not_found:404,conflict:409,stay_closed:409,refund_exceeded:422}[status]);
+      }
       if (settings || holidayMatch) {
         if (!user.is_admin) return json({error:"admin_required"},403);
         if (settings && request.method === "GET") return json(await systemSettings(env.DB));

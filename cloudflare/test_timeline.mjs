@@ -131,6 +131,7 @@ sqlite.exec(await readFile(new URL("./direct_checkin.sql", import.meta.url), "ut
 sqlite.exec(await readFile(new URL("./coupon_admin.sql", import.meta.url), "utf8"));
 sqlite.exec(await readFile(new URL("./care_writes.sql", import.meta.url), "utf8"));
 sqlite.exec(await readFile(new URL("./care_photo_writes.sql", import.meta.url), "utf8"));
+sqlite.exec(await readFile(new URL("./stay_payment_writes.sql", import.meta.url), "utf8"));
 sqlite.exec("INSERT INTO staff_access_identities (email,user_id) VALUES ('admin@example.test',1)");
 const actor = {id:1,email:"admin@example.test"};
 const now = new Date("2026-11-17T06:30:00Z");
@@ -898,6 +899,63 @@ assert.equal(firstHistoryPage.nextBefore,"2000-01-01:1001");
 const secondHistoryPage = await readHistory(pagination+"&before="+encodeURIComponent(firstHistoryPage.nextBefore));
 assert.deepEqual(secondHistoryPage.stays.map((stay) => stay.id),[1000]);
 assert.equal(secondHistoryPage.nextBefore,null);
+sqlite.exec(`INSERT INTO stays(id,customer_id,checkin,checkout,status,agreed_total,payment_tracking)
+  VALUES(2000,1,'2026-01-01','2026-01-03','checked_in',1000,1),
+        (2001,1,'2026-01-01','2026-01-03','completed',1000,1)`);
+sqlite.exec(`INSERT INTO transactions
+  (id,occurred_on,kind,category,description,amount,stay_id,payment_type,payment_key,received_time,auto_stay)
+  VALUES (2000,'2026-01-02','income','boarding','legacy no payment key',300,2000,'checkin',NULL,NULL,0),
+    (2001,'2026-01-02','income','boarding','normal deposit',400,2000,'deposit','new-key','09:45',0),
+    (2002,'2026-01-02','income','boarding','manual income',500,2000,'',NULL,NULL,0),
+    (2003,'2026-01-02','income','boarding','automatic legacy income',800,2000,'',NULL,NULL,1),
+    (2004,'2026-01-02','income','boarding','completed payment',200,2001,'checkin',NULL,NULL,0)`);
+sqlite.exec("INSERT INTO stay_dogs(stay_id,dog_id) VALUES(2000,1)");
+sqlite.prepare("INSERT INTO care_share_links(stay_id,dog_id,token) VALUES(2000,1,?)").run("m".repeat(43));
+const financialStay = "/api/stays/2000";
+const removal = {requestKey:"d".repeat(32),reason:"ลงรายการซ้ำ",paymentKey:null,amountCents:30000,
+  occurredOn:"2026-01-02",receivedTime:null,paymentType:"checkin"};
+const removePayment = (form,path = financialStay+"/payments/2000",identity = context) =>
+  staffCall(path,customerWrite("DELETE",form),identity);
+const financialSummary = async () => (await staffCall(financialStay,{},context)).json();
+assert.equal((await get(financialStay+"/payments/2000")).status,404);
+assert.equal((await staffCall(financialStay+"/payments/2000",customerWrite("DELETE",removal))).status,403);
+assert.equal((await removePayment({...removal,reason:" "})).status,400);
+assert.equal((await removePayment({...removal,amountCents:100})).status,409);
+assert.equal((await removePayment({...removal,amountCents:20000},"/api/stays/2001/payments/2004")).status,409);
+assert.equal((await staffCall("/api/stays/2001/cancel",customerWrite("POST",{reason:"duplicate"}),context)).status,409);
+const paymentRemoval = await Promise.all([removePayment(removal),removePayment(removal)]);
+assert.ok(paymentRemoval.every((response) => response.status === 200));
+const removedPayment = await financialSummary();
+assert.equal(removedPayment.due_cents,60000);
+assert.equal(removedPayment.payment_deletions.length,1);
+assert.equal(removedPayment.payment_deletions[0].reason,"ลงรายการซ้ำ");
+assert.equal(sqlite.prepare("SELECT count(*) AS n FROM transactions WHERE id=2000").get().n,0);
+assert.equal((await get(path("m")+"?day=all")).status,200);
+const cancel = (reason) => staffCall(financialStay+"/cancel",customerWrite("POST",{reason}),context);
+assert.equal((await cancel("")).status,400);
+assert.equal((await cancel("ลูกค้ายกเลิก")).status,200);
+assert.equal((await cancel("เขียนซ้ำ")).status,200);
+assert.equal((await get(path("m")+"?day=all")).status,404);
+const cancelled = await financialSummary();
+assert.equal(cancelled.status,"cancelled");
+assert.equal(cancelled.cancel_reason,"ลูกค้ายกเลิก");
+assert.equal(cancelled.due_cents,0);
+assert.equal(cancelled.payments.length,0);
+assert.equal(cancelled.payment_deletions.length,2);
+assert.equal(cancelled.refundable_cents,50000);
+assert.equal(sqlite.prepare("SELECT amount FROM transactions WHERE id=2003").get().amount,0);
+const recordRefund = (key,amountCents,reason = "คืนยอดจากรายการรับเงินจริง") =>
+  staffCall(financialStay+"/refund",customerWrite("POST",{key,amountCents,reason,paymentDate:"2026-01-02",receivedTime:"10:40"}),context);
+assert.equal((await recordRefund("a".repeat(32),50001)).status,422);
+const refundRace = await Promise.all([recordRefund("a".repeat(32),30000),recordRefund("b".repeat(32),30000)]);
+assert.deepEqual(refundRace.map(({status}) => status).sort(),[201,422]);
+const successfulKey = refundRace[0].status === 201 ? "a".repeat(32) : "b".repeat(32);
+assert.equal((await recordRefund(successfulKey,30000)).status,200);
+const refundSummary = await financialSummary();
+assert.equal(refundSummary.refundable_cents,20000);
+assert.equal(refundSummary.refunds.length,1);
+assert.equal(refundSummary.refunds[0].amount,300);
+assert.equal(refundSummary.refunds[0].received_time,"10:40");
 sqlite.exec("UPDATE app_users SET active=0 WHERE id=1");
 assert.equal((await staffCall(paymentPath, staffOptions, context)).status, 403);
 assert.equal(await receiveStayPayment(env.DB, 1, {...payment, key: "5".repeat(32)}, actor, now), "forbidden");

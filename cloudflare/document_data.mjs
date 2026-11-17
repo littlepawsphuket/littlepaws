@@ -51,9 +51,7 @@ export async function documentData(env, kind, id, paymentId, format, lang) {
     db.prepare(`SELECT dog_id,object_key FROM dog_photos WHERE dog_id IN (SELECT value FROM json_each(?))`)
       .bind(JSON.stringify(dogIds)),
     db.prepare(`SELECT c.owner_phone,c.line_id,
-      (SELECT ${lang === "en" ? "COALESCE(terms_en,terms)" : "terms"} FROM stay_consents WHERE stay_id=s.id ORDER BY id DESC LIMIT 1) AS terms,
-      (SELECT json_group_array(json_object('date',t.occurred_on,'amount',t.amount))
-       FROM transactions t WHERE t.stay_id=s.id AND t.kind='refund') AS refunds
+      (SELECT ${lang === "en" ? "COALESCE(terms_en,terms)" : "terms"} FROM stay_consents WHERE stay_id=s.id ORDER BY id DESC LIMIT 1) AS terms
       FROM stays s JOIN customers c ON c.id=s.customer_id WHERE s.id=?`).bind(kind === "stay" ? id : null),
   ]);
   const {theme,font,logo,mascot,asset} = await documentAssets(env);
@@ -70,7 +68,7 @@ export async function documentData(env, kind, id, paymentId, format, lang) {
   }
   return {
     ...record, kind, format, lang, theme, dogs, logo, mascot, font, qr, deposit,
-    terms:format === "pdf" ? parse(extras.terms,null) : null, refunds:parse(extras.refunds,[]),
+    terms:format === "pdf" ? parse(extras.terms,null) : null, refunds:record.refunds || [],
     contact:record.contact || [extras.owner_phone,extras.line_id].filter(Boolean).join(" / "),
   };
 }

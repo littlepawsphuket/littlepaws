@@ -63,6 +63,12 @@ const css = `
   .settings-list-row strong{overflow-wrap:anywhere}
   .history-status{flex-basis:100%}
   .stay-due{display:table;margin:.35rem 0 .6rem;padding:.2rem .6rem;border-radius:1rem;background:#fff0d5;color:#68441a}
+  .payment-entry{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:.35rem 0;padding:.4rem 0;border-bottom:1px solid var(--line)}
+  .payment-entry p{margin:0;flex:1}
+  .payment-remove{display:grid;place-items:center;min-width:2.75rem;min-height:2.75rem;margin:0}
+  .payment-correction{margin:.6rem 0;padding:.6rem;border:1px solid var(--line);border-radius:.65rem}
+  .payment-correction label{min-width:0}
+  .payment-correction textarea{box-sizing:border-box;width:100%}
   #stays>article>button{margin-top:1rem}
 `;
 
@@ -85,7 +91,7 @@ function main(intakeGroups,couponScreen,settingsScreen,themeLabels,canExport) {
   const baht = new Intl.NumberFormat("th-TH", {style:"currency", currency:"THB"});
   const parts = new Intl.DateTimeFormat("en-CA", {timeZone:"Asia/Bangkok",
     year:"numeric", month:"2-digit", day:"2-digit"});
-  const statuses = {booked:"จอง", checked_in:"เข้าพัก", completed:"กลับบ้านแล้ว"};
+  const statuses = {booked:"จอง", checked_in:"เข้าพัก", completed:"กลับบ้านแล้ว", cancelled:"ยกเลิกแล้ว"};
   const errors = {invalid:"กรุณาตรวจยอดและวันที่", forbidden:"สิทธิ์บัญชีถูกยกเลิก",
     balance_exceeded:"ยอดเกินยอดค้างหรือรายการถูกยกเลิก", not_found:"ไม่พบรายการเข้าพัก"};
   const node = (tag, text) => Object.assign(document.createElement(tag), {textContent: text});
@@ -1758,6 +1764,149 @@ function main(intakeGroups,couponScreen,settingsScreen,themeLabels,canExport) {
     return group;
   }
 
+  function stayPaymentDetails(stay,money,controller) {
+    const view = node("section");
+    view.append(node("h4","ประวัติการชำระเงิน"));
+    if (!stay.payments.length) view.append(node("p","ยังไม่มีรายการชำระ"));
+    const locked = stay.status === "completed" || stay.status === "cancelled" || Boolean(stay.cancelled_at);
+    const base = "/api/stays/" + stay.id;
+    const day = (value) => bookingDate.format(new Date(value));
+    const errors = {invalid:"กรุณาตรวจข้อมูลและระบุเหตุผล",forbidden:"บัญชีนี้ไม่มีสิทธิ์บันทึก",
+      not_found:"ไม่พบรายการเข้าพัก",refund_exceeded:"ยอดคืนเกินยอดที่คืนได้",
+      stay_closed:"แก้ไขได้เฉพาะการเข้าพักที่ยังไม่ได้เช็กเอาต์หรือยกเลิก",
+      conflict:"รายการเปลี่ยนแล้ว กรุณาเปิดสรุปการเข้าพักใหม่"};
+
+    async function mutate(path,method,body,control,status,success) {
+      control.disabled = true;
+      status.textContent = "กำลังบันทึก…";
+      try {
+        const response = await fetch(base+path,{method,headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+        if (controller.signal.aborted) return "closed";
+        if (!response.ok) {
+          const result = await response.json();
+          status.textContent = errors[result.status] || "ยังยืนยันผลการบันทึกไม่ได้ กรุณาตรวจรายการ";
+          return response.status < 500 ? "rejected" : "uncertain";
+        }
+        if (["current","outstanding","history"].includes(selected)) await load(true);
+        if (controller.signal.aborted) return "closed";
+        await showStay(stay.id);
+        document.getElementById("booking-status").textContent = success;
+        return "saved";
+      } catch {
+        if (!controller.signal.aborted) status.textContent = "ยังยืนยันผลไม่ได้ กรุณาลองบันทึกรายการเดิมอีกครั้ง";
+        return "uncertain";
+      } finally { control.disabled = false; }
+    }
+
+    function reasonForm(label,submitText) {
+      const form = Object.assign(node("form"),{className:"payment-correction"});
+      const name = node("label",label);
+      const reason = Object.assign(node("textarea"),{required:true,maxLength:500,rows:2});
+      const submit = Object.assign(node("button",submitText),{type:"submit",className:"delete-deposit"});
+      const status = node("p");
+      status.setAttribute("role","status");
+      name.append(reason);
+      form.append(name,submit,status);
+      return {form,reason,submit,status};
+    }
+
+    for (const payment of stay.payments) {
+      const row = Object.assign(node("div"),{className:"payment-entry"});
+      const text = node("p",[day(payment.occurred_on),payment.received_time,
+        paymentLabels[payment.payment_type] || payment.payment_type,money(payment.amount_cents)].filter(Boolean).join(" · "));
+      const label = "ลบรายการชำระเงิน " + money(payment.amount_cents);
+      const remove = Object.assign(node("button"),{type:"button",disabled:locked,title:label,
+        className:"delete-deposit payment-remove"});
+      remove.setAttribute("aria-label",label);
+      const ns = "http://www.w3.org/2000/svg";
+      const icon = document.createElementNS(ns,"svg");
+      for (const [name,value] of Object.entries({width:"18",height:"18",viewBox:"0 0 24 24",fill:"none",
+        stroke:"currentColor","stroke-width":"1.8","stroke-linecap":"round","stroke-linejoin":"round","aria-hidden":"true"})) icon.setAttribute(name,value);
+      const shape = document.createElementNS(ns,"path");
+      shape.setAttribute("d","M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v5m4-5v5");
+      icon.append(shape);
+      remove.append(icon);
+      const {form,reason,submit,status} = reasonForm("เหตุผลที่ลบรายการ","ยืนยันลบรายการ");
+      form.hidden = true;
+      const requestKey = key();
+      remove.onclick = () => { form.hidden = !form.hidden; if (!form.hidden) reason.focus(); };
+      form.onsubmit = (event) => {
+        event.preventDefault();
+        if (submit.disabled) return;
+        if (!reason.value.trim()) { status.textContent = "กรุณาระบุเหตุผล"; return; }
+        mutate("/payments/"+payment.id,"DELETE",{requestKey,reason:reason.value,
+          paymentKey:payment.payment_key,occurredOn:payment.occurred_on,receivedTime:payment.received_time,
+          amountCents:payment.amount_cents,paymentType:payment.payment_type},submit,status,"ลบรายการชำระเงินแล้ว");
+      };
+      row.append(text,remove);
+      view.append(row,form);
+    }
+
+    if (stay.payment_deletions.length) {
+      const audit = Object.assign(node("details"),{className:"payment-correction"});
+      audit.append(node("summary","ประวัติรายการชำระที่ลบแล้ว · " + stay.payment_deletions.length));
+      for (const entry of stay.payment_deletions) {
+        audit.append(node("p",[day(entry.occurred_on),paymentLabels[entry.payment_type] || entry.payment_type,
+          money(entry.amount_cents),entry.reason].join(" · ")));
+      }
+      view.append(audit);
+    }
+
+    if (stay.cancelled_at) {
+      const moment = new Date(stay.cancelled_at);
+      const cancelledAt = Number.isFinite(moment.valueOf())
+        ? [day(parts.format(moment)),bangkokTime.format(moment)] : [];
+      view.append(node("h4","ยกเลิกรายการเข้าพัก"),
+        node("p",[...cancelledAt,stay.cancel_reason].filter(Boolean).join(" · ")));
+      if (stay.refunds.length) {
+        view.append(node("h4","ประวัติการคืนเงิน"));
+        for (const refund of stay.refunds) view.append(node("p",[day(refund.date),refund.received_time,
+          money(Math.round(refund.amount*100)),refund.note].filter(Boolean).join(" · ")));
+      }
+      if (stay.refundable_cents > 0) {
+        const {form,reason,submit,status} = reasonForm("เหตุผลที่คืนเงิน","บันทึกคืนเงิน");
+        const today = parts.format(new Date());
+        const amount = Object.assign(node("input"),{type:"number",min:".01",max:(stay.refundable_cents/100).toFixed(2),step:".01",required:true});
+        const date = Object.assign(node("input"),{type:"date",value:today,max:today,required:true});
+        const amountLabel = node("label","ยอดคืนเงิน (บาท)");
+        const dateLabel = node("label","วันที่คืนเงิน");
+        amountLabel.append(amount);
+        dateLabel.append(date);
+        form.prepend(amountLabel,dateLabel);
+        let pending = null;
+        form.onsubmit = async (event) => {
+          event.preventDefault();
+          if (submit.disabled) return;
+          if (!reason.value.trim()) { status.textContent = "กรุณาระบุเหตุผล"; return; }
+          pending ||= {amountCents:Math.round(amount.valueAsNumber*100),paymentDate:date.value,key:key(),reason:reason.value};
+          for (const input of [amount,date,reason]) input.readOnly = true;
+          const result = await mutate("/refund","POST",pending,submit,status,"บันทึกคืนเงินแล้ว");
+          if (result === "rejected") {
+            pending = null;
+            for (const input of [amount,date,reason]) input.readOnly = false;
+          }
+        };
+        view.append(node("strong","ยอดที่คืนได้ " + money(stay.refundable_cents)),form);
+      }
+    } else if (locked) {
+      view.append(Object.assign(node("button","ยกเลิกรายการเข้าพัก"),{type:"button",disabled:true}));
+    } else {
+      const section = Object.assign(node("details"),{className:"payment-correction"});
+      const {form,reason,submit,status} = reasonForm("เหตุผลที่ยกเลิก","ยืนยันยกเลิกการเข้าพัก");
+      form.onsubmit = (event) => {
+        event.preventDefault();
+        if (submit.disabled) return;
+        if (!reason.value.trim()) { status.textContent = "กรุณาระบุเหตุผล"; return; }
+        if (confirm("ยืนยันยกเลิกการเข้าพักและรายการชำระเงินที่เกี่ยวข้องหรือไม่?")) {
+          mutate("/cancel","POST",{reason:reason.value},submit,status,"ยกเลิกการเข้าพักและรายการชำระแล้ว");
+        }
+      };
+      section.append(node("summary","ยกเลิกรายการเข้าพัก"),form);
+      view.append(section);
+    }
+    return view;
+  }
+
   async function showStay(id) {
     bookingRequest?.abort();
     const controller = bookingRequest = new AbortController();
@@ -1786,7 +1935,7 @@ function main(intakeGroups,couponScreen,settingsScreen,themeLabels,canExport) {
           : bookingDate.format(new Date(parts.format(moment))) + " · " + bangkokTime.format(moment);
         bookingContent.append(node("p",label + " " + display));
       }
-      if (stay.due_cents !== null) bookingContent.append(node("strong","ยอดคงเหลือ " + money(stay.due_cents)));
+      if (stay.status !== "cancelled" && stay.due_cents !== null) bookingContent.append(node("strong","ยอดคงเหลือ " + money(stay.due_cents)));
       const dogs = node("ul");
       for (const dog of stay.dogs) {
         const item = node("li",dog.name + " · " +
@@ -1799,12 +1948,7 @@ function main(intakeGroups,couponScreen,settingsScreen,themeLabels,canExport) {
       bookingContent.append(node("h4","สุนัขที่เข้าพัก"),dogs);
       const intake = showIntake(stay.intake);
       if (intake) bookingContent.append(intake);
-      bookingContent.append(node("h4","ประวัติการชำระเงิน"));
-      if (!stay.payments.length) bookingContent.append(node("p","ยังไม่มีรายการชำระ"));
-      for (const payment of stay.payments) {
-        bookingContent.append(node("p",[bookingDate.format(new Date(payment.occurred_on)),payment.received_time,
-          paymentLabels[payment.payment_type] || payment.payment_type,money(payment.amount_cents)].filter(Boolean).join(" · ")));
-      }
+      bookingContent.append(stayPaymentDetails(stay,money,controller));
       if (canReceiveStayPayment(stay)) {
         const payment = stayPaymentForm(stay,async () => {
           if (["current","outstanding","history"].includes(selected)) await load(true);
@@ -1956,7 +2100,7 @@ function main(intakeGroups,couponScreen,settingsScreen,themeLabels,canExport) {
 
   const pendingStayPayments = new Map();
   function canReceiveStayPayment(stay) {
-    return stay.status !== "cancelled" && (stay.due_cents > 0 || pendingStayPayments.has(stay.id));
+    return stay.status !== "cancelled" && !stay.cancelled_at && (stay.due_cents > 0 || pendingStayPayments.has(stay.id));
   }
 
   function stayPaymentForm(stay, onSaved) {
