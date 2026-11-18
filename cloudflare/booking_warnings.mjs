@@ -15,7 +15,7 @@ export const bookingSnapshot = `
       SELECT COALESCE(substr(s.actual_checkin_at,1,10),s.checkin),
         COALESCE(substr(s.actual_checkout_at,1,10),s.checkout),sd.dog_id
       FROM stays s JOIN stay_dogs sd ON sd.stay_id=s.id
-      WHERE s.status!='cancelled' AND s.cancelled_at IS NULL
+      WHERE s.status!='cancelled' AND s.cancelled_at IS NULL AND s.id IS NOT ?
         AND COALESCE(substr(s.actual_checkin_at,1,10),s.checkin)<=?
         AND COALESCE(substr(s.actual_checkout_at,1,10),s.checkout)>=?
       ORDER BY start,finish,dog_id
@@ -23,12 +23,12 @@ export const bookingSnapshot = `
   ) AS snapshot
 `;
 
-export function snapshotParams(id, start, end) {
-  return [end,start,id,end,start,end,start];
+export function snapshotParams(id, start, end, stayId=null) {
+  return [end,start,id,end,start,stayId,end,start];
 }
 
-export async function bookingWarnings(db, id, start, end, dogIds) {
-  const params = snapshotParams(id,start,end);
+export async function bookingWarnings(db, id, start, end, dogIds, stayId=null) {
+  const params = snapshotParams(id,start,end,stayId);
   const {snapshot} = await db.prepare(bookingSnapshot).bind(...params).first();
   const {capacity,holidays,slots} = JSON.parse(snapshot);
   const warnings = [];

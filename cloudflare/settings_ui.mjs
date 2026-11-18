@@ -1,4 +1,4 @@
-export function settingsScreen({node,results,message,themeLabels,thaiDate,reload,isActive,openLedger,applyTheme,openCoupons,openReports}) {
+export function settingsScreen({node,results,message,themeLabels,thaiDate,reload,isActive,openLedger,applyTheme,openCoupons,openReports,openUsers,openBackup}) {
   const services = {
     overnight:["ฝากค้างคืน","บาท/คืน"],daycare:["ฝากระหว่างวัน","บาท/วัน"],monthly:["ฝากรายเดือน","บาท/เดือน"],
   };
@@ -184,6 +184,9 @@ export function settingsScreen({node,results,message,themeLabels,thaiDate,reload
     reports.onclick = openReports;
     menu.append(reports);
     menu.append(coupons);
+    const users=button('ผู้ใช้งาน');users.onclick=openUsers;menu.append(users);
+    const backup=button('สำรองข้อมูล');backup.onclick=openBackup;menu.append(backup);
+    const guide=Object.assign(node('a','คู่มือการใช้งาน'),{href:'/api/manual/usage.html',target:'_blank',rel:'noopener'});menu.append(guide);
     const refresh = button("โหลดการตั้งค่าล่าสุด");
     refresh.onclick = () => { message.textContent = ""; reload(); };
     const panel = node("section");

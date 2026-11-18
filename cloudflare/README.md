@@ -1,6 +1,18 @@
-# Cloudflare staging — customer timeline
+# Little Paws on Cloudflare Workers, D1 and private R2
 
-This Worker is a read-only migration milestone. It serves shared customer timelines and private activity photos on Cloudflare Workers, D1 and R2. The Mac application remains the full application. The timeline Worker can export PDF when Browser Run and the trusted `PUBLIC_ORIGIN` are configured. It does not implement staff sign-in or writes. A snapshot stays unchanged until a new import, so it is unsuitable for customer production links.
+The staff and customer Workers have separate security boundaries. Staff use Cloudflare Access with an explicit email-to-active-user mapping. Customer links expose only the linked dog’s shared activities and scoped media. The Mac installation remains the current production system until a verified cutover; the deployed cloud environment still uses synthetic staging data.
+
+Current staff features include dashboard, customer/dog profiles and photos, bookings and deposits, check-in, stay history and editing, checkout and password-confirmed recheck-in, payments/refunds, coupons, care activity/media and sharing, document exports, ledger, reports, settings, user administration, profile photos, password changes, portable cloud backup and usage/recovery guides. Staff interface English parity and final production deployment/reconciliation still require completion before describing the cloud app as production-ready.
+
+## New cutover prerequisites
+
+- After the older write migrations, apply `user_writes.sql` (idempotent) and `stay_edits.sql` (once). The staff Worker requires `nodejs_compat` for native password derivation. Keep `keep_names = false` because UI functions are serialized to browser code.
+- Existing Werkzeug scrypt:32768:8:1 and bounded PBKDF2-SHA256 hashes can be verified without exposing passwords or resetting migrated accounts. New temporary passwords must be at least 8 characters and changed on first use. Never publish a production administrator with the legacy default password.
+- User administration is administrator-only. Disabled accounts cannot use the API even with an unexpired Access session. App user creation does not change Cloudflare Access policy. Profile photos use private, versioned R2 objects. Recheck-in verifies an active administrator password and records an audit event; expired customer tokens are not revived.
+- Stay editing is restricted to checked-in stays. It preserves recorded receipts, deposits, signatures and references; uses saved prices and quantities; rejects stale edits, changed payments and totals below receipts; rechecks ownership and scheduling warnings in the same write batch. Completed/canceled stays remain locked. Existing owner and consent remain linked together.
+- Portable backup is administrator-only and includes table rows, schema, private media, original QR and available branding assets. Database reads use one D1 batch. The browser packages the ZIP after all required objects have been retrieved and checksummed; a missing or concurrently replaced required object aborts the backup. Web backup is bounded to 5 MB table JSON, 10,000 rows per table and 64 MB media. Use native D1 export and an R2 backup for larger deployments.
+- Verify/rebuild a backup with `python -m cloudflare.restore_backup backup.zip /new/private/recovery-directory`. It validates paths, checksums, references and SQLite integrity and refuses an existing destination. It never overwrites the Mac installation or writes to Cloudflare. Rehearse restoration into new D1/R2 resources before switching production bindings. D1 Time Travel is not an R2 backup.
+- The exporter includes approved manual screenshots under `manual/` in private R2. Help is available from Settings; screenshots describe the Mac UI where positions differ.
 
 ## Test locally
 

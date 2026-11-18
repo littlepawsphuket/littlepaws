@@ -21,6 +21,11 @@ import { dogPhoto, saveDogPhoto, photoLimit } from "./dog_photos.mjs";
 import { saveDog, archiveDog } from "./dogs.mjs";
 import {selectedTheme,systemSettings,saveSystemSetting,writeHoliday} from "./system_settings.mjs";
 import { outstandingPage } from "./staff_ui.mjs";
+import {accountDetails,userDirectory,saveUser,saveProfile,changePassword,userPhoto,saveUserPhoto,recheckIn} from './staff_users.mjs';
+import {editStay} from './stay_edits.mjs';
+import {cloudSnapshot,backupMedia} from './cloud_backup.mjs';
+import {manualPage,guideImages} from './manual.mjs';
+import {uiLanguage} from './ui_locale.mjs';
 
 const JSON_HEADERS = {
   "Content-Type": "application/json; charset=utf-8",
@@ -37,7 +42,7 @@ async function authorizedUser(env, ctx) {
   if (!env.ACCESS_AUDIENCE || ctx?.access?.aud !== env.ACCESS_AUDIENCE) return null;
   const identity = await ctx.access.getIdentity();
   if (typeof identity?.email !== "string" || !identity.email) return null;
-  return env.DB.prepare(`SELECT u.id,u.display_name,u.is_admin,a.email FROM staff_access_identities a
+  return env.DB.prepare(`SELECT u.id,u.display_name,u.is_admin,u.session_version,u.needs_password,a.email FROM staff_access_identities a
     JOIN app_users u ON u.id=a.user_id WHERE a.email=? AND u.active=1`)
     .bind(identity.email.trim().toLowerCase()).first();
 }
@@ -149,10 +154,82 @@ export default {
     const assetMatch = /^\/static\/([a-zA-Z0-9._-]+)$/.exec(url.pathname);
     const overview = url.pathname === "/api/dashboard";
     const reportMatch = /^\/api\/reports\/(finance|balances|boarding|coupons|customers)(?:\.(html|pdf|png|xlsx))?$/.exec(url.pathname);
-    if (!match && !stayChangeMatch && !depositMatch && !dogMatch && !customerMatch && !bookingMatch && !checkInMatch && !couponMatch && !documentMatch && !directCheckIn && !directPreview && !couponPreview && !staySummaryMatch && !timelineMatch && !careMediaMatch && !careExportMatch && !isFile && !settings && !holidayMatch && !history && !ledgerMatch && !assetMatch && !overview && !reportMatch && !["/", "/api/account", "/api/dashboard/finance", "/api/customers", "/api/bookings", "/api/bookings/rates", "/api/bookings/calendar", "/api/bookings/pending", "/api/stays/outstanding", "/api/stays/current"].includes(url.pathname)) return json({error: "not_found"}, 404);
+    const userMatch = /^\/api\/users(?:\/(\d+))?$/.exec(url.pathname);
+    const accountMatch = /^\/api\/account(?:\/(profile|password|photo))?$/.exec(url.pathname);
+    const reopenMatch = /^\/api\/stays\/(\d+)\/recheck-in$/.exec(url.pathname);
+    const backupRoute=['/api/backup/snapshot','/api/backup/media'].includes(url.pathname);
+    const manualMatch=/^\/api\/manual\/(?:(usage|backup)\.html|images\/([a-z]+)\.webp)$/.exec(url.pathname);
+    if (!backupRoute && !manualMatch && !userMatch && !accountMatch && !reopenMatch && !match && !stayChangeMatch && !depositMatch && !dogMatch && !customerMatch && !bookingMatch && !checkInMatch && !couponMatch && !documentMatch && !directCheckIn && !directPreview && !couponPreview && !staySummaryMatch && !timelineMatch && !careMediaMatch && !careExportMatch && !isFile && !settings && !holidayMatch && !history && !ledgerMatch && !assetMatch && !overview && !reportMatch && !["/", "/api/account", "/api/dashboard/finance", "/api/customers", "/api/bookings", "/api/bookings/rates", "/api/bookings/calendar", "/api/bookings/pending", "/api/stays/outstanding", "/api/stays/current"].includes(url.pathname)) return json({error: "not_found"}, 404);
     try {
       const user = await authorizedUser(env, ctx);
       if (!user) return json({error: "access_required"}, 403);
+      if (user.needs_password && !accountMatch && !assetMatch && url.pathname!=='/') return json({error:'password_change_required'},403);
+      if(backupRoute){
+        if(!user.is_admin)return json({error:'admin_required'},403);
+        if(url.pathname.endsWith('/media')){
+          if(request.method!=='GET')return json({error:'method_not_allowed'},405);
+          const object=await backupMedia(env,url.searchParams.get('key'));
+          return object ? new Response(object.body,{headers:{...JSON_HEADERS,'Content-Type':'application/octet-stream'}})
+            : json({error:'not_found'},404);
+        }
+        if(request.method!=='POST')return json({error:'method_not_allowed'},405);
+        if(request.headers.get('Origin')!==url.origin)return json({error:'invalid_origin'},403);
+        const snapshot=await cloudSnapshot(env.DB);
+        const stillAdmin=await authorizedUser(env,ctx);
+        if(!stillAdmin?.is_admin)return json({error:'admin_required'},403);
+        return json(snapshot,snapshot.error ? 413 : 200);
+      }
+      if(manualMatch){
+        if(request.method!=='GET')return json({error:'method_not_allowed'},405);
+        if(manualMatch[1])return manualPage(manualMatch[1]);
+        if(!guideImages.includes(manualMatch[2]))return json({error:'not_found'},404);
+        const object=await env.MEDIA.get('manual/'+manualMatch[2]+'.webp');
+        return object ? new Response(object.body,{headers:{...JSON_HEADERS,'Content-Type':'image/webp'}}) : json({error:'not_found'},404);
+      }
+      if (userMatch || accountMatch || reopenMatch) {
+        if (userMatch && !user.is_admin) return json({error:'admin_required'},403);
+        const id=userMatch?.[1] ? Number(userMatch[1]) : reopenMatch ? Number(reopenMatch[1]) : null;
+        if (id!==null && (!Number.isSafeInteger(id) || id<1)) return json({status:'not_found'},404);
+        const action=accountMatch?.[1];
+        if (request.method==='GET') {
+          if (reopenMatch || (action && action!=='photo')) return json({error:'method_not_allowed'},405);
+          if (userMatch) return id===null ? json({users:await userDirectory(env.DB,user)}) : json({error:'method_not_allowed'},405);
+          if (action==='photo') {
+            const photo=await userPhoto(env,user);
+            return photo ? new Response(photo.body,{headers:{...JSON_HEADERS,'Content-Type':'image/jpeg'}}) : json({error:'not_found'},404);
+          }
+          return json({...await accountDetails(env.DB,user.id),displayName:user.display_name,isAdmin:!!user.is_admin});
+        }
+        const expected=userMatch ? (id===null ? 'POST' : 'PUT') : reopenMatch ? 'POST' : action==='photo' && request.method==='DELETE' ? 'DELETE' : 'PUT';
+        if (request.method!==expected || (accountMatch && !action)) return json({error:'method_not_allowed'},405);
+        if (request.headers.get('Origin')!==url.origin) return json({error:'invalid_origin'},403);
+        const type=request.headers.get('Content-Type')?.split(';',1)[0].trim().toLowerCase();
+        let result;
+        if (action==='photo') {
+          if (request.method!=='DELETE' && type!=='image/jpeg') return json({error:'invalid_content_type'},415);
+          const bytes=request.method==='DELETE' ? null : await boundedBody(request,photoLimit);
+          if (request.method!=='DELETE' && !bytes) return json({status:'invalid_size'},413);
+          result={status:await saveUserPhoto(env,bytes,user)};
+        } else {
+          if (type!=='application/json') return json({error:'invalid_content_type'},415);
+          const form=await smallJson(request,8192);
+          if (!form) return json({status:'invalid'},400);
+          result=userMatch ? await saveUser(env.DB,id,form,user) : {status:reopenMatch ? await recheckIn(env.DB,id,form,user)
+            : action==='profile' ? await saveProfile(env.DB,form,user) : await changePassword(env.DB,form,user)};
+        }
+        return json(result,{saved:200,invalid:400,invalid_credentials:401,forbidden:403,not_found:404,
+          conflict:409,duplicate:409,last_admin:409,rate_limited:429}[result.status] || 400);
+      }
+      if(staySummaryMatch && request.method==='PUT'){
+        const id=Number(staySummaryMatch[1]);
+        if(!Number.isSafeInteger(id)||id<1)return json({status:'not_found'},404);
+        if(request.headers.get('Origin')!==url.origin)return json({error:'invalid_origin'},403);
+        if(request.headers.get('Content-Type')?.split(';',1)[0].trim().toLowerCase()!=='application/json')return json({error:'invalid_content_type'},415);
+        const form=await smallJson(request,32768);if(!form)return json({status:'invalid'},400);
+        const result=await editStay(env.DB,id,form,user);
+        return json(result,{saved:200,warning:409,invalid:400,not_found:404,stay_closed:409,conflict:409,
+          payment_exceeds:422,coupon_invalid:400,coupon_unavailable:422,coupon_minimum:422,coupon_exceeds:422}[result.status] || 400);
+      }
       if (reportMatch) {
         if (!user.is_admin) return json({error:"admin_required"},403);
         if (request.method !== "GET") return json({error:"method_not_allowed"},405);
@@ -438,7 +515,7 @@ export default {
       }
       if (!match && !depositMatch) {
         if (request.method !== "GET") return json({error: "method_not_allowed"}, 405);
-        if (url.pathname === "/") return outstandingPage(Boolean(user.is_admin),Boolean(env.BROWSER),await selectedTheme(env.DB),user.display_name);
+        if (url.pathname === "/") return outstandingPage(Boolean(user.is_admin),Boolean(env.BROWSER),await selectedTheme(env.DB),user.display_name,uiLanguage(url));
         if (url.pathname === "/api/account") {
           return json({id: user.id, displayName: user.display_name, isAdmin: !!user.is_admin});
         }

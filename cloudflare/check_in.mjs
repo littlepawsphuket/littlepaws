@@ -23,7 +23,7 @@ function hasSignature(strokes) {
   return line;
 }
 
-function normalizeIntake(value) {
+export function normalizeIntake(value) {
   if (value === undefined) return {};
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const intake = {};

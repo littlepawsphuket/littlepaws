@@ -133,6 +133,10 @@ def export(archive, destination, font=None):
             image = static / name
             if image.is_file():
                 write_object(bundle, f'brand/{name}', image.read_bytes(), manifest)
+        for name in ('dashboard', 'customers', 'bookings', 'checkin', 'reports', 'backup', 'verified'):
+            image = static / 'guide' / (name + '.webp')
+            if image.is_file():
+                write_object(bundle, f'manual/{name}.webp', image.read_bytes(), manifest)
         typeface = document_font(font)
         if typeface:
             write_object(bundle, 'brand/sukhumvit-set.woff2', typeface, manifest)

@@ -11,7 +11,7 @@ export function shellIcon(name) {
   return '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+paths[name]+'</svg>';
 }
 
-export function staffHeader(theme,isAdmin,displayName) {
+export function staffHeader(theme,isAdmin,displayName,language='th') {
   theme = themeName(theme);
   const particles = '<div class="season-motion" aria-hidden="true">'+Array.from({length:25},() => "<span></span>").join("")+"</div>";
   const nav = [["dashboard","ภาพรวม"],["current","ฝากเลี้ยง"],["history","ประวัติการเข้าพัก"],["calendar","การจอง"],["customers","ลูกค้า"]];
@@ -23,8 +23,14 @@ export function staffHeader(theme,isAdmin,displayName) {
     </a>
     <nav class="primary-nav" aria-label="เมนูหลัก">${nav.map(([id,label]) =>
       `<a href="#${id}" data-mode="${id}" ${id === "dashboard" ? 'aria-current="page"' : ""}${id === "settings" ? ' class="nav-settings-icon" aria-label="ตั้งค่าระบบ" title="ตั้งค่าระบบ"' : ""}>${id === "settings" ? shellIcon("settings") : label}</a>`).join("")}</nav>
-    <div class="header-controls"><details class="account-menu"><summary class="account-avatar" aria-label="เมนูบัญชี" title="เมนูบัญชี">${shellIcon("user")}</summary>
-      <div class="account-menu-panel"><strong>${escape(displayName)}</strong><p>เข้าสู่ระบบด้วย Cloudflare Access</p><a href="/cdn-cgi/access/logout">ออกจากระบบ</a></div>
+    <div class="header-controls"><nav class="language-switch" aria-label="Language">
+      <a href="/?lang=th" data-ui-language="th" aria-current="${language==='th'}" lang="th">TH</a>
+      <a href="/?lang=en" data-ui-language="en" aria-current="${language==='en'}" lang="en">EN</a>
+    </nav><details class="account-menu"><summary class="account-avatar" aria-label="เมนูบัญชี" title="เมนูบัญชี">${shellIcon("user")}</summary>
+      <div class="account-menu-panel"><strong id="account-name">${escape(displayName)}</strong><p>เข้าสู่ระบบด้วย Cloudflare Access</p>
+      <button type="button" id="open-account">แก้ไขข้อมูลผู้ใช้ / รหัสผ่าน</button>
+      ${isAdmin ? '<button type="button" id="open-users">จัดการผู้ใช้งาน</button>' : ''}
+      <a href="/cdn-cgi/access/logout">ออกจากระบบ</a></div>
     </details></div>
   </header>
   <section id="staff-banner" class="season-decoration season-with-heading" aria-label="หัวข้อหน้าจอ">

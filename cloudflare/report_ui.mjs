@@ -1,4 +1,5 @@
 export function reportScreen({
+  translateLabel,
   node,
   results,
   message,
@@ -22,7 +23,7 @@ export function reportScreen({
     name: "finance",
     start: current.slice(0, 7) + "-01",
     end: new Date(Date.UTC(year, month, 0)).toISOString().slice(0, 10),
-    lang: "th",
+    lang: document.documentElement.lang,
   };
   let generation = 0;
   const query = () =>
@@ -105,7 +106,7 @@ export function reportScreen({
       add(
         "category",
         "หมวดหมู่",
-        choices.categories.map((value) => [value, value]),
+        choices.categories.map((value) => [value, translateLabel(value)]),
       );
     }
     if (["boarding", "balances"].includes(state.name)) {

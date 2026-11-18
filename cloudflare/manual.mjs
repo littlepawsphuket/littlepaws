@@ -1,0 +1,29 @@
+export const guideImages=['dashboard','customers','bookings','checkin','reports','backup','verified'];
+const shot=(name,caption)=>`<figure><img loading="lazy" src="/api/manual/images/${name}.webp" alt="${caption}"><figcaption>${caption} · ภาพประกอบจากระบบบน Mac ตำแหน่งเมนูบน Cloudflare อาจต่างเล็กน้อย</figcaption></figure>`;
+export function manualPage(chapter){
+  const backup=chapter==='backup';
+  const title=backup?'สำรองและกู้คืนข้อมูลบน Cloudflare':'คู่มือใช้งาน Little Paws';
+  const content=backup?`
+    <h2>สำรองข้อมูลจากแอป</h2><ol><li>เปิด ตั้งค่าระบบ → สำรองข้อมูล</li><li>กด “ดาวน์โหลดข้อมูลและรูปทั้งหมด” แล้วรอให้แสดงว่าเตรียมไฟล์แล้ว</li><li>ตรวจไฟล์ ZIP ในดาวน์โหลด เก็บสำเนาไว้อีกที่หนึ่งก่อนอัปเดตระบบหรือย้ายข้อมูล</li></ol>
+    <p>ZIP มีข้อมูลตารางและลายเซ็นใน snapshot.json รูปและไฟล์ใน objects/ และรายการตรวจสอบ SHA-256 ใน objects.json รวมถึงบัญชีและลิงก์ลูกค้า จึงควรเก็บเป็นส่วนตัว</p>
+    <div class="diagram"><span>ฐานข้อมูล D1</span><b>＋</b><span>รูปและไฟล์ R2</span><b>→</b><span>ZIP ส่วนตัว</span></div>
+    <h2>ถ้าข้อมูลหรือรูปมีจำนวนมาก</h2><p>การสำรองผ่านแอปจำกัดข้อมูลตารางรวม 5 MB และไฟล์ 64 MB เพื่อให้ใช้งานบนมือถือได้ หากเกินขนาด ให้ผู้ดูแลส่งออก D1 ผ่าน Cloudflare Dashboard หรือ Wrangler และสำรอง R2 แยกต่างหาก การส่งออกเฉพาะ D1 จะไม่มีไฟล์รูป</p>
+    <h2>กู้คืนโดยไม่เขียนทับข้อมูลปัจจุบัน</h2><ol><li>เก็บสำเนาระบบปัจจุบันก่อน</li><li>ให้นักพัฒนาตรวจ ZIP ด้วยเครื่องมือ cloudflare.restore_backup โดยเลือกโฟลเดอร์ใหม่ เครื่องมือนี้สร้าง SQLite และไฟล์ขึ้นใหม่ในเครื่องเท่านั้น</li><li>สร้าง D1 และ R2 ชุดใหม่ อัปโหลดไฟล์ตาม object key เดิม และตรวจจำนวนรายการ ยอดเงิน รูป ลายเซ็น และ QR</li><li>ทดสอบด้วยระบบสำรองก่อนสลับ binding ของระบบจริง ระหว่างสลับให้หยุดบันทึกข้อมูลเพื่อไม่ให้มีข้อมูลสองชุด</li></ol>
+    <h2>ย้อนฐานข้อมูลด้วย Time Travel</h2><p>เปิด Cloudflare → Storage & databases → D1 → ฐานข้อมูล → Time Travel เลือกเวลาหรือ bookmark ที่ต้องการ แล้วอ่านรายการยืนยันก่อนกู้คืน Time Travel ย้อนเฉพาะ D1 และมีระยะเก็บตามแผน จึงต้องมีสำเนาไฟล์ R2 ด้วย การกู้คืนจะทำให้ข้อมูลหลังเวลาที่เลือกหายจากระบบปัจจุบัน</p>
+    <p>ระบบบน Mac ใช้ฐานข้อมูล SQLite คนละชุดกับ Cloudflare หลังเปิดใช้งานจริงให้บันทึกที่ URL ระบบจริงเพียงที่เดียว</p>`:`
+    <h2>เริ่มต้นวันทำงาน</h2><p>เข้าสู่ระบบด้วยอีเมลที่อนุญาตใน Cloudflare Access หน้าแรกแสดงน้องที่กำลังพักและการจองที่รอเช็กอิน กดการ์ดเพื่อดูรายละเอียด บันทึกกิจกรรม หรือเช็กเอาต์พร้อมยืนยัน</p>${shot('dashboard','ภาพรวมและสุนัขที่เข้าพัก')}
+    <h2>ลูกค้าและข้อมูลน้องหมา</h2><p>เมนูลูกค้าใช้ข้อมูลชุดเดียวกับการจองและฝากเลี้ยง เพิ่มเจ้าของก่อนแล้วเพิ่มน้อง ระบุขนาด เพศ สุขภาพ วันเกิดหรืออายุ และรูปจากไฟล์หรือกล้อง การนำออกจากรายชื่อเก็บประวัติเดิมไว้</p>${shot('customers','ข้อมูลลูกค้าและสุนัข')}
+    <h2>การจองและมัดจำ</h2><p>สร้างการจอง ระบุวันที่ จำนวนวันหรือเดือน และราคาแยกน้อง ระบบใช้หนึ่งเดือนเท่ากับ 30 วัน แก้จำนวนที่คิดได้ตามตกลง เลือกรายการเพื่อเปิดการ์ดรายละเอียด แก้ไข รับมัดจำหลายครั้ง และส่งใบยืนยันหรือใบรับมัดจำ</p>${shot('bookings','ปฏิทินและรายการจอง')}
+    <h2>เช็กอินและรับชำระ</h2><p>ดึงจากการจองหรือเช็กอินโดยตรง ตรวจข้อมูล ราคา ส่วนลด คูปอง และยอดรับจริง มัดจำถูกนำมาหักจากยอดที่ต้องชำระ ให้ลูกค้ายอมรับเงื่อนไขและลงนามก่อนบันทึก ยอดที่ยังไม่ได้รับจะแสดงเป็นยอดค้าง</p>${shot('checkin','ฟอร์มเข้าพักและการยอมรับเงื่อนไข')}
+    <h2>ดูแลและแชร์ไทม์ไลน์</h2><p>กดบันทึกกิจกรรม เลือกวันเวลา ประเภท รายละเอียด และแนบรูป กิจกรรมใหม่ตั้งให้ลูกค้าเห็นเป็นค่าเริ่มต้น ตรวจป้ายการแชร์ก่อนส่งลิงก์ รูปเปิดใหญ่ในหน้าต่างโดยไม่ออกจากไทม์ไลน์ ลิงก์ลูกค้าเห็นเฉพาะน้องและกิจกรรมที่แชร์ สามารถเลือกภาษา วัน และดาวน์โหลด PDF</p>
+    <h2>เช็กเอาต์และแก้ไขย้อนหลัง</h2><p>เช็กเอาต์เปลี่ยนสถานะเป็นกลับบ้านแล้วและปิดการแก้ไข/ลบรายการชำระ ยังคงรับยอดค้างได้ หากเช็กเอาต์ผิด ให้ใช้เช็กอินอีกครั้งและยืนยันรหัสผ่านแอดมิน ลิงก์ที่หมดอายุแล้วจะไม่ถูกเปิดกลับมาอัตโนมัติ</p>
+    <h2>ตั้งค่าและรายงาน</h2><p>ตั้งค่าเก็บราคา วันหยุด ประเภทกิจกรรม ความจุ อายุลิงก์ และธีม พร้อมทางเข้ารายรับ–รายจ่าย คูปอง รายงาน ผู้ใช้ และสำรองข้อมูล ราคาที่ตั้งใหม่ไม่เปลี่ยนราคาของรายการเดิม รายงานเลือกช่วงและเงื่อนไขแล้วส่งออก Excel, PDF หรือรูปได้</p>${shot('reports','รายงานและตัวกรอง')}
+    <h2>บัญชีผู้ใช้</h2><p>กดรูปวงกลมมุมบนเพื่อแก้ข้อมูล รูปผู้ใช้ หรือรหัสผ่าน แอดมินเพิ่มและแก้ผู้ใช้ ปิดบัญชี และตั้งรหัสชั่วคราวได้ ผู้ที่ได้รับรหัสชั่วคราวต้องเปลี่ยนก่อนใช้งาน อีเมลต้องผ่านนโยบาย Cloudflare Access ด้วย</p>
+    <p><a href="/api/manual/backup.html">อ่านคู่มือสำรองและกู้คืน</a></p>`;
+  return new Response(`<!doctype html><html lang="th"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>${title}</title><style>body{margin:0;background:#f4f8f5;color:#243c34;font:17px/1.8 "Sukhumvit Set",system-ui,sans-serif}main{max-width:900px;margin:auto;padding:24px}header{display:flex;gap:18px;align-items:center}header img{width:85px}h1{line-height:1.3}h2{margin-top:2em;color:#155747}article{background:white;border:1px solid #c8ded4;border-radius:22px;padding:24px}figure{margin:1.5em 0}figure img{width:100%;border-radius:16px;border:1px solid #d8e8df}figcaption{font-size:.85em;color:#526c61}a{color:#155747}.diagram{display:flex;gap:12px;flex-wrap:wrap;align-items:center}.diagram span{background:#e4f2eb;padding:15px;border-radius:15px}footer{padding:25px;text-align:center;color:#71452b}@media print{body{background:white}main{padding:0}article{border:0;padding:0}h2,figure{break-inside:avoid}}</style>
+    <main><header><img src="/static/little-paws-logo.png" alt="Little Paws"><h1>${title}</h1></header><article>${content}</article>
+    <footer>🐾 Little Paws, Big Love.<br>เพราะทุกอุ้งเท้าเล็ก ๆ สมควรได้รับความรักที่ยิ่งใหญ่ ❤️</footer></main></html>`,
+    {headers:{'Content-Type':'text/html; charset=utf-8','Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff',
+    'Content-Security-Policy':"default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'"}});
+}

@@ -9,6 +9,10 @@ import {reportScreen} from "./report_ui.mjs";
 import {applyStaffTheme,staffHeader,staffFooter,macStyleBridge} from "./staff_shell.mjs";
 import {installCarePhotoViewer} from "../app/static/care-gallery.js";
 import {careGalleryCss} from "./care_gallery_styles.mjs";
+import {accountScreen} from './account_ui.mjs';
+import {backupScreen} from './backup_ui.mjs';
+import {storedArchive} from './portable_archive.mjs';
+import {uiFunction,uiValues,uiMarkup,fixedUiLabels} from './ui_locale.mjs';
 
 const css = `
   :root{--page:#f2f7f3;--wash:#e2f0e8;--line:#c8ded4;--ink:#203c30;--accent:#155747}
@@ -87,8 +91,12 @@ const css = `
   #stays>article>button{margin-top:1rem}
 `;
 
-function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScreen,reportScreen,applyTheme,themeLabels,ledgerKinds,ledgerCategories,canExport,installCarePhotoViewer) {
+function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScreen,reportScreen,applyTheme,themeLabels,ledgerKinds,ledgerCategories,canExport,installCarePhotoViewer,accountScreen,backupScreen,storedArchive,uiLabels) {
   installCarePhotoViewer();
+  const translateLabel=value=>Object.hasOwn(uiLabels,value) ? uiLabels[value] : value;
+  for(const link of document.querySelectorAll('[data-ui-language]'))link.addEventListener('click',()=>{
+    link.href='/?lang='+link.dataset.uiLanguage+location.hash;
+  });
   const results = document.getElementById("stays");
   const message = document.getElementById("message");
   const more = document.getElementById("more");
@@ -263,6 +271,7 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
     }
     more.disabled = true;
     try {
+      if(selected==='backup'){more.hidden=true;backups.render();return;}
       if (selected === "dashboard") {
         more.hidden = true;
         const query = new URLSearchParams({from:financeFrom.value,to:financeTo.value});
@@ -860,7 +869,7 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
   addBooking.addEventListener("click", () => bookingEditor());
   let createBookingKey;
 
-  async function bookingEditor(booking, direct = false, draftState = null) {
+  async function bookingEditor(booking, direct = false, draftState = null, stayEdit = false) {
     const draft = draftState?.draft;
     const initial = booking || (draft && {customer:draftState.customer,customer_id:draft.customerId,
       checkin:draft.checkin,checkout:draft.checkout,service_type:draft.service,charged_nights:draft.quantity100/100,
@@ -873,7 +882,7 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
     status.setAttribute("role","status");
     const today = parts.format(new Date());
     const form = node("form");
-    const submit = node("button",direct ? "ไปหน้าเช็กอิน" : "บันทึกการจอง");
+    const submit = node("button",stayEdit ? "บันทึกการเข้าพัก" : direct ? "ไปหน้าเช็กอิน" : "บันทึกการจอง");
     const warnings = node("ul");
     warnings.className = "booking-warnings";
     warnings.hidden = true;
@@ -923,12 +932,19 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
     const quantity = field("จำนวนวัน / เดือน","number",initial?.charged_nights ?? 1);
     const discount = field("ส่วนลด (บาท)","number",(initial?.discount_cents || 0)/100);
     const note = field("หมายเหตุ","text",initial?.note || "");
+    let stayIntake=null,couponCode=null;
+    if(stayEdit){
+      couponCode=field("รหัสคูปอง","text",booking.coupon_code || "");couponCode.maxLength=6;
+      discount.value=Math.max(0,booking.discount_cents-(booking.coupon_discount_cents || 0))/100;
+      stayIntake=checkInDetails(booking.intake);
+      form.append(stayIntake.panel);
+    }
     note.maxLength = 800;
     quantity.min = discount.min = "0";
     discount.step = "0.01";
     checkin.required = checkout.required = quantity.required = true;
     form.append(dogs,warnings,submit,status);
-    bookingContent.replaceChildren(node("h3",direct ? "เช็กอินโดยตรง" : booking ? "แก้ไขการจอง" : "สร้างการจอง"),form);
+    bookingContent.replaceChildren(node("h3",stayEdit ? "แก้ไขการเข้าพัก" : direct ? "เช็กอินโดยตรง" : booking ? "แก้ไขการจอง" : "สร้างการจอง"),form);
     function defaults() {
       quantity.step = service.value === "monthly" ? "0.01" : "1";
       const days = (Date.parse(checkout.value) - Date.parse(checkin.value)) / 86400000;
@@ -1006,7 +1022,7 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
       warningToken = null;
       warnings.replaceChildren();
       warnings.hidden = true;
-      submit.textContent = direct ? "ไปหน้าเช็กอิน" : "บันทึกการจอง";
+      submit.textContent = stayEdit ? "บันทึกการเข้าพัก" : direct ? "ไปหน้าเช็กอิน" : "บันทึกการจอง";
     }
     form.addEventListener("input",clearWarnings);
     owner.addEventListener("change",clearWarnings);
@@ -1022,7 +1038,7 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
       const samePrice = booking && quantity100 === Math.round(booking.charged_nights*100) &&
         discountCents === booking.discount_cents && selectedDogs.length === booking.dogs.length &&
         selectedDogs.every((dog) => booking.dogs.some((old) => old.id === dog.id && old.nightly_rate_cents === dog.rate));
-      if (direct && selectedDogs.some((dog) => dog.rate === null)) {
+      if ((direct || stayEdit) && selectedDogs.some((dog) => dog.rate === null)) {
         status.textContent = "กรุณาระบุราคาของสุนัขทุกตัวก่อนเช็กอิน";
         return;
       }
@@ -1030,10 +1046,12 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
         quantity100,discountCents,
         dogs:selectedDogs,note:note.value,warningToken,wholeBaht:!samePrice || booking.rounding_cents > 0,
         key:direct ? draft?.key || key() : createBookingKey,revision:booking?.cloud_revision ?? null};
+      if(stayEdit)Object.assign(body,{intake:stayIntake.values(),couponCode:couponCode.value,
+        paymentSnapshot:booking.payment_snapshot});
       pendingSave = true;
       submit.disabled = true;
       try {
-        const response = await fetch(direct ? "/api/stays/check-in/preview" : "/api/bookings" + (booking ? "/" + booking.id : ""),{
+        const response = await fetch(stayEdit ? "/api/stays/"+booking.id : direct ? "/api/stays/check-in/preview" : "/api/bookings" + (booking ? "/" + booking.id : ""),{
           method:booking ? "PUT" : "POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body),
         });
         const result = await response.json();
@@ -1050,6 +1068,10 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
           status.textContent = response.status === 409
             ? "บันทึกไม่ได้ กรุณาตรวจยอดมัดจำหรือเปิดรายละเอียดล่าสุดอีกครั้ง" : "บันทึกไม่ได้ กรุณาตรวจวัน ราคา และสุนัข";
           return;
+        }
+        if(stayEdit){
+          if(form.isConnected && bookingDialog.open)await showStay(booking.id);
+          await load(true);message.textContent="บันทึกการเข้าพักแล้ว";return;
         }
         if (direct) {
           if (form.isConnected && bookingDialog.open) bookingCheckIn({...result,checkout:body.checkout,
@@ -1108,7 +1130,7 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
     return actions;
   }
 
-  function checkInDetails() {
+  function checkInDetails(initial={}) {
     const panel = node("details");
     panel.className = "intake-details";
     panel.append(node("summary","รายละเอียดตอนเช็กอิน · ไม่บังคับกรอก"));
@@ -1122,13 +1144,14 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
         if (field === "health") continue;
         if (kind === "item") {
           const item = node("div");
-          const box = Object.assign(node("input"),{type:"checkbox"});
+          const box = Object.assign(node("input"),{type:"checkbox",checked:initial[field+"_packed"]=== "1"});
           const toggle = node("label",label);
           toggle.prepend(box);
           const detail = Object.assign(node("input"),{type:"text",maxLength:600,disabled:true});
           const detailLabel = node("label","รายละเอียด " + label);
           detailLabel.append(detail);
-          detailLabel.hidden = true;
+          detailLabel.hidden = !box.checked;
+          detail.value=initial[field] || "";detail.disabled=!box.checked;
           box.addEventListener("change", () => { detail.disabled = detailLabel.hidden = !box.checked; });
           item.append(toggle,detailLabel);
           grid.append(item);
@@ -1140,7 +1163,7 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
           item.append(node("strong",label),choices);
           const options = [];
           for (const [value,caption] of [["","ไม่ระบุ"],["normal","ปกติ"],["abnormal","พบความผิดปกติ"]]) {
-            const radio = Object.assign(node("input"),{type:"radio",name:field,value,checked:!value});
+            const radio = Object.assign(node("input"),{type:"radio",name:field,value,checked:value===(initial[field] || "")});
             const option = node("label",caption);
             option.prepend(radio);
             options.push(radio);
@@ -1153,6 +1176,7 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
           if (typeof kind === "object") {
             input.append(new Option("ไม่ระบุ",""), ...Object.entries(kind).map(([value,caption]) => new Option(caption,value)));
           } else { input.rows = 2; input.maxLength = 600; }
+          input.value=initial[field] || "";
           const wrapper = node("label",label);
           wrapper.append(input);
           fields.push([field,() => input.value.trim()]);
@@ -1307,6 +1331,7 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
     termsBox.className = "checkin-terms";
     const picker = node("select");
     picker.append(new Option("ไทย","th"),new Option("English","en"));
+    picker.value=document.documentElement.lang;
     const languageLabel = node("label","ภาษาเงื่อนไข");
     languageLabel.append(picker);
     const termsContent = node("div");
@@ -1761,6 +1786,7 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
     group.append(node("h4",heading));
     const language = node("select");
     language.append(new Option("ไทย","th"),new Option("English","en"));
+    language.value=document.documentElement.lang;
     const languageLabel = node("label","ภาษาเอกสาร");
     languageLabel.append(language);
     const base = care ? "/api/stays/"+id+"/dogs/"+care.dogId+"/timeline/export"
@@ -2045,6 +2071,34 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
         }
       }
       bookingContent.append(documentActions("stay",stay.id,controller));
+      const edit=Object.assign(node('button','แก้ไขการเข้าพัก'),{type:'button'});
+      edit.disabled=stay.status!=='checked_in' || !!stay.cancelled_at;
+      edit.onclick=()=>bookingEditor(stay,false,null,true);
+      bookingContent.append(edit);
+      const reopen=Object.assign(node('button','เช็กอินอีกครั้ง'),{type:'button'});
+      reopen.disabled=stay.status!=='completed' || !!stay.cancelled_at;
+      reopen.onclick=()=>{
+        const form=node('form');form.className='payment-correction';
+        form.append(node('h3','ยกเลิกเช็กเอาต์ · ยืนยันด้วยรหัสผ่านแอดมิน'));
+        const username=Object.assign(node('input'),{required:true,maxLength:32,autocomplete:'username'});
+        const password=Object.assign(node('input'),{type:'password',required:true,maxLength:128,autocomplete:'current-password'});
+        for(const [label,input] of [['ชื่อผู้ใช้แอดมิน',username],['รหัสผ่านแอดมิน',password]]){
+          const caption=node('label',label);caption.append(input);form.append(caption);
+        }
+        const save=node('button','ยืนยันเช็กอินอีกครั้ง');
+        const cancel=Object.assign(node('button','กลับไปหน้าสรุป'),{type:'button'});cancel.onclick=()=>showStay(stay.id);
+        const status=node('p');status.setAttribute('role','status');form.append(save,cancel,status);
+        form.onsubmit=async event=>{event.preventDefault();if(save.disabled)return;save.disabled=true;
+          try{const response=await fetch('/api/stays/'+stay.id+'/recheck-in',{method:'POST',
+            headers:{'Content-Type':'application/json'},body:JSON.stringify({username:username.value,password:password.value})});
+            password.value='';
+            if(!response.ok){status.textContent=response.status===429?'ลองหลายครั้ง กรุณารอ 1 นาที':
+              response.status===401?'ชื่อผู้ใช้หรือรหัสผ่านแอดมินไม่ถูกต้อง':'ข้อมูลเปลี่ยนแล้ว กรุณาเปิดสรุปล่าสุด';return;}
+            await showStay(stay.id);await load(true);
+          }catch{status.textContent='ยังยืนยันผลไม่ได้ กรุณาเปิดสรุปการเข้าพักล่าสุด';}finally{save.disabled=false;}};
+        bookingContent.replaceChildren(form);username.focus();
+      };
+      if(stay.status==='completed')bookingContent.append(reopen);
       if (stay.consent) {
         bookingContent.append(node("h4","ลายเซ็นลูกค้า"),node("p",stay.consent.customer_name));
         const canvas = signatureCanvas();
@@ -2230,16 +2284,18 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
 
   const couponAdmin = couponScreen({node,key,baht,results,message,thaiDate:bookingDate,
     reload:() => { message.textContent = ""; return load(true); },isActive:() => selected === "coupons"});
-  const settingsAdmin = settingsScreen({node,results,message,themeLabels,thaiDate:bookingDate,
+  const accounts = accountScreen({node,resizedPhoto});
+  const backups=backupScreen({node,results,message,storedArchive,back:()=>setMode('settings')});
+  const settingsAdmin = settingsScreen({node,results,message,themeLabels,thaiDate:bookingDate,openUsers:accounts.directory,
     reload:() => load(true),isActive:() => selected === "settings",openLedger:() => setMode("ledger"),
-    applyTheme,openCoupons:() => setMode("coupons"),openReports:() => setMode("reports")});
-  const ledger = ledgerScreen({node,results,message,reload:() => load(true),isActive:() => selected === "ledger",
+    applyTheme,openCoupons:() => setMode("coupons"),openReports:() => setMode("reports"),openBackup:()=>setMode('backup')});
+  const ledger = ledgerScreen({translateLabel,node,results,message,reload:() => load(true),isActive:() => selected === "ledger",
     today:() => parts.format(new Date()),dateLabel:(day) => bookingDate.format(new Date(day)),key,baht,
     openStay:showStay,openBooking:showBooking,labels:ledgerKinds,categories:ledgerCategories});
-  const reports = reportScreen({node,results,message,today:() => parts.format(new Date()),
+  const reports = reportScreen({translateLabel,node,results,message,today:() => parts.format(new Date()),
     reload:() => load(true),isActive:() => selected === "reports",canExport,back:() => setMode("settings"),
     openRecord:({type,id}) => ({stay:showStay,booking:showBooking,customer:showCustomer,transaction:ledger.open})[type](id)});
-  const dashboard = dashboardScreen({node,results,baht,today:() => parts.format(new Date()),
+  const dashboard = dashboardScreen({translateLabel,node,results,baht,today:() => parts.format(new Date()),
     dateLabel:(day) => bookingDate.format(new Date(day+"T00:00:00Z")),
     monthLabel:(month) => calendarMonth.format(new Date(month+"-01T00:00:00Z")),
     openStay:showStay,openCustomer:showCustomer,openTimeline:showCareTimeline,viewBooking:showBooking,setMode,
@@ -2272,7 +2328,7 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
     calendar:["การจอง","ปฏิทินการจองและข้อมูลรอเช็กอิน"],bookings:["การจอง","รายการจองทั้งหมดที่รอเช็กอิน"],
     customers:["ลูกค้า","ข้อมูลเจ้าของ น้องหมา และประวัติการเข้าพัก"],settings:["ตั้งค่าระบบ","ราคา วันหยุด ธีม และการตั้งค่าร้าน"],
     ledger:["รายรับ–รายจ่าย","รายการรับและจ่ายตามวันที่เงินจริง"],coupons:["คูปอง","สร้างและจัดการคูปองส่วนลด"],
-    reports:["รายงาน","สรุปข้อมูลร้านและส่งออกรายงาน"],
+    reports:["รายงาน","สรุปข้อมูลร้านและส่งออกรายงาน"],backup:['สำรองข้อมูล','ดาวน์โหลดข้อมูลและรูปสำหรับกู้คืน'],
     outstanding:["ยอดค้างชำระ","การเข้าพักที่รอรับชำระเพิ่มเติม"],finance:["ภาพรวมการเงิน","รายรับคงเหลือและรายจ่ายรายเดือน"]};
   function setMode(mode) {
     if (selected === mode) return;
@@ -2289,7 +2345,7 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
     bookingSearch.hidden = selected !== "bookings" && selected !== "customers";
     searchLabel.textContent = selected === "customers" ? "ชื่อลูกค้าหรือชื่อสุนัข" : "เลขจอง ชื่อลูกค้า หรือชื่อสุนัข";
     bookingQuery.value = queries[selected] || "";
-    const activeMode = ({ledger:"settings",coupons:"settings",reports:"settings",bookings:"calendar",outstanding:"history",finance:"dashboard"})[mode] || mode;
+    const activeMode = ({backup:'settings',ledger:"settings",coupons:"settings",reports:"settings",bookings:"calendar",outstanding:"history",finance:"dashboard"})[mode] || mode;
     for (const option of modes) {
       option.setAttribute("aria-pressed",String(option.dataset.mode === mode));
       if (option.matches(".primary-nav a")) {
@@ -2331,7 +2387,7 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
   function restoreNavigation() {
     const mode = location.hash.slice(1);
     if (Object.hasOwn(screenTitles,mode) &&
-      (!["settings","coupons","reports"].includes(mode) || document.querySelector(".nav-settings-icon"))) setMode(mode);
+      (!["settings","coupons","reports","backup"].includes(mode) || document.querySelector(".nav-settings-icon"))) setMode(mode);
   }
   addEventListener("popstate",restoreNavigation);
   addEventListener("hashchange",restoreNavigation);
@@ -2339,9 +2395,9 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
   if (selected === "dashboard") load();
 }
 
-export function outstandingPage(isAdmin = false,canExport = false,theme = "classic",displayName = "") {
+export function outstandingPage(isAdmin = false,canExport = false,theme = "classic",displayName = "",language="th") {
   const nonce = crypto.randomUUID().replaceAll("-", "");
-  return new Response(`<!doctype html><html lang="th" data-theme="${themeName(theme)}"><meta charset="utf-8">
+  return new Response(uiMarkup(`<!doctype html><html lang="${language}" data-theme="${themeName(theme)}"><meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <title>ภาพรวมธุรกิจ · Little Paws Homestay Phuket</title>
     <link rel="icon" href="/static/little-paws-icon.png">
@@ -2349,7 +2405,7 @@ export function outstandingPage(isAdmin = false,canExport = false,theme = "class
     <link rel="stylesheet" href="/static/style.css?v=80">
     <style nonce="${nonce}">${macStyleBridge}\n${careGalleryCss}</style>
     <body class="staff-app" data-theme="${themeName(theme)}">
-    ${staffHeader(theme,isAdmin,displayName)}
+    ${staffHeader(theme,isAdmin,displayName,language)}
     <main>
     <div id="stay-actions" class="staff-subnav" hidden>
       <button type="button" data-mode="current" aria-pressed="false">กำลังเข้าพัก</button>
@@ -2433,7 +2489,7 @@ export function outstandingPage(isAdmin = false,canExport = false,theme = "class
       <div id="ledger-content" aria-live="polite"></div>
     </dialog>
     ${staffFooter}
-    <script nonce="${nonce}">(${main.toString()})(${JSON.stringify(intakeGroups)},${couponScreen.toString()},${settingsScreen.toString()},${ledgerScreen.toString()},${dashboardScreen.toString()},${reportScreen.toString()},${applyStaffTheme.toString()},${JSON.stringify(themes)},${JSON.stringify(ledgerKinds)},${JSON.stringify(ledgerCategories)},${canExport},${installCarePhotoViewer.toString()})</script></body></html>`, {
+    <script nonce="${nonce}">(${uiFunction("main",main,language)})(${JSON.stringify(uiValues(intakeGroups,language))},${uiFunction("couponScreen",couponScreen,language)},${uiFunction("settingsScreen",settingsScreen,language)},${uiFunction("ledgerScreen",ledgerScreen,language)},${uiFunction("dashboardScreen",dashboardScreen,language)},${uiFunction("reportScreen",reportScreen,language)},${applyStaffTheme.toString()},${JSON.stringify(uiValues(themes,language))},${JSON.stringify(uiValues(ledgerKinds,language))},${JSON.stringify(ledgerCategories)},${canExport},${installCarePhotoViewer.toString()},${uiFunction("accountScreen",accountScreen,language)},${uiFunction("backupScreen",backupScreen,language)},${storedArchive.toString()},${JSON.stringify(language==="en" ? fixedUiLabels : {})})</script></body></html>`,language), {
     headers: {
       "Content-Type":"text/html; charset=utf-8", "Cache-Control":"private, no-store",
       "X-Content-Type-Options":"nosniff",

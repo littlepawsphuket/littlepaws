@@ -1,4 +1,4 @@
-export function dashboardScreen({node,results,baht,dateLabel,monthLabel,today,openStay,openCustomer,openTimeline,
+export function dashboardScreen({translateLabel,node,results,baht,dateLabel,monthLabel,today,openStay,openCustomer,openTimeline,
   checkInBooking,viewBooking,checkout,setMode}) {
   const colors = {"ค่าฝากเลี้ยง":"#24796b","อาหารและขนม":"#a54a4b","อุปกรณ์":"#3b6dab",
     "ทำความสะอาด":"#43804a","ค่าน้ำไฟ":"#a86818","การตลาด":"#8255a0","ค่ารักษาพยาบาล":"#a94d7b","เอกสาร":"#546779","อื่นๆ":"#846343"};
@@ -135,7 +135,7 @@ export function dashboardScreen({node,results,baht,dateLabel,monthLabel,today,op
     for (const entry of data.categories) {
       const row = Object.assign(node("div"),{className:"category"});
       const heading = node("div");
-      heading.append(node("span",entry.category),node("b",baht.format(entry.cents/100)));
+      heading.append(node("span",translateLabel(entry.category)),node("b",baht.format(entry.cents/100)));
       const track = Object.assign(node("div"),{className:"track"});
       const fill = node("div");
       fill.style.width = (data.totals.expense_cents ? entry.cents/data.totals.expense_cents*100 : 0)+"%";

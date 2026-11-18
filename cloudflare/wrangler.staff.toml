@@ -1,6 +1,7 @@
 name = "little-paws-staff"
 main = "staff.mjs"
 compatibility_date = "2026-11-17"
+compatibility_flags = ["nodejs_compat"]
 workers_dev = false
 preview_urls = false
 # Browser functions are sent to the page as source. Omit Worker-only name helpers.

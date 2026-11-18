@@ -1,4 +1,4 @@
-export function ledgerScreen({node,results,message,reload,isActive,today,dateLabel,baht,key,openStay,openBooking,labels,categories}) {
+export function ledgerScreen({translateLabel,node,results,message,reload,isActive,today,dateLabel,baht,key,openStay,openBooking,labels,categories}) {
   const toolbar = document.getElementById("ledger-toolbar");
   const dialog = document.getElementById("ledger-editor");
   const content = document.getElementById("ledger-content");
@@ -72,7 +72,7 @@ export function ledgerScreen({node,results,message,reload,isActive,today,dateLab
     for (const entry of data.transactions) {
       const row = node("tr");
       const category = node("td");
-      category.append(node("strong",labels[entry.kind] || entry.kind),node("p",entry.category));
+      category.append(node("strong",labels[entry.kind] || entry.kind),node("p",translateLabel(entry.category)));
       const description = node("td",entry.description);
       if (entry.customer || entry.merchant) description.append(node("p",[entry.customer,entry.merchant].filter(Boolean).join(" · ")));
       if (entry.has_receipt) description.append(Object.assign(node("a","เปิดใบเสร็จ / สลิป"),{
@@ -131,7 +131,7 @@ export function ledgerScreen({node,results,message,reload,isActive,today,dateLab
     choices("kind","ประเภท",Object.entries(labels),row?.kind || (applied.kind === "all" ? "income" : applied.kind));
     field("occurredOn","วันที่รับ/จ่ายจริง",Object.assign(node("input"),{type:"date",value:row?.occurred_on || today(),required:true}));
     const categoryOptions = [...new Set(row?.category ? [row.category,...categories] : categories)];
-    choices("category","หมวดหมู่",categoryOptions.map((label) => [label,label]),row?.category || categoryOptions[0]);
+    choices("category","หมวดหมู่",categoryOptions.map((label) => [label,translateLabel(label)]),row?.category || categoryOptions[0]);
     field("amountCents","จำนวนเงิน (บาท)",Object.assign(node("input"),{type:"number",min:0,max:"999999999",step:".01",
       required:true,value:row ? (row.amount_cents/100).toFixed(2) : ""}));
     text("description","รายละเอียด",row?.description,800,true);

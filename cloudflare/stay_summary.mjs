@@ -1,8 +1,9 @@
 import {refundableBalance,stayBalance} from "./stay_payments.mjs";
+import {stayPaymentSnapshot} from './stay_edits.mjs';
 
 export async function staySummary(db, id) {
   const [record,dogs,payments,consent,links,deletions,refunds] = await db.batch([
-    db.prepare(`SELECT s.id,s.stay_number,s.status,s.checkin,s.checkout,s.actual_checkin_at,s.actual_checkout_at,
+    db.prepare(`SELECT s.id,s.customer_id,s.cloud_revision,(${stayPaymentSnapshot}) AS payment_snapshot,s.stay_number,s.status,s.checkin,s.checkout,s.actual_checkin_at,s.actual_checkout_at,
         s.charged_nights,s.note,s.cancelled_at,s.cancel_reason,
         CASE WHEN json_valid(s.intake) THEN COALESCE(json_extract(s.intake,'$.service_type'),'overnight')
           ELSE 'overnight' END AS service_type,s.intake,

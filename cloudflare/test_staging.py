@@ -18,6 +18,7 @@ from cloudflare.sync_ui import contents as ui_contents, care_gallery_styles
 assert Path(__file__).with_name("stay_terms.mjs").read_text(encoding="utf-8") == contents()
 assert Path(__file__).with_name("ui_assets.mjs").read_text(encoding="utf-8") == ui_contents()
 assert Path(__file__).with_name("care_gallery_styles.mjs").read_text(encoding="utf-8") == care_gallery_styles()
+subprocess.run(['node', 'cloudflare/sync_ui_english.mjs', '--check'], check=True)
 
 with TemporaryDirectory() as folder:
     root = Path(folder)
