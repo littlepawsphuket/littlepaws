@@ -253,5 +253,5 @@ export function ledgerScreen({node,results,message,reload,isActive,today,dateLab
       if (isActive()) message.textContent = "ส่งออก CSV ไม่สำเร็จ กรุณาลองใหม่";
     } finally { control.disabled = false; }
   };
-  return {render,query,visible};
+  return {render,query,visible,open:edit};
 }

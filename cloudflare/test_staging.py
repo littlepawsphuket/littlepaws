@@ -4,6 +4,7 @@ import io
 import os
 import sqlite3
 import subprocess
+import sys
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from zipfile import ZipFile
@@ -74,4 +75,7 @@ with TemporaryDirectory() as folder:
     assert (destination / 'objects/payment/payment-qr.jpg').read_bytes() == qr
     logo = Path(__file__).resolve().parents[1] / 'app' / 'static' / 'little-paws-logo.png'
     assert (destination / 'objects/brand/little-paws-logo.png').read_bytes() == logo.read_bytes()
-    subprocess.run(['node', 'cloudflare/test_timeline.mjs', str(d1), str(destination/'objects')], check=True)
+    font = destination / 'objects/brand/sukhumvit-set.woff2'
+    if Path('/System/Library/Fonts/Supplemental/SukhumvitSet.ttc').is_file():
+        assert font.read_bytes().startswith(b'wOF2')
+    subprocess.run(['node', 'cloudflare/test_timeline.mjs', str(d1), str(destination/'objects'), sys.executable], check=True)

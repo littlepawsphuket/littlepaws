@@ -5,6 +5,7 @@ import {ledgerKinds,ledgerCategories} from "./ledger.mjs";
 import {themes,themeName} from "./system_settings.mjs";
 import {intakeGroups} from "./stay_terms.mjs";
 import {dashboardScreen} from "./dashboard_ui.mjs";
+import {reportScreen} from "./report_ui.mjs";
 import {applyStaffTheme,staffHeader,staffFooter,macStyleBridge} from "./staff_shell.mjs";
 
 const css = `
@@ -84,7 +85,7 @@ const css = `
   #stays>article>button{margin-top:1rem}
 `;
 
-function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScreen,applyTheme,themeLabels,ledgerKinds,ledgerCategories,canExport) {
+function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScreen,reportScreen,applyTheme,themeLabels,ledgerKinds,ledgerCategories,canExport) {
   const results = document.getElementById("stays");
   const message = document.getElementById("message");
   const more = document.getElementById("more");
@@ -279,6 +280,24 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
         if (!response.ok) throw Error();
         const data = await response.json();
         if (requestId === requestNumber) renderFinance(data);
+        return;
+      }
+      if (selected === "reports") {
+        more.hidden = true;
+        const response = await fetch("/api/reports/"+reports.name()+"?"+reports.query());
+        if (requestId !== requestNumber) return;
+        if (response.status === 400) {message.textContent="กรุณาตรวจวันที่และเงื่อนไขรายงาน";return;}
+        if (response.status === 422) {
+          const data = await response.json();
+          if (requestId === requestNumber) {
+            reports.render(data);
+            message.textContent="รายงานเกิน 5,000 รายการ กรุณาเลือกช่วงสั้นลงหรือเพิ่มตัวกรอง";
+          }
+          return;
+        }
+        if (!response.ok) throw Error();
+        const data = await response.json();
+        if (requestId === requestNumber) reports.render(data);
         return;
       }
       if (selected === "coupons") {
@@ -2202,10 +2221,13 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
     reload:() => { message.textContent = ""; return load(true); },isActive:() => selected === "coupons"});
   const settingsAdmin = settingsScreen({node,results,message,themeLabels,thaiDate:bookingDate,
     reload:() => load(true),isActive:() => selected === "settings",openLedger:() => setMode("ledger"),
-    applyTheme,openCoupons:() => setMode("coupons")});
+    applyTheme,openCoupons:() => setMode("coupons"),openReports:() => setMode("reports")});
   const ledger = ledgerScreen({node,results,message,reload:() => load(true),isActive:() => selected === "ledger",
     today:() => parts.format(new Date()),dateLabel:(day) => bookingDate.format(new Date(day)),key,baht,
     openStay:showStay,openBooking:showBooking,labels:ledgerKinds,categories:ledgerCategories});
+  const reports = reportScreen({node,results,message,today:() => parts.format(new Date()),
+    reload:() => load(true),isActive:() => selected === "reports",canExport,back:() => setMode("settings"),
+    openRecord:({type,id}) => ({stay:showStay,booking:showBooking,customer:showCustomer,transaction:ledger.open})[type](id)});
   const dashboard = dashboardScreen({node,results,baht,today:() => parts.format(new Date()),
     dateLabel:(day) => bookingDate.format(new Date(day+"T00:00:00Z")),
     monthLabel:(month) => calendarMonth.format(new Date(month+"-01T00:00:00Z")),
@@ -2239,6 +2261,7 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
     calendar:["การจอง","ปฏิทินการจองและข้อมูลรอเช็กอิน"],bookings:["การจอง","รายการจองทั้งหมดที่รอเช็กอิน"],
     customers:["ลูกค้า","ข้อมูลเจ้าของ น้องหมา และประวัติการเข้าพัก"],settings:["ตั้งค่าระบบ","ราคา วันหยุด ธีม และการตั้งค่าร้าน"],
     ledger:["รายรับ–รายจ่าย","รายการรับและจ่ายตามวันที่เงินจริง"],coupons:["คูปอง","สร้างและจัดการคูปองส่วนลด"],
+    reports:["รายงาน","สรุปข้อมูลร้านและส่งออกรายงาน"],
     outstanding:["ยอดค้างชำระ","การเข้าพักที่รอรับชำระเพิ่มเติม"],finance:["ภาพรวมการเงิน","รายรับคงเหลือและรายจ่ายรายเดือน"]};
   function setMode(mode) {
     if (selected === mode) return;
@@ -2255,7 +2278,7 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
     bookingSearch.hidden = selected !== "bookings" && selected !== "customers";
     searchLabel.textContent = selected === "customers" ? "ชื่อลูกค้าหรือชื่อสุนัข" : "เลขจอง ชื่อลูกค้า หรือชื่อสุนัข";
     bookingQuery.value = queries[selected] || "";
-    const activeMode = ({ledger:"settings",coupons:"settings",bookings:"calendar",outstanding:"history",finance:"dashboard"})[mode] || mode;
+    const activeMode = ({ledger:"settings",coupons:"settings",reports:"settings",bookings:"calendar",outstanding:"history",finance:"dashboard"})[mode] || mode;
     for (const option of modes) {
       option.setAttribute("aria-pressed",String(option.dataset.mode === mode));
       if (option.matches(".primary-nav a")) {
@@ -2278,10 +2301,13 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
   if (openStaffLedger) openStaffLedger.onclick = () => setMode("ledger");
   bookingDialog.addEventListener("close", () => {
     bookingRequest?.abort();
-    if (selected === "dashboard") load(true);
+    if (["dashboard","reports"].includes(selected)) load(true);
   });
   customerDialog.addEventListener("close", () => {
-    if (selected === "dashboard") load(true);
+    if (["dashboard","reports"].includes(selected)) load(true);
+  });
+  document.getElementById("ledger-editor").addEventListener("close",() => {
+    if (selected === "reports") load(true);
   });
   document.getElementById("close-booking").addEventListener("click", () => bookingDialog.close());
   bookingSearch.addEventListener("submit", (event) => {
@@ -2294,7 +2320,7 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
   function restoreNavigation() {
     const mode = location.hash.slice(1);
     if (Object.hasOwn(screenTitles,mode) &&
-      (!["settings","coupons"].includes(mode) || document.querySelector(".nav-settings-icon"))) setMode(mode);
+      (!["settings","coupons","reports"].includes(mode) || document.querySelector(".nav-settings-icon"))) setMode(mode);
   }
   addEventListener("popstate",restoreNavigation);
   addEventListener("hashchange",restoreNavigation);
@@ -2396,7 +2422,7 @@ export function outstandingPage(isAdmin = false,canExport = false,theme = "class
       <div id="ledger-content" aria-live="polite"></div>
     </dialog>
     ${staffFooter}
-    <script nonce="${nonce}">(${main.toString()})(${JSON.stringify(intakeGroups)},${couponScreen.toString()},${settingsScreen.toString()},${ledgerScreen.toString()},${dashboardScreen.toString()},${applyStaffTheme.toString()},${JSON.stringify(themes)},${JSON.stringify(ledgerKinds)},${JSON.stringify(ledgerCategories)},${canExport})</script></body></html>`, {
+    <script nonce="${nonce}">(${main.toString()})(${JSON.stringify(intakeGroups)},${couponScreen.toString()},${settingsScreen.toString()},${ledgerScreen.toString()},${dashboardScreen.toString()},${reportScreen.toString()},${applyStaffTheme.toString()},${JSON.stringify(themes)},${JSON.stringify(ledgerKinds)},${JSON.stringify(ledgerCategories)},${canExport})</script></body></html>`, {
     headers: {
       "Content-Type":"text/html; charset=utf-8", "Cache-Control":"private, no-store",
       "X-Content-Type-Options":"nosniff",

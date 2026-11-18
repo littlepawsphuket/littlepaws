@@ -8,6 +8,8 @@ import { exportDocument } from "./document_exports.mjs";
 import { dashboardFinance } from "./dashboard_finance.mjs";
 import { dashboardOverview } from "./dashboard.mjs";
 import { staffAsset } from "./staff_assets.mjs";
+import {reportFilters,makeReport,reportChoices} from "./reports.mjs";
+import {exportReport} from "./report_exports.mjs";
 import { ledgerBodyLimit, ledgerChoices, ledgerList, saveLedgerEntry, deleteLedgerEntry } from "./ledger.mjs";
 import { staySummary } from "./stay_summary.mjs";
 import { stayHistory } from "./stay_history.mjs";
@@ -146,10 +148,20 @@ export default {
     const ledgerMatch = /^\/api\/transactions(?:\/(new|\d+))?$/.exec(url.pathname);
     const assetMatch = /^\/static\/([a-zA-Z0-9._-]+)$/.exec(url.pathname);
     const overview = url.pathname === "/api/dashboard";
-    if (!match && !stayChangeMatch && !depositMatch && !dogMatch && !customerMatch && !bookingMatch && !checkInMatch && !couponMatch && !documentMatch && !directCheckIn && !directPreview && !couponPreview && !staySummaryMatch && !timelineMatch && !careMediaMatch && !careExportMatch && !isFile && !settings && !holidayMatch && !history && !ledgerMatch && !assetMatch && !overview && !["/", "/api/account", "/api/dashboard/finance", "/api/customers", "/api/bookings", "/api/bookings/rates", "/api/bookings/calendar", "/api/bookings/pending", "/api/stays/outstanding", "/api/stays/current"].includes(url.pathname)) return json({error: "not_found"}, 404);
+    const reportMatch = /^\/api\/reports\/(finance|balances|boarding|coupons|customers)(?:\.(html|pdf|png|xlsx))?$/.exec(url.pathname);
+    if (!match && !stayChangeMatch && !depositMatch && !dogMatch && !customerMatch && !bookingMatch && !checkInMatch && !couponMatch && !documentMatch && !directCheckIn && !directPreview && !couponPreview && !staySummaryMatch && !timelineMatch && !careMediaMatch && !careExportMatch && !isFile && !settings && !holidayMatch && !history && !ledgerMatch && !assetMatch && !overview && !reportMatch && !["/", "/api/account", "/api/dashboard/finance", "/api/customers", "/api/bookings", "/api/bookings/rates", "/api/bookings/calendar", "/api/bookings/pending", "/api/stays/outstanding", "/api/stays/current"].includes(url.pathname)) return json({error: "not_found"}, 404);
     try {
       const user = await authorizedUser(env, ctx);
       if (!user) return json({error: "access_required"}, 403);
+      if (reportMatch) {
+        if (!user.is_admin) return json({error:"admin_required"},403);
+        if (request.method !== "GET") return json({error:"method_not_allowed"},405);
+        const filters = reportFilters(url.searchParams);
+        if (!filters) return json({error:"invalid_filters"},400);
+        const report = await makeReport(env.DB,reportMatch[1],filters);
+        if (report.error) return json(reportMatch[2] ? {error:report.error} : {report,choices:await reportChoices(env.DB)},422);
+        return reportMatch[2] ? await exportReport(env,report,reportMatch[2]) : json({report,choices:await reportChoices(env.DB)});
+      }
       if (assetMatch) return staffAsset(request,assetMatch[1]);
       if (ledgerMatch) {
         const raw = ledgerMatch[1];

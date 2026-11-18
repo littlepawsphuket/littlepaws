@@ -9,7 +9,7 @@ const headers = {
   "Referrer-Policy": "no-referrer",
   "X-Robots-Tag": "noindex, nofollow, noarchive",
   "X-Content-Type-Options": "nosniff",
-  "Content-Security-Policy": "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'",
+  "Content-Security-Policy": "default-src 'none'; img-src 'self'; font-src 'self'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'",
 };
 
 function respond(body, status, moreHeaders = {}) {
@@ -108,7 +108,8 @@ async function timeline(env, token, url, printable = false) {
   const html = `<!doctype html><html lang="${lang}"><meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1"><title>${title} · Little Paws</title>
     <style>
-    body{margin:0;background:#f2f7f3;color:#203c30;font:1rem/1.5 "Sukhumvit Set",system-ui,sans-serif}
+    @font-face{font-family:"Little Paws Sukhumvit";src:url("${photoPath}/font.woff2") format("woff2");font-display:swap}
+    body{margin:0;background:#f2f7f3;color:#203c30;font:1rem/1.5 "Little Paws Sukhumvit","Sukhumvit Set",system-ui,sans-serif}
     main{max-width:52rem;margin:auto;padding:1.15rem}header,article{background:#fff;border:1px solid #c9ded2;border-radius:1rem;padding:1rem}
     .profile-heading{display:flex;align-items:center;gap:.85rem;margin-top:.65rem}
     .profile{flex:none;width:5rem;height:5rem;object-fit:cover;border-radius:1rem}
@@ -183,6 +184,18 @@ async function profilePhoto(env, token) {
   return object ? respond(object.body, 200, {"Content-Type": "image/jpeg"}) : missing();
 }
 
+async function documentFont(env, token) {
+  const active = await env.DB.prepare(`SELECT 1 ${activeLink} WHERE ${activeCondition}`).bind(token).first();
+  if (!active) return missing();
+  const object = await env.MEDIA.get("brand/sukhumvit-set.woff2");
+  if (!object) return missing();
+  if (object.size > 512*1024) {
+    await object.body?.cancel?.();
+    return missing();
+  }
+  return respond(object.body,200,{"Content-Type":"font/woff2"});
+}
+
 export default {
   async fetch(request, env) {
     if (request.method !== "GET") return respond("Method not allowed", 405, {Allow:"GET"});
@@ -203,6 +216,7 @@ export default {
       }
       if (path.length === 4 && path[3] === "timeline.pdf") return await timelinePdf(env, token, url);
       if (path.length === 4 && path[3] === "profile.jpg") return await profilePhoto(env, token);
+      if (path.length === 4 && path[3] === "font.woff2") return await documentFont(env, token);
       if (path.length === 5 && path[3] === "photos" && /^\d+$/.test(path[4])) {
         const id = Number(path[4]);
         if (Number.isSafeInteger(id) && id > 0) return await photo(env, token, id);

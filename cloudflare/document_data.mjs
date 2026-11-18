@@ -2,6 +2,7 @@ import {bookingDetails} from "./bookings.mjs";
 import {staySummary} from "./stay_summary.mjs";
 import {validDogPhotoKey} from "./timeline.mjs";
 import {selectedTheme} from "./system_settings.mjs";
+import {uiAssets} from "./ui_assets.mjs";
 
 function base64(bytes) {
   let text = "";
@@ -27,13 +28,17 @@ export async function documentAssets(env) {
   let budget = 5 * 1024 * 1024;
   async function asset(key,type,limit) {
     if (budget < 64) return null;
-    const value = await inlineAsset(env.MEDIA,key,type,Math.min(limit,Math.floor((budget-64)*3/4)));
+    let value = await inlineAsset(env.MEDIA,key,type,Math.min(limit,Math.floor((budget-64)*3/4)));
+    const bundled = key.startsWith("brand/") ? uiAssets[key.slice(6)] : null;
+    if (!value && bundled && bundled[1].length*3/4<=limit && bundled[1].length+64<=budget) {
+      value = "data:"+type+";base64,"+bundled[1];
+    }
     if (value) budget -= value.length;
     return value;
   }
   const font = await asset("brand/sukhumvit-set.woff2","font/woff2",512*1024);
   const logo = await asset("brand/little-paws-logo.png","image/png",512*1024);
-  const mascot = theme === "classic" ? null : await asset("brand/mascot-"+theme+".webp","image/webp",768*1024);
+  const mascot = await asset("brand/"+(theme === "classic" ? "balen-gucci-relax" : "mascot-"+theme)+".webp","image/webp",768*1024);
   return {theme,font,logo,mascot,asset};
 }
 

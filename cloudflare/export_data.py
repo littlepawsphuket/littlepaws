@@ -5,6 +5,7 @@ import hashlib
 import json
 import sqlite3
 from contextlib import closing
+from io import BytesIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -17,6 +18,26 @@ PHOTO_TABLES = {
     'care_photos': ('id', 'care'),
 }
 MAX_D1_SQL_BYTES = 100_000
+
+
+def document_font(prepared=None):
+    """Prepare the Mac document typeface as a private browser-rendering asset."""
+    if prepared is not None:
+        data = Path(prepared).read_bytes()
+    else:
+        source = Path('/System/Library/Fonts/Supplemental/SukhumvitSet.ttc')
+        if not source.is_file():
+            return None
+        from fontTools.ttLib import TTFont
+
+        output = BytesIO()
+        with TTFont(source, fontNumber=2) as font:
+            font.flavor = 'woff2'
+            font.save(output)
+        data = output.getvalue()
+    if not data.startswith(b'wOF2') or len(data) > 512 * 1024:
+        raise ValueError('Provide a WOFF2 document font of at most 512 KiB')
+    return data
 
 
 def write_object(root, key, data, manifest):
@@ -73,7 +94,7 @@ def write_sql(db, path):
             write(schema)
 
 
-def export(archive, destination):
+def export(archive, destination, font=None):
     destination = Path(destination).resolve()
     # A migration bundle contains customer data and must live outside the source tree.
     project = Path(__file__).resolve().parents[1]
@@ -107,11 +128,14 @@ def export(archive, destination):
                 write_object(bundle, f'payment/{PAYMENT_QR_NAME}', qr.read_bytes(), manifest)
             write_sql(db, bundle / 'data.sql')
         static = project / 'app' / 'static'
-        brand_names = ['little-paws-logo.png', *(f'mascot-{theme}.webp' for theme in THEMES if theme != 'classic')]
+        brand_names = ['little-paws-logo.png', 'balen-gucci-relax.webp', *(f'mascot-{theme}.webp' for theme in THEMES if theme != 'classic')]
         for name in brand_names:
             image = static / name
             if image.is_file():
                 write_object(bundle, f'brand/{name}', image.read_bytes(), manifest)
+        typeface = document_font(font)
+        if typeface:
+            write_object(bundle, 'brand/sukhumvit-set.woff2', typeface, manifest)
         (bundle / 'objects.json').write_text(json.dumps(manifest, indent=2) + '\n', encoding='utf-8')
         bundle.rename(destination)
 
@@ -120,6 +144,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('archive', type=Path)
     parser.add_argument('destination', type=Path)
+    parser.add_argument('--font', type=Path, help='Prepared WOFF2 font for document rendering')
     options = parser.parse_args()
-    export(options.archive, options.destination)
+    export(options.archive, options.destination, options.font)
     print(f'Created private migration bundle in {options.destination}')

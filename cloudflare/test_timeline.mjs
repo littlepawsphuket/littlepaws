@@ -3,6 +3,7 @@ import {readFile, stat} from "node:fs/promises";
 import {join} from "node:path";
 import {DatabaseSync} from "node:sqlite";
 import {Script} from "node:vm";
+import {execFileSync} from "node:child_process";
 import worker from "./timeline.mjs";
 import staff from "./staff.mjs";
 import {receiveStayPayment} from "./stay_payments.mjs";
@@ -89,6 +90,7 @@ const pdfEnv = {...env, PUBLIC_ORIGIN:"https://example.test", BROWSER: {
     assert.doesNotMatch(options.html,/private note|other dog note|Download PDF|<a href=/);
     assert.match(options.html,/loading="eager" src="https:\/\/example\.test\/updates\/a+\/photos\/1"/);
     assert.ok(options.html.includes(`src="https://example.test${path("a")}/profile.jpg"`));
+    assert.ok(options.html.includes(`src:url("https://example.test${path("a")}/font.woff2")`));
     return new Response("%PDF-fixture",{headers:{"Content-Type":"application/pdf"}});
   },
 }};
@@ -116,6 +118,15 @@ assert.equal((await get(path("a"))).status,200);
 assert.equal((await get(path("a")+"/photos/1")).status,200);
 assert.equal((await get(path("a")+"?day=invalid")).status,400);
 assert.equal(viewCount(),countBeforeRequests+1);
+const beforeFont = viewCount();
+if (!await env.MEDIA.get("brand/sukhumvit-set.woff2")) {
+  updatedMedia.set("brand/sukhumvit-set.woff2",new TextEncoder().encode("wOF2 fixture font"));
+}
+const fontReply = await get(path("a")+"/font.woff2");
+assert.equal(fontReply.status,200);
+assert.equal(fontReply.headers.get("Content-Type"),"font/woff2");
+assert.equal(viewCount(),beforeFont);
+assert.equal((await get(path("c")+"/font.woff2")).status,404);
 
 assert.equal((await get(path("b"))).status,200);
 assert.equal(viewCount("b"),1);
@@ -124,6 +135,7 @@ assert.equal((await pdfGet(pdfPath)).status,404);
 assert.equal((await get(path("a"))).status, 404);
 assert.equal((await get(path("a")+"/photos/1")).status, 404);
 assert.equal((await get(path("a")+"/profile.jpg")).status, 404);
+assert.equal((await get(path("a")+"/font.woff2")).status,404);
 sqlite.exec("UPDATE stays SET status='completed', agreed_total=1000, payment_tracking=1 WHERE id=1");
 sqlite.exec(await readFile(new URL("./staff_access.sql", import.meta.url), "utf8"));
 sqlite.exec(await readFile(new URL("./booking_deposits.sql", import.meta.url), "utf8"));
@@ -208,6 +220,81 @@ assert.match(shell,/data-mode="dashboard"/);
 assert.match(shell,/staff-landscape/);
 assert.match(shell,/Little Paws, Big Love/);
 assert.equal((shell.match(/<span><\/span>/g)||[]).length,25);
+const reportPath = "/api/reports/finance?start=2026-01-01&end=2026-01-31";
+assert.equal((await get(reportPath)).status,404);
+assert.equal((await staffCall(reportPath)).status,403);
+assert.equal((await staffCall(reportPath,{method:"POST"},context)).status,405);
+assert.equal((await staffCall("/api/reports/finance?start=2026-02-30",{},context)).status,400);
+assert.equal((await staffCall(reportPath+"&customer=invalid",{},context)).status,400);
+const financeReport = await (await staffCall(reportPath,{},context)).json();
+assert.deepEqual(financeReport.report.summary.map(item=>item.value),[85000,0,0,85000]);
+assert.equal(financeReport.report.rows.length,2);
+assert.deepEqual(financeReport.report.chart.months,[{month:"2026-01",values:[85000,0,0]}]);
+const balancesReport = await (await staffCall(reportPath.replace("finance?","balances?"),{},context)).json();
+assert.equal(balancesReport.report.summary[0].value,100000);
+assert.equal(balancesReport.report.rows[0].link.id,1);
+const boardingReport = await (await staffCall(reportPath.replace("finance?","boarding?"),{},context)).json();
+assert.deepEqual(boardingReport.report.summary.map(item=>item.value),[1,2,3,9,3]);
+assert.equal(boardingReport.report.rows.length,3);
+const checkedOutReport = await (await staffCall(reportPath.replace("finance?","boarding?")+"&status=completed",{},context)).json();
+assert.equal(checkedOutReport.report.summary[0].value,0);
+assert.equal(checkedOutReport.report.rows.length,2);
+const customerReport = await (await staffCall(reportPath.replace("finance?","customers?"),{},context)).json();
+assert.equal(customerReport.report.summary[2].value,1);
+assert.equal(customerReport.report.summary[3].value,0);
+const registeredAt = sqlite.prepare("SELECT registered_at FROM customers WHERE id=3").get().registered_at;
+sqlite.exec("UPDATE customers SET registered_at='2026-01-04T18:00:00Z' WHERE id=3");
+const registeredReport = await (await staffCall("/api/reports/customers?start=2026-01-05&end=2026-01-05&segment=registered",{},context)).json();
+assert.equal(registeredReport.report.summary[0].value,1);
+assert.deepEqual(registeredReport.report.rows.map(row=>row.link.id),[3]);
+sqlite.prepare("UPDATE customers SET registered_at=? WHERE id=3").run(registeredAt);
+sqlite.exec("INSERT INTO stays(id,customer_id,checkin,checkout,status) VALUES(9001,1,'2025-12-01','2025-12-02','completed')");
+const returningReport = await (await staffCall(reportPath.replace("finance?","customers?")+"&segment=returning",{},context)).json();
+assert.equal(returningReport.report.summary[2].value,0);
+assert.equal(returningReport.report.summary[3].value,1);
+sqlite.exec("DELETE FROM stays WHERE id=9001");
+sqlite.exec("INSERT INTO coupons(id,code,kind,value,minimum_cents,expires_on,max_uses) VALUES(9001,'909090','fixed',100,0,'2026-12-31',1)");
+sqlite.exec("INSERT INTO coupon_uses(stay_id,coupon_id,discount_cents,used_at) VALUES(1,9001,10000,'2026-01-04T18:00:00Z')");
+const couponReport = await (await staffCall("/api/reports/coupons?start=2026-01-05&end=2026-01-05&code=909090",{},context)).json();
+assert.deepEqual(couponReport.report.summary.map(item=>item.value),[1,10000]);
+sqlite.exec("UPDATE stays SET status='cancelled' WHERE id=1");
+const cancelledCouponReport = await (await staffCall(reportPath.replace("finance?","coupons?"),{},context)).json();
+assert.equal(cancelledCouponReport.report.rows.length,0);
+sqlite.exec("UPDATE stays SET status='completed' WHERE id=1; DELETE FROM coupon_uses WHERE coupon_id=9001; DELETE FROM coupons WHERE id=9001");
+const reportHtml = await staffCall(reportPath.replace("finance?","finance.html?")+"&lang=en",{},context);
+assert.equal(reportHtml.headers.get("Cache-Control"),"private, no-store");
+const reportMarkup = await reportHtml.text();
+assert.match(reportMarkup,/Income and expenses/);
+assert.match(reportMarkup,/850\.00/);
+assert.match(reportMarkup,/Little Paws, Big Love/);
+const reportXlsx = await staffCall(reportPath.replace("finance?","finance.xlsx?"),{},context);
+assert.equal(reportXlsx.headers.get("Content-Type"),"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+const workbookCheck = execFileSync(process.argv[4],["-c",`
+import io,sys,zipfile,json
+from openpyxl import load_workbook
+raw=sys.stdin.buffer.read()
+assert zipfile.ZipFile(io.BytesIO(raw)).testzip() is None
+book=load_workbook(io.BytesIO(raw))
+assert book.sheetnames==['Summary','Details','Monthly']
+assert book['Summary']['B4'].value==850
+assert book['Details'].max_row==3
+assert book['Details']['E2'].value==350
+assert len(book['Monthly']._charts)==1
+print(json.dumps({'valid':True}))
+`],{input:Buffer.from(await reportXlsx.arrayBuffer())});
+assert.equal(JSON.parse(workbookCheck).valid,true);
+const boardingHtml = await (await staffCall(reportPath.replace("finance?","boarding.html?"),{},context)).text();
+assert.match(boardingHtml,/&lt;script&gt;Fixture dog/);
+assert.doesNotMatch(boardingHtml,/<script>Fixture dog/);
+sqlite.exec(`WITH RECURSIVE n(value) AS (SELECT 1 UNION ALL SELECT value+1 FROM n WHERE value<5001)
+  INSERT INTO transactions(occurred_on,kind,amount,category,description)
+  SELECT '2003-01-01','income',1,'test','report limit fixture' FROM n`);
+const largeReport = await staffCall("/api/reports/finance?start=2003-01-01&end=2003-01-31",{},context);
+assert.equal(largeReport.status,422);
+const largeReportData = await largeReport.json();
+assert.equal(largeReportData.report.error,"report_too_large");
+assert.ok(Array.isArray(largeReportData.choices.categories));
+sqlite.exec("DELETE FROM transactions WHERE description='report limit fixture'");
 const financePath = "/api/dashboard/finance?from=2002-03&to=2002-04";
 assert.equal((await get(financePath)).status,404);
 assert.equal((await staffCall(financePath)).status,403);
@@ -786,6 +873,8 @@ assert.equal((await get(couponAdmin)).status,404);
 assert.equal((await staffCall(couponAdmin,{},context)).status,200);
 assert.equal((await staffCall(couponAdmin,customerWrite("POST",newCoupon,"https://other.example.test"),context)).status,403);
 sqlite.exec("UPDATE app_users SET is_admin=0 WHERE id=1");
+assert.equal((await staffCall(reportPath,{},context)).status,403);
+assert.equal((await staffCall(reportPath.replace("finance?","finance.xlsx?"),{},context)).status,403);
 assert.equal((await staffCall(couponAdmin,{},context)).status,403);
 assert.equal((await staffCall(couponAdmin,customerWrite("POST",newCoupon),context)).status,403);
 const nonAdminPage = await (await staffCall("/",{},context)).text();

@@ -117,6 +117,12 @@ export const macStyleBridge = `
     .staff-app .brand-title small{font-size:10px}
     .staff-app .season-mascot{width:105px}
   }
+  .staff-app .report-summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin:20px 0}
+  .staff-app .report-stat{background:var(--season-card,#f4faf6);border:1px solid var(--season-border,#dce7df);border-radius:16px;padding:16px}
+  .staff-app .report-stat small,.staff-app .report-stat strong{display:block}
+  .staff-app .report-stat strong{font-size:24px;color:var(--brand-teal);margin-top:8px}
+  .staff-app .report-filters{margin-top:18px}
+  .staff-app .report-filters .formgrid,.staff-app .report-filters .actions{flex-basis:100%}
 `;
 
 export function applyStaffTheme(theme) {
