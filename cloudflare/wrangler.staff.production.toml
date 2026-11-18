@@ -1,0 +1,26 @@
+name = "little-paws-staff"
+main = "staff.mjs"
+compatibility_date = "2026-11-17"
+compatibility_flags = ["nodejs_compat"]
+keep_names = false
+keep_vars = true
+# Enable the route only after Access and the real-data reconciliation pass.
+workers_dev = false
+preview_urls = false
+
+[vars]
+TIMELINE_ORIGIN = "https://little-paws-timeline.jaturong.workers.dev"
+# Set ACCESS_AUDIENCE in the Cloudflare dashboard after creating its Access app.
+# Do not put a blank value here: keep_vars preserves the configured audience.
+
+[browser]
+binding = "BROWSER"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "little-paws-production"
+database_id = "65ede23b-d671-4f7f-8eda-ecacfd9e050e"
+
+[[r2_buckets]]
+binding = "MEDIA"
+bucket_name = "little-paws-production-media"
