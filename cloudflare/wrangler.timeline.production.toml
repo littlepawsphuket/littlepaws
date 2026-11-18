@@ -1,0 +1,22 @@
+name = "little-paws-timeline"
+main = "timeline.mjs"
+compatibility_date = "2026-11-17"
+keep_names = false
+# Enable only after scoped links, expiry and production media are verified.
+workers_dev = false
+preview_urls = false
+
+[vars]
+PUBLIC_ORIGIN = "https://little-paws-timeline.jaturong.workers.dev"
+
+[browser]
+binding = "BROWSER"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "little-paws-production"
+database_id = "65ede23b-d671-4f7f-8eda-ecacfd9e050e"
+
+[[r2_buckets]]
+binding = "MEDIA"
+bucket_name = "little-paws-production-media"
