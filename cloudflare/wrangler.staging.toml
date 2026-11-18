@@ -1,0 +1,20 @@
+name = "little-paws-timeline-staging"
+main = "timeline.mjs"
+compatibility_date = "2026-11-17"
+workers_dev = true
+keep_names = false
+
+[vars]
+PUBLIC_ORIGIN = "https://little-paws-timeline-staging.jaturong.workers.dev"
+
+[browser]
+binding = "BROWSER"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "little-paws-staging"
+database_id = "82792a3c-7ea0-4222-be84-30aaabb54698"
+
+[[r2_buckets]]
+binding = "MEDIA"
+bucket_name = "little-paws-staging-media"

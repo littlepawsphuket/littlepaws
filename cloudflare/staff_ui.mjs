@@ -7,6 +7,8 @@ import {intakeGroups} from "./stay_terms.mjs";
 import {dashboardScreen} from "./dashboard_ui.mjs";
 import {reportScreen} from "./report_ui.mjs";
 import {applyStaffTheme,staffHeader,staffFooter,macStyleBridge} from "./staff_shell.mjs";
+import {installCarePhotoViewer} from "../app/static/care-gallery.js";
+import {careGalleryCss} from "./care_gallery_styles.mjs";
 
 const css = `
   :root{--page:#f2f7f3;--wash:#e2f0e8;--line:#c8ded4;--ink:#203c30;--accent:#155747}
@@ -85,7 +87,8 @@ const css = `
   #stays>article>button{margin-top:1rem}
 `;
 
-function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScreen,reportScreen,applyTheme,themeLabels,ledgerKinds,ledgerCategories,canExport) {
+function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScreen,reportScreen,applyTheme,themeLabels,ledgerKinds,ledgerCategories,canExport,installCarePhotoViewer) {
+  installCarePhotoViewer();
   const results = document.getElementById("stays");
   const message = document.getElementById("message");
   const more = document.getElementById("more");
@@ -1703,9 +1706,17 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
           if (!selectedDay) card.append(node("p",bookingDate.format(new Date(event.recorded_at.slice(0,10)))));
           if (!showingPublic) card.append(node("p",event.customer_visible ? "ลูกค้าเห็นกิจกรรมนี้" : "สำหรับพนักงาน"));
           if (event.note) card.append(node("p",event.note));
-          for (const photo of event.photos) card.append(Object.assign(node("img"),{
-            src:endpoint+"/photos/"+photo.id,alt:"รูปกิจกรรม",loading:"lazy",className:"care-timeline-photo",
-          }));
+          if (event.photos.length) {
+            const gallery = Object.assign(node("div"),{className:"care-media-gallery"});
+            for (const photo of event.photos) {
+              const link = Object.assign(node("a"),{href:endpoint+"/photos/"+photo.id});
+              link.dataset.carePhoto = "";
+              link.setAttribute("aria-haspopup","dialog");
+              link.append(Object.assign(node("img"),{src:link.href,alt:"รูปกิจกรรม",loading:"lazy"}));
+              gallery.append(link);
+            }
+            card.append(gallery);
+          }
           if (!showingPublic && data.status === "checked_in") {
             const edit = Object.assign(node("button","แก้ไขกิจกรรม"),{type:"button"});
             const remove = Object.assign(node("button","ลบกิจกรรม"),{type:"button",className:"delete-deposit"});
@@ -2336,7 +2347,7 @@ export function outstandingPage(isAdmin = false,canExport = false,theme = "class
     <link rel="icon" href="/static/little-paws-icon.png">
     <style nonce="${nonce}">${css}</style>
     <link rel="stylesheet" href="/static/style.css?v=80">
-    <style nonce="${nonce}">${macStyleBridge}</style>
+    <style nonce="${nonce}">${macStyleBridge}\n${careGalleryCss}</style>
     <body class="staff-app" data-theme="${themeName(theme)}">
     ${staffHeader(theme,isAdmin,displayName)}
     <main>
@@ -2422,7 +2433,7 @@ export function outstandingPage(isAdmin = false,canExport = false,theme = "class
       <div id="ledger-content" aria-live="polite"></div>
     </dialog>
     ${staffFooter}
-    <script nonce="${nonce}">(${main.toString()})(${JSON.stringify(intakeGroups)},${couponScreen.toString()},${settingsScreen.toString()},${ledgerScreen.toString()},${dashboardScreen.toString()},${reportScreen.toString()},${applyStaffTheme.toString()},${JSON.stringify(themes)},${JSON.stringify(ledgerKinds)},${JSON.stringify(ledgerCategories)},${canExport})</script></body></html>`, {
+    <script nonce="${nonce}">(${main.toString()})(${JSON.stringify(intakeGroups)},${couponScreen.toString()},${settingsScreen.toString()},${ledgerScreen.toString()},${dashboardScreen.toString()},${reportScreen.toString()},${applyStaffTheme.toString()},${JSON.stringify(themes)},${JSON.stringify(ledgerKinds)},${JSON.stringify(ledgerCategories)},${canExport},${installCarePhotoViewer.toString()})</script></body></html>`, {
     headers: {
       "Content-Type":"text/html; charset=utf-8", "Cache-Control":"private, no-store",
       "X-Content-Type-Options":"nosniff",

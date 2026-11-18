@@ -4,12 +4,15 @@ const thaiToday = new Intl.DateTimeFormat("en-CA", {
   timeZone: "Asia/Bangkok", year: "numeric", month: "2-digit", day: "2-digit",
 });
 
+import {installCarePhotoViewer} from "../app/static/care-gallery.js";
+import {careGalleryCss} from "./care_gallery_styles.mjs";
+
 const headers = {
   "Cache-Control": "private, no-store",
   "Referrer-Policy": "no-referrer",
   "X-Robots-Tag": "noindex, nofollow, noarchive",
   "X-Content-Type-Options": "nosniff",
-  "Content-Security-Policy": "default-src 'none'; img-src 'self'; font-src 'self'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'",
+  "Content-Security-Policy": "default-src 'none'; script-src 'self'; img-src 'self'; font-src 'self'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'",
 };
 
 function respond(body, status, moreHeaders = {}) {
@@ -90,8 +93,10 @@ async function timeline(env, token, url, printable = false) {
     const photos = (event.photos || "").split(",").filter((id) => /^\d+$/.test(id));
     return `${heading}<article><h3><time>${escape(event.recorded_at.slice(11, 16))}</time>
       ${escape(label)}</h3><p>${escape(event.note)}</p>
-      <div class="photos">${photos.map((id) => `<img loading="${printable ? "eager" : "lazy"}" src="${photoPath}/photos/${id}"
-      alt="${en ? "Activity photo" : "รูปกิจกรรม"}">`).join("")}</div></article>`;
+      <div class="photos${printable ? "" : " care-media-gallery"}">${photos.map((id) => {
+        const image = `<img loading="${printable ? "eager" : "lazy"}" src="${photoPath}/photos/${id}" alt="${en ? "Activity photo" : "รูปกิจกรรม"}">`;
+        return printable ? image : `<a href="${photoPath}/photos/${id}" data-care-photo aria-haspopup="dialog">${image}</a>`;
+      }).join("")}</div></article>`;
   }).join("");
   const expiryHours = link.expiry_hours === null ? 48 : Number(link.expiry_hours);
   const hours = Number.isInteger(expiryHours) ? expiryHours : 48;
@@ -128,12 +133,13 @@ async function timeline(env, token, url, printable = false) {
       h2{break-after:avoid-page}h1{font-size:26pt}
       .photos img{width:auto;max-width:100%;height:auto;max-height:115mm}
     }
+    ${printable ? "" : careGalleryCss}
     </style><main><header><strong>Little Paws Homestay Phuket</strong>
     <div class="profile-heading">${profile}<div><span class="section-label">${title}</span><h1>${escape(link.name)}</h1></div></div>
     ${viewerLinks}</header>${controls}
     ${cards || `<p>${en ? "No activities yet." : "ยังไม่มีกิจกรรม"}</p>`}
     <footer>${en ? `This link expires within ${hours} hours after check-out.` : `ลิงก์นี้จะหมดอายุภายใน ${hours} ชั่วโมงหลังเช็กเอาต์`}</footer>
-    </main></html>`;
+    </main>${printable ? "" : `<script src="${route}/gallery.js" defer></script>`}</html>`;
   return respond(html, 200, {"Content-Type": "text/html; charset=utf-8", "Content-Language": lang});
 }
 
@@ -196,6 +202,11 @@ async function documentFont(env, token) {
   return respond(object.body,200,{"Content-Type":"font/woff2"});
 }
 
+async function galleryScript(env, token) {
+  const active = await env.DB.prepare(`SELECT 1 ${activeLink} WHERE ${activeCondition}`).bind(token).first();
+  return active ? respond(`(${installCarePhotoViewer.toString()})();`,200,{"Content-Type":"text/javascript; charset=utf-8"}) : missing();
+}
+
 export default {
   async fetch(request, env) {
     if (request.method !== "GET") return respond("Method not allowed", 405, {Allow:"GET"});
@@ -217,6 +228,7 @@ export default {
       if (path.length === 4 && path[3] === "timeline.pdf") return await timelinePdf(env, token, url);
       if (path.length === 4 && path[3] === "profile.jpg") return await profilePhoto(env, token);
       if (path.length === 4 && path[3] === "font.woff2") return await documentFont(env, token);
+      if (path.length === 4 && path[3] === "gallery.js") return await galleryScript(env, token);
       if (path.length === 5 && path[3] === "photos" && /^\d+$/.test(path[4])) {
         const id = Number(path[4]);
         if (Number.isSafeInteger(id) && id > 0) return await photo(env, token, id);
