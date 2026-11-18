@@ -1641,7 +1641,7 @@ PUBLIC_CARE_HEADERS = {
     'Referrer-Policy':'no-referrer',
     'X-Robots-Tag':'noindex, nofollow, noarchive',
     'X-Content-Type-Options':'nosniff',
-    'Content-Security-Policy':"default-src 'none'; style-src 'self'; font-src 'self' data:; img-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
+    'Content-Security-Policy':"default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self' data:; img-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
 }
 
 
