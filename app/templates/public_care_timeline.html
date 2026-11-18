@@ -6,7 +6,8 @@
   <meta name="referrer" content="no-referrer">
   <meta name="robots" content="noindex,nofollow">
   <title>{{ guest_text('ไทม์ไลน์กิจกรรม') }} · Little Paws Homestay Phuket</title>
-  <link rel="stylesheet" href="{{url_for('static',filename='style.css',v=75)}}">
+  <link rel="stylesheet" href="{{url_for('static',filename='style.css',v=81)}}">
+  <link rel="stylesheet" href="{{url_for('static',filename='care-gallery.css',v=1)}}">
 </head>
 <body data-theme="{{active_theme}}" class="guest-timeline">
 <main>
@@ -44,8 +45,8 @@
       <h3><time class="care-event-clock">{{event.recorded_at[11:16]}}</time> {{ guest_text(care_event_title(event)) }}</h3>
       {% if event.note %}<p class="care-event-note">{{event.note}}</p>{% endif %}
       {% if event.photos %}
-      <div class="care-gallery">{% for photo_id in event.photos.split(',') %}
-        <a href="{{url_for('public_care_photo',token=token,photo_id=photo_id)}}"><img src="{{url_for('public_care_photo',token=token,photo_id=photo_id)}}" alt="{{ guest_text('รูปประกอบกิจกรรม') }}" loading="lazy"></a>
+      <div class="care-gallery care-media-gallery">{% for photo_id in event.photos.split(',') %}
+        <a href="{{url_for('public_care_photo',token=token,photo_id=photo_id)}}" data-care-photo aria-haspopup="dialog"><img src="{{url_for('public_care_photo',token=token,photo_id=photo_id)}}" alt="{{ guest_text('รูปประกอบกิจกรรม') }}" loading="lazy"></a>
       {% endfor %}</div>
       {% endif %}
     </article>
@@ -60,5 +61,6 @@
   <p>{{ guest_text('ลิงก์นี้จะหมดอายุภายใน {hours} ชั่วโมงหลังเช็กเอาต์').format(hours=expiry_hours) }}</p>
   <small>{{slogan_title}}</small>
 </footer>
+<script type="module" src="{{url_for('static',filename='care-gallery.js',v=1)}}"></script>
 </body>
 </html>

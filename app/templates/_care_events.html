@@ -36,8 +36,8 @@
       </div>
     </div>
     {% if event.photos %}
-    <div class="care-gallery">{% for photo_id in event.photos.split(',') %}
-      <a href="{{url_for('care_photo',photo_id=photo_id)}}" target="_blank" rel="noopener"><img src="{{url_for('care_photo',photo_id=photo_id)}}" loading="lazy" alt="{{ _('รูปประกอบกิจกรรม') }}"></a>
+    <div class="care-gallery care-media-gallery">{% for photo_id in event.photos.split(',') %}
+      <a href="{{url_for('care_photo',photo_id=photo_id)}}" data-care-photo aria-haspopup="dialog"><img src="{{url_for('care_photo',photo_id=photo_id)}}" loading="lazy" alt="{{ _('รูปประกอบกิจกรรม') }}"></a>
     {% endfor %}</div>
     {% endif %}
     {% if editable %}{{ care_activity_dialog('care-edit-' ~ event.id, event.stay_id, event.dog_id, event.dog|default(''), options, origin, day, event) }}{% endif %}

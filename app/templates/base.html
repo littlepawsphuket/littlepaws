@@ -11,7 +11,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Little Paws Homestay Phuket</title>
   <link rel="icon" type="image/png" href="{{url_for('static',filename='little-paws-icon.png')}}">
-  <link rel="stylesheet" href="{{url_for('static',filename='style.css',v=80)}}">
+  <link rel="stylesheet" href="{{url_for('static',filename='style.css',v=81)}}">
+  <link rel="stylesheet" href="{{url_for('static',filename='care-gallery.css',v=1)}}">
 </head>
 <body data-theme="{{active_theme}}">
 <header>
@@ -103,5 +104,6 @@
   <small data-image-help hidden>{{ _('แตะค้างที่รูปเพื่อบันทึกหรือแชร์') }}</small>
 </dialog>
 <script src="{{url_for('static',filename='app.js',v=35)}}"></script>
+<script type="module" src="{{url_for('static',filename='care-gallery.js',v=1)}}"></script>
 </body>
 </html>
