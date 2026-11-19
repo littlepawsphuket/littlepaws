@@ -8,6 +8,7 @@ import {dashboardScreen} from "./dashboard_ui.mjs";
 import {reportScreen} from "./report_ui.mjs";
 import {applyStaffTheme,staffHeader,staffFooter,macStyleBridge} from "./staff_shell.mjs";
 import {installCarePhotoViewer} from "../app/static/care-gallery.js";
+import {boardingBookingCss} from "./boarding_booking_styles.mjs";
 import {careParityCss} from "./care_parity_styles.mjs";
 import {careGalleryCss} from "./care_gallery_styles.mjs";
 import {accountScreen} from './account_ui.mjs';
@@ -197,6 +198,7 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
       const date = isoDay(day);
       const cell = node("section");
       cell.className = "calendar-day";
+      if (date === parts.format(new Date())) cell.dataset.today = "";
       if (view === "month" && day.getUTCMonth() !== range.anchor.getUTCMonth()) cell.dataset.muted = "";
       if (view === "month") {
         const heading = Object.assign(node("time"),{dateTime:date,className:"calendar-date"});
@@ -215,6 +217,8 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
         if (date < booking.checkin || date > booking.checkout) continue;
         const label = (booking.dogs || booking.customer) + (booking.stay_id ? " · เช็กอินแล้ว" : "");
         const open = Object.assign(node("button",label),{type:"button",title:booking.booking_number || label});
+        open.className = "calendar-booking";
+        open.dataset.state = booking.stay_id ? "checked_in" : "pending";
         open.addEventListener("click", () => showBooking(booking.id));
         cell.append(open);
       }
@@ -270,6 +274,7 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
       document.getElementById("finance-home").append(financeToolbar);
       results.replaceChildren();
     }
+    results.dataset.screen = selected;
     more.disabled = true;
     try {
       if(selected==='backup'){more.hidden=true;backups.render();return;}
@@ -780,7 +785,8 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
   const pendingDeposits = new Map();
   function depositForm(booking) {
     const savedAttempt = pendingDeposits.get(booking.id);
-    const form = node("form");
+    const form = Object.assign(node("form"),{className:"record-payment-form"});
+    form.append(node("h4","รับมัดจำ"));
     const amount = Object.assign(node("input"), {type:"number", step:"0.01", min:"0.01", required:true,
       value:savedAttempt ? String(savedAttempt.amountCents / 100) : ""});
     if (!savedAttempt && booking.balance_cents !== null) amount.max = (booking.balance_cents / 100).toFixed(2);
@@ -872,7 +878,7 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
   let createBookingKey;
 
   async function bookingEditor(booking, direct = false, draftState = null, stayEdit = false) {
-    bookingDialog.classList.remove("care-workspace");
+    bookingDialog.classList.remove("care-workspace","record-workspace");
     bookingDialog.classList.add("checkin-workspace");
     const draft = draftState?.draft;
     const initial = booking || (draft && {customer:draftState.customer,customer_id:draft.customerId,
@@ -990,7 +996,11 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
     quantity.min = discount.min = "0";
     discount.step = "0.01";
     checkin.required = checkout.required = quantity.required = true;
-    form.append(dogs,warnings,submit,status);
+    const formActions=Object.assign(node("div"),{className:"record-actions checkin-wide"});
+    formActions.append(submit);
+    if(booking){const back=Object.assign(node("button","กลับไปหน้าสรุป"),{type:"button",className:"secondary"});
+      back.onclick=()=>stayEdit ? showStay(booking.id) : showBooking(booking.id);formActions.append(back);}
+    form.append(dogs,warnings,formActions,status);
     bookingContent.replaceChildren(node("h3",stayEdit ? "แก้ไขการเข้าพัก" : direct ? "เช็กอินโดยตรง" : booking ? "แก้ไขการจอง" : "สร้างการจอง"),form);
     function defaults() {
       quantity.step = service.value === "monthly" ? "0.01" : "1";
@@ -1170,7 +1180,7 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
   }
 
   function bookingActions(booking) {
-    const actions = node("div");
+    const actions = Object.assign(node("div"),{className:"record-actions"});
     const edit = Object.assign(node("button","แก้ไขการจอง"),{type:"button"});
     edit.addEventListener("click", () => bookingEditor(booking));
     const remove = Object.assign(node("button","ลบการจอง"),{type:"button",className:"delete-deposit"});
@@ -1306,7 +1316,8 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
     coupon_minimum:"ยอดค่าฝากไม่ถึงขั้นต่ำของคูปอง",coupon_exceeds:"ส่วนลดเกินยอดที่หักได้หลังตรวจยอดชำระเดิม",
   };
   function bookingCheckIn(booking, draft = null) {
-    bookingDialog.classList.remove("care-workspace");
+    bookingDialog.classList.remove("care-workspace","record-workspace");
+    bookingDialog.classList.remove("record-workspace");
     bookingDialog.classList.toggle("checkin-workspace",true);
     const endpoint = draft ? "/api/stays/check-in" : "/api/bookings/" + booking.id + "/check-in";
     bookingRequest?.abort();
@@ -1604,7 +1615,7 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
   }
 
   function showCareTimeline(stayId, dog, initialAction = null) {
-    bookingDialog.classList.remove("checkin-workspace");
+    bookingDialog.classList.remove("checkin-workspace","record-workspace");
     bookingDialog.classList.add("care-workspace");
     if (!bookingDialog.open) bookingDialog.showModal();
     document.getElementById("booking-status").textContent = "";
@@ -1959,7 +1970,7 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
 
   function documentActions(kind,id,controller,paymentId=null,care=null) {
     const group = node("section");
-    group.className = "intake-details";
+    group.className = "intake-details document-tools";
     const heading = {stay:"เอกสารสรุปการเข้าพัก",booking:"ใบยืนยันการจอง",deposit:"ใบรับมัดจำ",care:"ส่งสรุปกิจกรรมที่แชร์ให้ลูกค้า"}[kind];
     group.append(node("h4",heading));
     const language = node("select");
@@ -2043,7 +2054,7 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
   }
 
   function stayPaymentDetails(stay,money,controller) {
-    const view = node("section");
+    const view = Object.assign(node("section"),{className:"record-payment-history"});
     view.append(node("h4","ประวัติการชำระเงิน"));
     if (!stay.payments.length) view.append(node("p","ยังไม่มีรายการชำระ"));
     const locked = stay.status === "completed" || stay.status === "cancelled" || Boolean(stay.cancelled_at);
@@ -2185,9 +2196,43 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
     return view;
   }
 
+  function recordHeading(title,subtitle,state,kind) {
+    const heading=Object.assign(node("div"),{className:"record-heading"});
+    const copy=node("div");copy.append(node("h3",title),node("p",subtitle));
+    const badge=Object.assign(node("span",state || ""),{className:"record-badge"});badge.dataset.state=kind || "";
+    heading.append(copy,badge);return heading;
+  }
+  function recordFacts(record,service,unit) {
+    const facts=Object.assign(node("dl"),{className:"record-facts"});
+    const refs=[record.stay_number,record.booking_number].filter(Boolean).join(" / ") || "—";
+    for(const [label,value] of [["ลูกค้า",record.customer],["หมายเลขอ้างอิง",refs],
+      ["วันเข้าพัก",bookingDate.format(new Date(record.checkin))],["วันรับกลับ",bookingDate.format(new Date(record.checkout))],
+      ["ประเภทบริการ",service],[unit === "เดือน" ? "จำนวนเดือน" : "จำนวนวัน",record.charged_nights+" "+unit]]){
+      const item=node("div");item.append(node("dt",label),node("dd",value));facts.append(item);
+    }return facts;
+  }
+  function recordAmounts(entries) {
+    const totals=Object.assign(node("div"),{className:"record-amounts"});
+    for(const [label,value] of entries){const item=node("div");
+      item.append(node("small",label),node("strong",value === null || value === undefined ? "—" : baht.format(value/100)));totals.append(item);
+    }return totals;
+  }
+  function recordDogs(record,unit,timeline) {
+    const list=Object.assign(node("ul"),{className:"record-dogs"});
+    for(const dog of record.dogs){
+      const item=node("li");const photo=Object.assign(node("img"),{alt:dog.name,loading:"lazy",src:"/api/customers/"+record.customer_id+"/dogs/"+dog.id+"/photo"});
+      photo.onerror=()=>{photo.onerror=null;photo.src="/static/little-paws-icon.png";};
+      const copy=node("div");copy.append(node("strong",dog.name),node("small",dog.nightly_rate_cents === null ? "รอระบุราคา" : baht.format(dog.nightly_rate_cents/100)+" / "+unit));
+      item.append(photo,copy);
+      if(timeline){const button=Object.assign(node("button","จัดการไทม์ไลน์"),{type:"button",className:"secondary"});button.onclick=()=>showCareTimeline(record.id,dog);item.append(button);}
+      list.append(item);
+    }return list;
+  }
+
   async function showStay(id) {
-    bookingDialog.classList.remove("care-workspace");
+    bookingDialog.classList.remove("care-workspace","record-workspace");
     bookingDialog.classList.toggle("checkin-workspace",false);
+    bookingDialog.classList.add("record-workspace");
     bookingRequest?.abort();
     const controller = bookingRequest = new AbortController();
     if (!bookingDialog.open) bookingDialog.showModal();
@@ -2200,11 +2245,10 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
       if (controller.signal.aborted) return;
       const [service,unit] = services[stay.service_type] || [stay.service_type,"วัน"];
       const money = (cents) => baht.format(cents / 100);
-      bookingContent.replaceChildren(node("h3","สรุปการเข้าพัก · " + stay.customer),
-        node("p",[stay.stay_number,stay.booking_number,statuses[stay.status]].filter(Boolean).join(" · ")),
-        node("p",[stay.checkin,stay.checkout].map((day) => bookingDate.format(new Date(day))).join(" – ")),
-        node("p",service + " · " + stay.charged_nights + " " + unit),
-        node("p","ยอดสุทธิ " + money(stay.total_cents)));
+      bookingContent.replaceChildren(recordHeading("สรุปการเข้าพัก",stay.customer,statuses[stay.status],stay.status),
+        recordFacts(stay,service,unit),
+        recordAmounts([["ยอดสุทธิ",stay.total_cents],["รับชำระแล้ว",stay.payments.reduce((sum,payment)=>sum+payment.amount_cents,0)],
+          ["ยอดคงเหลือ",stay.status === "cancelled" ? null : stay.due_cents]]));
       if (stay.coupon_code) bookingContent.append(node("p","คูปอง " + stay.coupon_code +
         " · ส่วนลด " + money(stay.coupon_discount_cents)));
       for (const [label,value] of [["เช็กอินจริง",stay.actual_checkin_at],["เช็กเอาต์จริง",stay.actual_checkout_at]]) {
@@ -2213,19 +2257,10 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
         if (!Number.isFinite(moment.valueOf())) continue;
         const display = value.length === 10 ? bookingDate.format(moment)
           : bookingDate.format(new Date(parts.format(moment))) + " · " + bangkokTime.format(moment);
-        bookingContent.append(node("p",label + " " + display));
+        bookingContent.append(Object.assign(node("p",label + " " + display),{className:"record-actual-time"}));
       }
-      if (stay.status !== "cancelled" && stay.due_cents !== null) bookingContent.append(node("strong","ยอดคงเหลือ " + money(stay.due_cents)));
-      const dogs = node("ul");
-      for (const dog of stay.dogs) {
-        const item = node("li",dog.name + " · " +
-          (dog.nightly_rate_cents === null ? "—" : money(dog.nightly_rate_cents) + " / " + unit));
-        const timeline = Object.assign(node("button","จัดการไทม์ไลน์"),{type:"button"});
-        timeline.onclick = () => showCareTimeline(stay.id,dog);
-        item.append(timeline);
-        dogs.append(item);
-      }
-      bookingContent.append(node("h4","สุนัขที่เข้าพัก"),dogs);
+      bookingContent.append(node("h4","สุนัขที่เข้าพัก"),recordDogs(stay,unit,true));
+      if(stay.note)bookingContent.append(node("p",stay.note));
       const intake = showIntake(stay.intake);
       if (intake) bookingContent.append(intake);
       bookingContent.append(stayPaymentDetails(stay,money,controller));
@@ -2249,6 +2284,11 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
         for (const link of stay.timeline_views) {
           bookingContent.append(node("p",link.dog_name + " · " + link.view_count.toLocaleString("th-TH") + " ครั้ง"));
         }
+      }
+      if(!qr.hidden){
+        const paymentQr=Object.assign(node("details"),{className:"record-qr"});
+        const image=Object.assign(node("img"),{src:qr.href,alt:"QR สำหรับชำระเงิน",loading:"lazy"});
+        paymentQr.append(node("summary","QR สำหรับชำระเงิน"),image);bookingContent.append(paymentQr);
       }
       bookingContent.append(documentActions("stay",stay.id,controller));
       const edit=Object.assign(node('button','แก้ไขการเข้าพัก'),{type:'button'});
@@ -2291,6 +2331,7 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
 
   async function showBooking(id) {
     bookingDialog.classList.remove("care-workspace","checkin-workspace");
+    bookingDialog.classList.add("record-workspace");
     document.getElementById("booking-status").textContent = "";
     bookingContent.replaceChildren(node("p", "กำลังโหลด…"));
     if (!bookingDialog.open) bookingDialog.showModal();
@@ -2304,75 +2345,58 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
       const [service, unit] = services[data.service_type] || [data.service_type, "วัน"];
       const state = data.stay_id ? "เช็กอินแล้ว" : data.status === "cancelled" ? "ยกเลิกแล้ว" : "รอเช็กอิน";
       const money = (cents) => baht.format(cents / 100);
-      bookingContent.replaceChildren(
-        node("h3", [data.booking_number || "#" + data.id, state].join(" · ")),
-        node("p", [data.customer, data.contact].filter(Boolean).join(" · ")),
-        node("p", [data.checkin, data.checkout].map((day) => bookingDate.format(new Date(day))).join(" – ")),
-        node("p", service + " · " + data.charged_nights + " " + unit),
-      );
+      bookingContent.replaceChildren(recordHeading("รายละเอียดการจอง",data.customer,state,data.stay_id ? "checked_in" : data.status),
+        recordFacts(data,service,unit),recordAmounts([["ยอดรวม",data.total_cents],["รับชำระแล้ว",data.paid_cents],["ยอดคงเหลือ",data.balance_cents]]));
+      if(data.contact)bookingContent.append(Object.assign(node("p",data.contact),{className:"record-contact"}));
       if (!data.stay_id && data.status === "pending") bookingContent.append(bookingActions(data));
       if (data.stay_id) {
         const stay = Object.assign(node("button","ดูสรุปการเข้าพัก"),{type:"button"});
         stay.addEventListener("click",() => showStay(data.stay_id));
         bookingContent.append(stay);
       }
-      bookingContent.append(documentActions("booking",data.id,controller));
+
       if (data.note) bookingContent.append(node("p", data.note));
       bookingContent.append(node("h3", "สุนัขที่จอง"));
-      const dogs = node("ul");
-      for (const dog of data.dogs) {
-        dogs.append(node("li", dog.name + " · " + (dog.nightly_rate_cents === null
-          ? "รอระบุราคา" : money(dog.nightly_rate_cents) + " / " + unit)));
-      }
-      bookingContent.append(dogs, node("h3", "การชำระเงิน"));
+      bookingContent.append(recordDogs(data,unit,false), node("h3", "การชำระเงิน"));
       if (!data.payments.length) bookingContent.append(node("p", "ยังไม่มีรายการชำระ"));
       for (const payment of data.payments) {
         const date = bookingDate.format(new Date(payment.occurred_on));
         const row = node("p", [date, payment.received_time, paymentLabels[payment.payment_type] || payment.payment_type,
           money(payment.amount_cents)].filter(Boolean).join(" · "));
+        row.className="payment-entry";
         if (!data.stay_id && payment.payment_type === "deposit" && payment.payment_key) {
           row.append(depositDeleteButton(data.id, payment));
         }
         bookingContent.append(row);
         if (payment.payment_type === "deposit") bookingContent.append(documentActions("deposit",data.id,controller,payment.id));
       }
-      bookingContent.append(node("p", "รับชำระแล้ว " + money(data.paid_cents)));
-      if (data.balance_cents !== null) {
-        bookingContent.append(node("p", "ยอดรวม " + money(data.total_cents)),
-          node("p", "ยอดคงเหลือ " + money(data.balance_cents)));
-      }
       if (pendingDeposits.has(data.id) || (!data.stay_id && data.status === "pending" && data.balance_cents !== 0)) {
         bookingContent.append(depositForm(data));
       }
+      bookingContent.append(documentActions("booking",data.id,controller));
     } catch {
       if (!controller.signal.aborted) bookingContent.replaceChildren(node("p", "โหลดข้อมูลการจองไม่ได้ กรุณาลองใหม่"));
     }
   }
 
   function bookingCard(booking) {
-    const article = node("article");
-    article.append(node("h2", booking.customer),
-      node("p", [booking.booking_number || "#" + booking.id, booking.dogs].filter(Boolean).join(" · ")),
-      node("p", [booking.checkin, booking.checkout].map((day) => bookingDate.format(new Date(day))).join(" – ")));
-    if (booking.quote_pending) article.append(node("p", "รอระบุราคา"));
-    else article.append(node("p", "ยอดรวม " + baht.format(booking.total_cents / 100)));
-    article.append(node("p", "รับมัดจำ " + baht.format(booking.deposit_cents / 100)));
-    if (!booking.quote_pending) {
-      article.append(node("p", "ยอดคงเหลือ " + baht.format(Math.max(0, booking.total_cents - booking.deposit_cents) / 100)));
-    }
-    const details = node("button", "ดูการจอง");
-    details.type = "button";
-    details.addEventListener("click", () => showBooking(booking.id));
-    article.append(details);
+    const article = Object.assign(node("article"),{className:"card reservation-card"});
+    article.append(recordHeading(booking.customer,booking.dogs || "","รอเช็กอิน","pending"),
+      Object.assign(node("p",booking.booking_number || "#"+booking.id),{className:"record-reference"}),
+      node("p",[booking.checkin,booking.checkout].map(day=>bookingDate.format(new Date(day))).join(" – ")));
+    article.append(recordAmounts([["ยอดรวม",booking.quote_pending ? null : booking.total_cents],
+      ["รับมัดจำ",booking.deposit_cents],["ยอดคงเหลือ",booking.quote_pending ? null : Math.max(0,booking.total_cents-booking.deposit_cents)]]));
+    const details=Object.assign(node("button","ดูการจอง"),{type:"button"});
+    details.onclick=()=>showBooking(booking.id);
+    const actions=Object.assign(node("div"),{className:"record-actions"});actions.append(details);article.append(actions);
     return article;
   }
 
   function card(stay) {
-    const article = node("article");
-    article.append(node("h2", stay.customer),
-      node("p", [stay.stay_number || "#" + stay.id, statuses[stay.status] || stay.status].join(" · ")));
-    if (stay.dogs) article.append(node("p", stay.dogs));
-    if (selected === "history") {
+    const article = Object.assign(node("article"),{className:"card reservation-card"});
+    article.append(recordHeading(stay.customer,stay.dogs || "",statuses[stay.status] || stay.status,stay.status),
+      Object.assign(node("p",stay.stay_number || "#"+stay.id),{className:"record-reference"}));
+    if (stay.checkin && stay.checkout) {
       const date = (value) => bookingDate.format(new Date(value+"T00:00:00Z"));
       article.append(node("p",date(stay.checkin) + " – " + date(stay.checkout)));
     }
@@ -2380,7 +2404,8 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
       {className:"stay-due"}));
     const summary = Object.assign(node("button","ดูสรุปการเข้าพัก"),{type:"button"});
     summary.addEventListener("click",() => showStay(stay.id));
-    article.append(summary);
+    const actions=Object.assign(node("div"),{className:"record-actions"});
+    actions.append(summary);article.append(actions);
     if (stay.status === "checked_in") {
       const checkout = node("button", "เช็กเอาต์");
       checkout.type = "button";
@@ -2398,7 +2423,8 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
           checkout.disabled = false;
         }
       });
-      article.append(checkout);
+      checkout.className="secondary";
+      actions.append(checkout);
     }
     if (canReceiveStayPayment(stay)) article.append(stayPaymentForm(stay,async () => {
       await load(true);
@@ -2413,7 +2439,8 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
   }
 
   function stayPaymentForm(stay, onSaved) {
-    const form = node("form");
+    const form = Object.assign(node("form"),{className:"record-payment-form"});
+    form.append(node("h4","รับชำระยอดคงเหลือ"));
     const pending = pendingStayPayments.get(stay.id);
     const now = new Date();
     const today = parts.format(now);
@@ -2526,7 +2553,7 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
     bookingSearch.hidden = selected !== "bookings" && selected !== "customers";
     searchLabel.textContent = selected === "customers" ? "ชื่อลูกค้าหรือชื่อสุนัข" : "เลขจอง ชื่อลูกค้า หรือชื่อสุนัข";
     bookingQuery.value = queries[selected] || "";
-    const activeMode = ({backup:'settings',ledger:"settings",coupons:"settings",reports:"settings",bookings:"calendar",outstanding:"history",finance:"dashboard"})[mode] || mode;
+    const activeMode = ({backup:'settings',ledger:"settings",coupons:"settings",reports:"settings",bookings:"calendar",outstanding:"current",finance:"dashboard"})[mode] || mode;
     for (const option of modes) {
       option.setAttribute("aria-pressed",String(option.dataset.mode === mode));
       if (option.matches(".primary-nav a")) {
@@ -2582,7 +2609,7 @@ export function outstandingPage(isAdmin = false,canExport = false,theme = "class
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <title>ภาพรวมธุรกิจ · Little Paws Homestay Phuket</title>
     <link rel="icon" href="/static/little-paws-icon.png">
-    <style nonce="${nonce}">${css}${careParityCss}</style>
+    <style nonce="${nonce}">${css}${careParityCss}${boardingBookingCss}</style>
     <link rel="stylesheet" href="/static/style.css?v=80">
     <style nonce="${nonce}">${macStyleBridge}\n${careGalleryCss}</style>
     <body class="staff-app" data-theme="${themeName(theme)}">
