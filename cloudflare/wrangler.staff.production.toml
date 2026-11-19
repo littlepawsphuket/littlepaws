@@ -4,8 +4,8 @@ compatibility_date = "2026-11-17"
 compatibility_flags = ["nodejs_compat"]
 keep_names = false
 keep_vars = true
-# Enable the route only after Access and the real-data reconciliation pass.
-workers_dev = false
+# Production route is live behind Cloudflare Access; keep Access protection enabled.
+workers_dev = true
 preview_urls = false
 
 [vars]
