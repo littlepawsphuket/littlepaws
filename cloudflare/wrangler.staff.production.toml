@@ -9,6 +9,7 @@ workers_dev = false
 preview_urls = false
 
 [vars]
+ACCESS_TEAM_DOMAIN = "https://small-butterfly-9075.cloudflareaccess.com"
 TIMELINE_ORIGIN = "https://little-paws-timeline.jaturong.workers.dev"
 # Set ACCESS_AUDIENCE in the Cloudflare dashboard after creating its Access app.
 # Do not put a blank value here: keep_vars preserves the configured audience.

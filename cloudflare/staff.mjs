@@ -26,6 +26,7 @@ import {editStay} from './stay_edits.mjs';
 import {cloudSnapshot,backupMedia} from './cloud_backup.mjs';
 import {manualPage,guideImages} from './manual.mjs';
 import {uiLanguage} from './ui_locale.mjs';
+import {accessEmail} from './access_identity.mjs';
 
 const JSON_HEADERS = {
   "Content-Type": "application/json; charset=utf-8",
@@ -37,14 +38,23 @@ function json(body, status = 200) {
   return new Response(JSON.stringify(body), {status, headers: JSON_HEADERS});
 }
 
-async function authorizedUser(env, ctx) {
+async function authorizedUser(env, ctx, request) {
   // Only the trusted Workers Access context can attest to login.
-  if (!env.ACCESS_AUDIENCE || ctx?.access?.aud !== env.ACCESS_AUDIENCE) return null;
+  if (!env.ACCESS_AUDIENCE || ctx?.access?.aud !== env.ACCESS_AUDIENCE) {
+    console.warn('staff_access_denied', {reason: !env.ACCESS_AUDIENCE ? 'audience_unconfigured' : !ctx?.access ? 'trusted_context_missing' : 'audience_mismatch'});
+    return null;
+  }
   const identity = await ctx.access.getIdentity();
-  if (typeof identity?.email !== "string" || !identity.email) return null;
-  return env.DB.prepare(`SELECT u.id,u.display_name,u.is_admin,u.session_version,u.needs_password,a.email FROM staff_access_identities a
+  const email = await accessEmail(request, env, identity);
+  if (!email) {
+    console.warn('staff_access_denied', {reason: 'identity_email_missing'});
+    return null;
+  }
+  const user = await env.DB.prepare(`SELECT u.id,u.display_name,u.is_admin,u.session_version,u.needs_password,a.email FROM staff_access_identities a
     JOIN app_users u ON u.id=a.user_id WHERE a.email=? AND u.active=1`)
-    .bind(identity.email.trim().toLowerCase()).first();
+    .bind(email).first();
+  if (!user) console.warn('staff_access_denied', {reason: 'active_mapping_missing'});
+  return user;
 }
 
 async function boundedBody(request, limit) {
@@ -161,7 +171,7 @@ export default {
     const manualMatch=/^\/api\/manual\/(?:(usage|backup)\.html|images\/([a-z]+)\.webp)$/.exec(url.pathname);
     if (!backupRoute && !manualMatch && !userMatch && !accountMatch && !reopenMatch && !match && !stayChangeMatch && !depositMatch && !dogMatch && !customerMatch && !bookingMatch && !checkInMatch && !couponMatch && !documentMatch && !directCheckIn && !directPreview && !couponPreview && !staySummaryMatch && !timelineMatch && !careMediaMatch && !careExportMatch && !isFile && !settings && !holidayMatch && !history && !ledgerMatch && !assetMatch && !overview && !reportMatch && !["/", "/api/account", "/api/dashboard/finance", "/api/customers", "/api/bookings", "/api/bookings/rates", "/api/bookings/calendar", "/api/bookings/pending", "/api/stays/outstanding", "/api/stays/current"].includes(url.pathname)) return json({error: "not_found"}, 404);
     try {
-      const user = await authorizedUser(env, ctx);
+      const user = await authorizedUser(env, ctx, request);
       if (!user) return json({error: "access_required"}, 403);
       if (user.needs_password && !accountMatch && !assetMatch && url.pathname!=='/') return json({error:'password_change_required'},403);
       if(backupRoute){
@@ -175,7 +185,7 @@ export default {
         if(request.method!=='POST')return json({error:'method_not_allowed'},405);
         if(request.headers.get('Origin')!==url.origin)return json({error:'invalid_origin'},403);
         const snapshot=await cloudSnapshot(env.DB);
-        const stillAdmin=await authorizedUser(env,ctx);
+        const stillAdmin=await authorizedUser(env,ctx,request);
         if(!stillAdmin?.is_admin)return json({error:'admin_required'},403);
         return json(snapshot,snapshot.error ? 413 : 200);
       }
