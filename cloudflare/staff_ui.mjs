@@ -1638,6 +1638,7 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
     dateControls.append(dateStrip,calendar,day);
     toolbar.append(back,preview);
     function renderDates() {
+      calendar.value = day.value || today;
       dateStrip.replaceChildren();
       for (const option of day.options) {
         const chip = Object.assign(node("button",option.value === "" ? "แสดงทั้งหมด" : option.textContent),{type:"button",className:"secondary"});
