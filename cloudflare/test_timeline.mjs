@@ -537,7 +537,7 @@ for (const search of ["", "ab12cd", "Fixture owner", "Other dog"]) {
   const response = await staffCall(bookingPath + "?q=" + encodeURIComponent(search), {}, context);
   assert.equal(response.status, 200);
   const result = await response.json();
-  assert.deepEqual(JSON.parse(result.bookings[0].dog_photos).map(dog=>dog.id).sort(),[1,2]);
+  assert.deepEqual(JSON.parse(result.bookings[0].dog_photos).map(dog=>dog.id).sort(),[2]);
   assert.deepEqual(result.bookings.map((b) => [b.booking_number, b.charged_nights, b.total_cents, b.deposit_cents, b.quote_pending]),
     [["AB12CD", 2, 120000, 35000, 0]]);
 }
