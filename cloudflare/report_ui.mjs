@@ -62,7 +62,7 @@ export function reportScreen({
   }
   function render({ report, choices }) {
     const activeGeneration = ++generation;
-    const toolbar = Object.assign(node("section"), { className: "card" });
+    const toolbar = Object.assign(node("section"), { className: "card report-workspace-toolbar" });
     toolbar.append(button("กลับไปหน้าตั้งค่า", back));
     const form = Object.assign(node("form"), { className: "report-filters" });
     const fields = Object.assign(node("div"), { className: "formgrid" });
@@ -205,7 +205,7 @@ export function reportScreen({
       results.replaceChildren(toolbar);
       return;
     }
-    const output = Object.assign(node("section"), { className: "card" });
+    const output = Object.assign(node("section"), { className: "card report-workspace-output" });
     output.append(
       node("h2", report.title),
       node(

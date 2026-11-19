@@ -8,6 +8,7 @@ import {dashboardScreen} from "./dashboard_ui.mjs";
 import {reportScreen} from "./report_ui.mjs";
 import {applyStaffTheme,staffHeader,staffFooter,macStyleBridge} from "./staff_shell.mjs";
 import {installCarePhotoViewer} from "../app/static/care-gallery.js";
+import {workspaceCss} from "./workspace_styles.mjs";
 import {boardingBookingCss} from "./boarding_booking_styles.mjs";
 import {careParityCss} from "./care_parity_styles.mjs";
 import {careGalleryCss} from "./care_gallery_styles.mjs";
@@ -491,11 +492,27 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
     }
   }
 
+  function cardDogPhotos(record) {
+    let dogs=record.dog_photos;
+    if(typeof dogs === "string"){try{dogs=JSON.parse(dogs);}catch{dogs=[];}}
+    const gallery=Object.assign(node("div"),{className:"record-dog-photos"});
+    if(!Array.isArray(dogs))return gallery;
+    for(const dog of dogs){
+      const figure=node("figure");
+      const photo=Object.assign(node("img"),{alt:dog.name,loading:"lazy",decoding:"async",width:76,height:76,
+        src:dog.has_photo ? "/api/customers/"+dog.customer_id+"/dogs/"+dog.id+"/photo" : "/static/little-paws-icon.png"});
+      photo.onerror=()=>{photo.onerror=null;photo.src="/static/little-paws-icon.png";};
+      figure.append(photo,node("figcaption",dog.name));gallery.append(figure);
+    }return gallery;
+  }
+
   function customerCard(customer) {
-    const article = node("article");
+    const article = Object.assign(node("article"),{className:"card customer-directory-card"});
     const details = Object.assign(node("button", "ดูข้อมูลลูกค้า"), {type:"button"});
     details.addEventListener("click", () => showCustomer(customer.id));
-    article.append(node("h2", customer.name), node("p", "สุนัข " + customer.dog_count + " ตัว"), details);
+    const initial=Object.assign(node("span",Array.from(customer.name || "?")[0]),{className:"customer-initial"});initial.setAttribute("aria-hidden","true");
+    const copy=node("div");copy.append(node("h2",customer.name),node("p","สุนัข " + customer.dog_count + " ตัว"));
+    article.append(initial,copy,cardDogPhotos(customer),details);
     return article;
   }
 
@@ -691,13 +708,11 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
   }
 
   function dogCard(customerId, dog) {
-    const item = node("article");
+    const item = Object.assign(node("article"),{className:"card customer-dog-card"});
     item.append(node("h4", dog.name));
-    if (dog.has_photo) {
-      const photo = Object.assign(node("img"), {className:"customer-dog-photo", alt:dog.name, loading:"lazy"});
-      photo.src = "/api/customers/" + customerId + "/dogs/" + dog.id + "/photo";
-      item.append(photo);
-    }
+    const photo=Object.assign(node("img"),{className:"customer-dog-photo",alt:dog.name,loading:"lazy",
+      src:dog.has_photo ? "/api/customers/"+customerId+"/dogs/"+dog.id+"/photo" : "/static/little-paws-icon.png"});
+    photo.onerror=()=>{photo.onerror=null;photo.src="/static/little-paws-icon.png";};item.prepend(photo);
     const profile = readProfile(dog);
     const birth = new Date(profile.birth_date);
     const facts = [
@@ -711,7 +726,8 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
     edit.addEventListener("click", () => dogEditor(customerId, dog));
     const remove = Object.assign(node("button", "นำออกจากรายชื่อ"), {type:"button",className:"delete-deposit"});
     remove.addEventListener("click", () => removeDog(customerId, dog, remove));
-    item.append(photoActions(customerId, dog), edit, remove);
+    const actions=Object.assign(node("div"),{className:"record-actions"});actions.append(edit,remove);
+    item.append(photoActions(customerId,dog),actions);
     return item;
   }
 
@@ -721,6 +737,7 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
     customerContent.replaceChildren(node("p", "กำลังโหลด…"));
     if (!customerDialog.open) customerDialog.showModal();
     document.getElementById("customer-status").textContent = "";
+    let historyList;
     async function loadHistory(offset, nextButton) {
       if (nextButton) nextButton.disabled = true;
       try {
@@ -734,18 +751,25 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
           edit.addEventListener("click", () => customerEditor(customer));
           const archive = Object.assign(node("button", "นำออกจากรายการ"), {type:"button",className:"delete-deposit"});
           archive.addEventListener("click", () => removeCustomer(customer, archive));
-          customerContent.replaceChildren(node("h3", customer.name), edit, archive);
+          const heading=Object.assign(node("div"),{className:"customer-profile-heading"});
+          const actions=Object.assign(node("div"),{className:"record-actions"});actions.append(edit,archive);
+          heading.append(node("h3",customer.name),actions);customerContent.replaceChildren(heading);
+          const facts=Object.assign(node("dl"),{className:"record-facts"});
           for (const [label,value] of [["โทร",customer.owner_phone], ["Line ID / Facebook",customer.line_id],
             ["ที่อยู่ฉุกเฉิน",customer.emergency_address], ["หมายเหตุ",customer.note]]) {
-            if (value) customerContent.append(node("p", label + " · " + value));
+            if(value){const fact=node("div");fact.append(node("dt",label),node("dd",value));facts.append(fact);}
           }
+          if(facts.childElementCount)customerContent.append(facts);
           const addDog = Object.assign(node("button", "เพิ่มสุนัข"), {type:"button"});
           addDog.addEventListener("click", () => dogEditor(customer.id));
-          customerContent.append(node("h3", "สุนัข"), addDog);
-          for (const dog of data.dogs) customerContent.append(dogCard(customer.id, dog));
+          const dogHeading=Object.assign(node("div"),{className:"customer-section-heading"});dogHeading.append(node("h3","สุนัข"),addDog);
+          const dogs=Object.assign(node("div"),{className:"customer-dog-grid"});
+          customerContent.append(dogHeading,dogs);
+          for (const dog of data.dogs) dogs.append(dogCard(customer.id,dog));
           if (!data.dogs.length) customerContent.append(node("p", "ยังไม่มีข้อมูลสุนัข"));
-          customerContent.append(node("h3", "ประวัติการเข้าพัก"));
-          if (!data.stays.length) customerContent.append(node("p", "ยังไม่มีประวัติการเข้าพัก"));
+          historyList=Object.assign(node("section"),{className:"customer-history"});
+          historyList.append(node("h3","ประวัติการเข้าพัก"));customerContent.append(historyList);
+          if(!data.stays.length)historyList.append(node("p","ยังไม่มีประวัติการเข้าพัก"));
         }
         nextButton?.remove();
         for (const stay of data.stays) {
@@ -756,13 +780,14 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
           const summary = Object.assign(node("button",stay.due_cents > 0
             ? "ค้างชำระ " + baht.format(stay.due_cents / 100) : "ดูสรุปการเข้าพัก"),{type:"button"});
           summary.addEventListener("click", () => { customerDialog.close(); showStay(stay.id); });
+          item.append(cardDogPhotos(stay));
           item.append(summary);
-          customerContent.append(item);
+          historyList.append(item);
         }
         if (data.nextOffset !== null) {
           const moreHistory = Object.assign(node("button", "ดูประวัติเพิ่มเติม"), {type:"button"});
           moreHistory.addEventListener("click", () => loadHistory(data.nextOffset, moreHistory));
-          customerContent.append(moreHistory);
+          historyList.append(moreHistory);
         }
       } catch {
         if (controller.signal.aborted) return;
@@ -2384,6 +2409,7 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
     article.append(recordHeading(booking.customer,booking.dogs || "","รอเช็กอิน","pending"),
       Object.assign(node("p",booking.booking_number || "#"+booking.id),{className:"record-reference"}),
       node("p",[booking.checkin,booking.checkout].map(day=>bookingDate.format(new Date(day))).join(" – ")));
+    article.append(cardDogPhotos(booking));
     article.append(recordAmounts([["ยอดรวม",booking.quote_pending ? null : booking.total_cents],
       ["รับมัดจำ",booking.deposit_cents],["ยอดคงเหลือ",booking.quote_pending ? null : Math.max(0,booking.total_cents-booking.deposit_cents)]]));
     const details=Object.assign(node("button","ดูการจอง"),{type:"button"});
@@ -2396,6 +2422,7 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
     const article = Object.assign(node("article"),{className:"card reservation-card"});
     article.append(recordHeading(stay.customer,stay.dogs || "",statuses[stay.status] || stay.status,stay.status),
       Object.assign(node("p",stay.stay_number || "#"+stay.id),{className:"record-reference"}));
+    article.append(cardDogPhotos(stay));
     if (stay.checkin && stay.checkout) {
       const date = (value) => bookingDate.format(new Date(value+"T00:00:00Z"));
       article.append(node("p",date(stay.checkin) + " – " + date(stay.checkout)));
@@ -2609,7 +2636,7 @@ export function outstandingPage(isAdmin = false,canExport = false,theme = "class
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <title>ภาพรวมธุรกิจ · Little Paws Homestay Phuket</title>
     <link rel="icon" href="/static/little-paws-icon.png">
-    <style nonce="${nonce}">${css}${careParityCss}${boardingBookingCss}</style>
+    <style nonce="${nonce}">${css}${careParityCss}${boardingBookingCss}${workspaceCss}</style>
     <link rel="stylesheet" href="/static/style.css?v=80">
     <style nonce="${nonce}">${macStyleBridge}\n${careGalleryCss}</style>
     <body class="staff-app" data-theme="${themeName(theme)}">

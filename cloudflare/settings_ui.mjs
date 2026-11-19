@@ -89,7 +89,14 @@ export function settingsScreen({node,results,message,themeLabels,thaiDate,reload
       select.append(Object.assign(node("option",label),{value}));
     }
     select.value = data.theme;
-    form.append(field("ธีมของระบบ",select),submit("ใช้ธีมนี้"));
+    const original=field("ธีมของระบบ",select);original.hidden=true;
+    const options=grid("theme-options");options.setAttribute("role","group");options.setAttribute("aria-label","ธีมของระบบ");
+    for(const [value,label] of Object.entries(themeLabels)){
+      const choice=button(label);choice.dataset.theme=value;choice.setAttribute("aria-pressed",String(value===select.value));
+      const swatch=node("span");swatch.setAttribute("aria-hidden","true");choice.prepend(swatch);
+      choice.onclick=()=>{select.value=value;for(const item of options.children)item.setAttribute("aria-pressed",String(item===choice));};options.append(choice);
+    }
+    form.append(original,options,submit("ใช้ธีมนี้"));
     saveForm(form,(control) => writeSetting(control,{theme:select.value}));
     panel.append(form);
   }
@@ -159,7 +166,7 @@ export function settingsScreen({node,results,message,themeLabels,thaiDate,reload
   function render(value) {
     data = value;
     applyTheme(value.theme);
-    const view = node("article");
+    const view = Object.assign(node("article"),{className:"card settings-workspace"});
     const menu = grid("settings-menu");
     menu.setAttribute("role","group");
     menu.setAttribute("aria-label","หมวดตั้งค่า");
@@ -175,25 +182,34 @@ export function settingsScreen({node,results,message,themeLabels,thaiDate,reload
       };
       menu.append(tab);
     }
+    const tools=grid("settings-tools");
     const ledger = button("รายรับ–รายจ่าย");
     ledger.onclick = openLedger;
-    menu.append(ledger);
+    tools.append(ledger);
     const coupons = button("คูปอง");
     coupons.onclick = openCoupons;
     const reports = button("รายงาน");
     reports.onclick = openReports;
-    menu.append(reports);
-    menu.append(coupons);
-    const users=button('ผู้ใช้งาน');users.onclick=openUsers;menu.append(users);
-    const backup=button('สำรองข้อมูล');backup.onclick=openBackup;menu.append(backup);
-    const guide=Object.assign(node('a','คู่มือการใช้งาน'),{href:'/api/manual/usage.html',target:'_blank',rel:'noopener'});menu.append(guide);
+    tools.append(reports);
+    tools.append(coupons);
+    const users=button('ผู้ใช้งาน');users.onclick=openUsers;tools.append(users);
+    const backup=button('สำรองข้อมูล');backup.onclick=openBackup;tools.append(backup);
+    const guide=Object.assign(node('a','คู่มือการใช้งาน'),{href:'/api/manual/usage.html',target:'_blank',rel:'noopener'});tools.append(guide);
     const refresh = button("โหลดการตั้งค่าล่าสุด");
     refresh.onclick = () => { message.textContent = ""; reload(); };
-    const panel = node("section");
+    const panel = Object.assign(node("section"),{className:"settings-panel"});
+    panel.dataset.section=section;
     panel.append(node("h2",sections[section]));
     const forms = {rates:rateForm,holidays:holidayForm,capacity:capacityForm,care:careForm,theme:themeForm};
     forms[section](panel);
-    view.append(menu,panel,refresh);
+    const paths=["M4 5h16v14H4zM4 10h16M8 14h3","M4 19V9m8 10V5m8 14V2","M4 4h16v6a2 2 0 0 0 0 4v6H4v-6a2 2 0 0 0 0-4zM12 7v2m0 6v2","M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8M22 21v-2a4 4 0 0 0-3-3.87","M4 4h13l3 3v13H4zM8 4v6h8V4M8 20v-7h8v7","M3 4h7a3 3 0 0 1 3 3v14a4 4 0 0 0-4-2H3zM13 7a3 3 0 0 1 3-3h5v15h-5a4 4 0 0 0-3 2"];
+    [...tools.children].forEach((tool,index)=>{
+      const icon=document.createElementNS("http://www.w3.org/2000/svg","svg");
+      for(const [key,value] of Object.entries({viewBox:"0 0 24 24",fill:"none",stroke:"currentColor","stroke-width":"1.7","stroke-linecap":"round","stroke-linejoin":"round","aria-hidden":"true"}))icon.setAttribute(key,value);
+      const path=document.createElementNS(icon.namespaceURI,"path");path.setAttribute("d",paths[index]);icon.append(path);
+      tool.prepend(icon);tool.classList.add("settings-tool");
+    });
+    view.append(menu,panel,refresh,node("h2","เครื่องมือจัดการร้าน"),tools);
     results.replaceChildren(view);
   }
   return {render};

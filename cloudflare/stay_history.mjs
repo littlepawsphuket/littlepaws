@@ -1,3 +1,4 @@
+import {stayCardDogs} from "./card_dogs.mjs";
 import {validDay} from "./bookings.mjs";
 import {stayBalance} from "./stay_payments.mjs";
 
@@ -20,7 +21,7 @@ export async function stayHistory(db,query,now = new Date()) {
   }
   if (!validDay(start) || !validDay(end) || start > end || search.length > 120 ||
       !["all","checked_in","completed"].includes(status)) return null;
-  const {results} = await db.prepare(`SELECT s.id,s.stay_number,s.status,s.checkin,s.checkout,c.name AS customer,
+  const {results} = await db.prepare(`SELECT s.id,s.stay_number,s.status,s.checkin,s.checkout,c.name AS customer,${stayCardDogs} AS dog_photos,
     (SELECT group_concat(d.name, ', ') FROM stay_dogs sd JOIN dogs d ON d.id=sd.dog_id WHERE sd.stay_id=s.id) AS dogs,
     CASE WHEN s.payment_tracking=1 THEN ${stayBalance} ELSE 0 END AS due_cents
     FROM stays s JOIN customers c ON c.id=s.customer_id

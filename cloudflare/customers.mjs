@@ -1,8 +1,9 @@
+import {stayCardDogs,customerCardDogs} from "./card_dogs.mjs";
 import {stayBalance, authorizedStaff} from "./stay_payments.mjs";
 
 export async function searchCustomers(db, after, search) {
   const {results} = await db.prepare(`
-    SELECT c.id,c.name,
+    SELECT c.id,c.name,${customerCardDogs} AS dog_photos,
       (SELECT count(*) FROM dogs d WHERE d.customer_id=c.id AND d.archived=0) AS dog_count
     FROM customers c WHERE c.archived=0 AND c.id>?
       AND (?='' OR instr(lower(c.name),?)>0 OR EXISTS (
@@ -21,7 +22,7 @@ export async function customerDetails(db, id, offset) {
     db.prepare(`SELECT d.id,d.name,d.size,d.note,d.profile,p.dog_id IS NOT NULL AS has_photo
       FROM dogs d LEFT JOIN dog_photos p ON p.dog_id=d.id
       WHERE d.customer_id=? AND d.archived=0 ORDER BY d.name,d.id`).bind(id),
-    db.prepare(`SELECT s.id,s.stay_number,s.checkin,s.checkout,s.status,
+    db.prepare(`SELECT s.id,s.stay_number,s.checkin,s.checkout,s.status,${stayCardDogs} AS dog_photos,
       (SELECT group_concat(d.name, ', ') FROM stay_dogs sd JOIN dogs d ON d.id=sd.dog_id
         WHERE sd.stay_id=s.id) AS dogs,
       CASE WHEN s.payment_tracking=1 THEN ${stayBalance} ELSE 0 END AS due_cents

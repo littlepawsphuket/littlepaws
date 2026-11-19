@@ -1,3 +1,4 @@
+import {bookingCardDogs} from "./card_dogs.mjs";
 import {authorizedStaff, normalizePayment} from "./stay_payments.mjs";
 
 const quotePending = `(NOT EXISTS (SELECT 1 FROM appointment_dogs ad WHERE ad.appointment_id=a.id)
@@ -9,7 +10,7 @@ const deposited = `COALESCE((SELECT SUM(ROUND(t.amount * 100)) FROM transactions
 // Search pending bookings without exposing notes, contact details, or payment records.
 export async function pendingBookings(db, after, search) {
   const {results} = await db.prepare(`
-    SELECT a.id, a.booking_number, a.checkin, a.checkout, a.charged_nights,
+    SELECT a.id, a.booking_number, a.checkin, a.checkout, a.charged_nights,${bookingCardDogs} AS dog_photos,
       c.name AS customer,
       (SELECT group_concat(d.name, ', ') FROM appointment_dogs ad
        JOIN dogs d ON d.id=ad.dog_id WHERE ad.appointment_id=a.id) AS dogs,

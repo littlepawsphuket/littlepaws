@@ -71,6 +71,7 @@ export function ledgerScreen({translateLabel,node,results,message,reload,isActiv
     const rows = table.tBodies[0];
     for (const entry of data.transactions) {
       const row = node("tr");
+      row.dataset.kind=entry.kind;
       const category = node("td");
       category.append(node("strong",labels[entry.kind] || entry.kind),node("p",translateLabel(entry.category)));
       const description = node("td",entry.description);

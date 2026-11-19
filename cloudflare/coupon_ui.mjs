@@ -17,6 +17,14 @@ export function couponScreen({node,key,baht,results,message,reload,isActive,thai
   }
   dialog.addEventListener("close",() => { dialogRequest++; clearImage(); });
   document.getElementById("coupon-close").onclick = () => dialog.close();
+  const statusTabs=Object.assign(node("div"),{className:"coupon-status-tabs"});
+  statusTabs.setAttribute("role","group");statusTabs.setAttribute("aria-label","สถานะคูปอง");
+  for(const option of group.options){
+    const tab=Object.assign(node("button",option.text),{type:"button"});tab.dataset.status=option.value;
+    tab.setAttribute("aria-pressed",String(option.value===group.value));
+    tab.onclick=()=>{group.value=option.value;for(const item of statusTabs.children)item.setAttribute("aria-pressed",String(item===tab));reload();};statusTabs.append(tab);
+  }
+  group.parentElement.hidden=true;toolbar.prepend(statusTabs);
   group.addEventListener("change",() => reload());
   add.onclick = () => edit();
 
@@ -133,7 +141,7 @@ export function couponScreen({node,key,baht,results,message,reload,isActive,thai
     clearImage();
     if (!dialog.open) dialog.showModal();
     status.textContent = "";
-    const form = node("form");
+    const form = Object.assign(node("form"),{className:"coupon-form"});
     function field(label,input) {
       const wrapper = node("label",label);
       wrapper.append(input);
@@ -196,10 +204,10 @@ export function couponScreen({node,key,baht,results,message,reload,isActive,thai
       defaultExpiry = data.defaultExpiry;
       add.disabled = false;
       for (const coupon of data.coupons) {
-        const card = node("article");
+        const card = Object.assign(node("article"),{className:"card coupon-list-card"});
         const open = Object.assign(node("button","ดูคูปอง"),{type:"button"});
         open.onclick = () => preview(coupon.id);
-        card.append(node("h2",title(coupon)),node("p","รหัส "+coupon.code),
+        card.append(node("h2",title(coupon)),Object.assign(node("p","รหัส "+coupon.code),{className:"coupon-list-code"}),
           ...conditions(coupon).map((line) => node("p",line)),open);
         results.append(card);
       }

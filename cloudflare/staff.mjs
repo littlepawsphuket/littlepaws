@@ -1,3 +1,4 @@
+import {stayCardDogs} from "./card_dogs.mjs";
 import { receiveStayPayment, stayBalance, authorizedStaff } from "./stay_payments.mjs";
 import { validDay, pendingBookings, bookingCalendar, bookingDetails, receiveBookingDeposit, deleteBookingDeposit } from "./bookings.mjs";
 import { listCoupons, couponDetails, saveCoupon, archiveCoupon } from "./coupon_admin.mjs";
@@ -589,7 +590,7 @@ export default {
         const predicate = current
           ? "s.status='checked_in' AND COALESCE(substr(s.actual_checkin_at,1,10),s.checkin)<=date('now','+7 hours')"
           : `s.payment_tracking=1 AND s.status!='cancelled' AND ${stayBalance}>0`;
-        const {results} = await env.DB.prepare(`SELECT s.id,s.stay_number,s.status,s.checkin,s.checkout,
+        const {results} = await env.DB.prepare(`SELECT s.id,s.stay_number,s.status,s.checkin,s.checkout,${stayCardDogs} AS dog_photos,
             c.name AS customer,
             (SELECT group_concat(d.name, ', ') FROM stay_dogs sd JOIN dogs d ON d.id=sd.dog_id
               WHERE sd.stay_id=s.id) AS dogs,

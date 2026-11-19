@@ -1,5 +1,5 @@
 export function accountScreen({node,resizedPhoto}) {
-  const dialog=Object.assign(node('dialog'),{id:'account-dialog'});
+  const dialog=Object.assign(node('dialog'),{id:'account-dialog',className:'account-workspace'});
   dialog.setAttribute('aria-label','บัญชีผู้ใช้งาน');
   const heading=node('h2','บัญชีผู้ใช้งาน');
   const close=Object.assign(node('button','ปิด'),{type:'button'});
@@ -70,7 +70,7 @@ export function accountScreen({node,resizedPhoto}) {
       const response=await fetch('/api/users');if(!response.ok)throw Error('ไม่มีสิทธิ์จัดการผู้ใช้งาน');
       const {users}=await response.json();content.append(button('+ เพิ่มผู้ใช้',()=>editor(null)));
       content.append(node('p','ใช้อีเมลที่ได้รับอนุญาตใน Cloudflare Access เท่านั้น การเพิ่มในหน้านี้ไม่ข้ามนโยบาย Access'));
-      for(const user of users){const row=node('article');row.append(node('h3',user.display_name),
+      for(const user of users){const row=Object.assign(node('article'),{className:'card account-user-card'});row.append(node('h3',user.display_name),
         node('p',[user.username,user.email,user.is_admin?'ผู้ดูแลระบบ':'เจ้าหน้าที่',user.active?'ใช้งาน':'ปิดใช้งาน'].filter(Boolean).join(' · ')),
         button('แก้ไข',()=>editor(user)),button('ตั้งรหัสผ่านใหม่',()=>reset(user)));content.append(row);}
     }catch(error){status.textContent=error.message;}

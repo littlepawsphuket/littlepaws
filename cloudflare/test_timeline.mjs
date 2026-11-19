@@ -471,7 +471,11 @@ for (const privatePath of [customersPath, customerPath, customerDogPhoto]) {
   assert.equal((await get(privatePath)).status, 404);
 }
 const directory = await (await staffCall(customersPath + "?q=Other%20dog", {}, context)).json();
-assert.deepEqual(directory.customers, [{id:1,name:"Fixture owner",dog_count:2}]);
+assert.deepEqual(directory.customers.map(({dog_photos,...customer})=>customer), [{id:1,name:"Fixture owner",dog_count:2}]);
+const directoryPhotos=JSON.parse(directory.customers[0].dog_photos);
+assert.deepEqual(directoryPhotos.map(dog=>dog.id).sort(),[1,2]);
+assert.ok(directoryPhotos.every(dog=>dog.customer_id===1 && [0,1].includes(dog.has_photo)));
+assert.ok(directoryPhotos.every(dog=>Object.keys(dog).sort().join(',')==='customer_id,has_photo,id,name'));
 const archived = await (await staffCall(customersPath + "?q=Archived", {}, context)).json();
 assert.deepEqual(archived.customers, []);
 assert.equal((await staffCall(customersPath + "/2", {}, context)).status, 404);
@@ -533,6 +537,7 @@ for (const search of ["", "ab12cd", "Fixture owner", "Other dog"]) {
   const response = await staffCall(bookingPath + "?q=" + encodeURIComponent(search), {}, context);
   assert.equal(response.status, 200);
   const result = await response.json();
+  assert.deepEqual(JSON.parse(result.bookings[0].dog_photos).map(dog=>dog.id).sort(),[1,2]);
   assert.deepEqual(result.bookings.map((b) => [b.booking_number, b.charged_nights, b.total_cents, b.deposit_cents, b.quote_pending]),
     [["AB12CD", 2, 120000, 35000, 0]]);
 }
@@ -750,6 +755,7 @@ sqlite.exec("UPDATE stays SET status='checked_in',actual_checkout_at=NULL WHERE 
 const current = await (await staffCall("/api/stays/current", {}, context)).json();
 assert.equal(current.stays[0].id, 1);
 assert.match(current.stays[0].dogs, /Fixture dog/);
+assert.deepEqual(JSON.parse(current.stays[0].dog_photos).map(dog=>dog.id).sort(),[1,2]);
 const checkoutPath = "/api/stays/1/check-out";
 const checkoutOptions = {method:"POST",headers:{Origin:"https://staff.example.test"}};
 assert.equal((await staffCall(checkoutPath, checkoutOptions)).status,403);
@@ -1027,6 +1033,7 @@ sqlite.exec("UPDATE stays SET stay_number='QZ9T1B' WHERE id=1");
 sqlite.exec("UPDATE stays SET status='cancelled' WHERE id=2");
 const readHistory = async (path = historyPeriod) => (await staffCall(path,{},context)).json();
 const stayList = await readHistory();
+assert.deepEqual(JSON.parse(stayList.stays.find(stay=>stay.id===1).dog_photos).map(dog=>dog.id).sort(),[1,2]);
 assert.ok(stayList.stays.some((stay) => stay.id === 1 && stay.due_cents > 0));
 assert.ok(!stayList.stays.some((stay) => stay.id === 2));
 for (const q of ["qz9t1b","fixture owner","other dog"]) {

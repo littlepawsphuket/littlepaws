@@ -1,6 +1,6 @@
 export function backupScreen({node,results,message,storedArchive,back}) {
   function render(){
-    const panel=node('article'),save=Object.assign(node('button','ดาวน์โหลดข้อมูลและรูปทั้งหมด'),{type:'button'});
+    const panel=Object.assign(node('article'),{className:'card backup-workspace'}),save=Object.assign(node('button','ดาวน์โหลดข้อมูลและรูปทั้งหมด'),{type:'button'});
     const status=node('p');status.setAttribute('role','status');
     panel.append(node('h2','สำรองข้อมูล Cloudflare'),node('p','ไฟล์ ZIP รวมข้อมูล รูปน้อง กิจกรรม ลายเซ็น และ QR ชำระเงิน เก็บไฟล์ไว้ในที่ส่วนตัว เพราะมีข้อมูลลูกค้าและข้อมูลผู้ใช้'),save,status);
     const manual=node('a','คู่มือสำรองและกู้คืน');manual.href='/api/manual/backup.html';manual.target='_blank';manual.rel='noopener';panel.append(manual);
