@@ -8,6 +8,7 @@ import {dashboardScreen} from "./dashboard_ui.mjs";
 import {reportScreen} from "./report_ui.mjs";
 import {applyStaffTheme,staffHeader,staffFooter,macStyleBridge} from "./staff_shell.mjs";
 import {installCarePhotoViewer} from "../app/static/care-gallery.js";
+import {careParityCss} from "./care_parity_styles.mjs";
 import {careGalleryCss} from "./care_gallery_styles.mjs";
 import {accountScreen} from './account_ui.mjs';
 import {backupScreen} from './backup_ui.mjs';
@@ -402,7 +403,7 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
   addCustomer.addEventListener("click", () => customerEditor());
 
   let pendingCustomer;
-  function customerEditor(customer) {
+  function customerEditor(customer,onSaved = null) {
     const editing = Boolean(customer);
     const attempt = editing ? null : pendingCustomer;
     customerRequest?.abort();
@@ -457,7 +458,8 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
           return;
         }
         if (!editing) pendingCustomer = null;
-        if (form.isConnected && customerDialog.open) await showCustomer(result.id);
+        if(onSaved && form.isConnected && customerDialog.open){customerDialog.close();await onSaved({...values,id:result.id});}
+        else if (form.isConnected && customerDialog.open) await showCustomer(result.id);
         if (selected === "customers") await load(true);
         message.textContent = "บันทึกข้อมูลลูกค้าแล้ว";
       } catch {
@@ -870,6 +872,8 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
   let createBookingKey;
 
   async function bookingEditor(booking, direct = false, draftState = null, stayEdit = false) {
+    bookingDialog.classList.remove("care-workspace");
+    bookingDialog.classList.add("checkin-workspace");
     const draft = draftState?.draft;
     const initial = booking || (draft && {customer:draftState.customer,customer_id:draft.customerId,
       checkin:draft.checkin,checkout:draft.checkout,service_type:draft.service,charged_nights:draft.quantity100/100,
@@ -881,7 +885,7 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
     const status = node("p", "");
     status.setAttribute("role","status");
     const today = parts.format(new Date());
-    const form = node("form");
+    const form = Object.assign(node("form"),{className:"checkin-form"});
     const submit = node("button",stayEdit ? "บันทึกการเข้าพัก" : direct ? "ไปหน้าเช็กอิน" : "บันทึกการจอง");
     const warnings = node("ul");
     warnings.className = "booking-warnings";
@@ -894,7 +898,14 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
     owner.append(new Option("เลือกลูกค้า",""));
     const ownerGroup = node("label","ลูกค้า");
     ownerGroup.append(owner);
-    const dogs = node("fieldset");
+    const ownerOptions=Object.assign(node("div"),{className:"checkin-customer-options",id:"checkin-customer-options",hidden:true});
+    ownerOptions.setAttribute("role","listbox");
+    search.setAttribute("role","combobox");search.setAttribute("aria-autocomplete","list");
+    search.setAttribute("aria-controls",ownerOptions.id);search.setAttribute("aria-expanded","false");
+    search.placeholder="เลือกหรือพิมพ์ชื่อลูกค้า";
+    let searchTimer;
+    controller.signal.addEventListener("abort",()=>clearTimeout(searchTimer),{once:true});
+    const dogs = Object.assign(node("fieldset"),{className:"checkin-dog-list"});
     dogs.append(node("legend","สุนัขและราคา"));
     const choices = new Map();
     let rates;
@@ -913,19 +924,55 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
       owner.value = booking.customer_id;
       owner.disabled = true;
     } else {
-      form.append(search,searchButton);
+      owner.hidden=true;owner.required=false;
+      search.required=true;searchButton.hidden=true;
+      ownerGroup.append(search,ownerOptions);
+      search.addEventListener("input",()=>{
+        owner.value="";submit.disabled=true;
+        clearTimeout(searchTimer);searchTimer=setTimeout(searchOwners,180);
+      });
+      search.addEventListener("focus",()=>{if(!ownerOptions.childElementCount)searchOwners();else{ownerOptions.hidden=false;search.setAttribute("aria-expanded","true");}});
+      search.addEventListener("keydown",event=>{
+        if(event.key==="ArrowDown"){event.preventDefault();ownerOptions.querySelector("button")?.focus();}
+        if(event.key==="Escape"){ownerOptions.hidden=true;search.setAttribute("aria-expanded","false");}
+      });
       if (initial) {
         owner.append(new Option(initial.customer,initial.customer_id));
-        owner.value = initial.customer_id;
+        owner.value = initial.customer_id;search.value=initial.customer;
       }
     }
-    form.append(ownerGroup);
+    const ownerSection=Object.assign(node("section"),{className:"checkin-owner-section"});
+    ownerSection.append(ownerGroup);
+    if(!booking){
+      const addOwner=Object.assign(node("button","เพิ่มลูกค้า"),{type:"button",className:"secondary"});
+      addOwner.onclick=()=>customerEditor(null,async customer=>{
+        owner.append(new Option(customer.name,customer.id));owner.value=customer.id;search.value=customer.name;await loadDogs();
+      });ownerSection.append(addOwner);
+    }
+    const ownerFacts=Object.assign(node("p"),{className:"checkin-owner-facts"});ownerSection.append(ownerFacts);
+    const editOwner=Object.assign(node("button","แก้ไขข้อมูลลูกค้า"),{type:"button",className:"secondary"});
+    editOwner.onclick=()=>{if(owner.value)showCustomer(Number(owner.value));};ownerSection.append(editOwner);
+    const addDog=Object.assign(node("button","เพิ่มสุนัข"),{type:"button",className:"secondary"});
+    addDog.onclick=()=>{if(owner.value){if(!customerDialog.open)customerDialog.showModal();dogEditor(Number(owner.value));}};
+    ownerSection.append(addDog);
+    customerDialog.addEventListener("close",()=>{if(form.isConnected && owner.value)loadDogs();},{signal:controller.signal});
+    form.append(ownerSection);
     const service = node("select");
     for (const [value,[label]] of Object.entries(services)) service.append(new Option(label,value));
     service.value = initial?.service_type || "overnight";
     const serviceLabel = node("label","ประเภทบริการ");
     serviceLabel.append(service);
-    form.append(serviceLabel);
+    serviceLabel.hidden = true;
+    const segments = Object.assign(node("div"),{className:"service-segments"});
+    segments.setAttribute("role","group");segments.setAttribute("aria-label","ประเภทบริการ");
+    const serviceButtons = [];
+    for (const [value,[caption]] of Object.entries(services)) {
+      const button = Object.assign(node("button",caption),{type:"button",className:"secondary"});
+      button.setAttribute("aria-pressed",String(value===service.value));
+      button.onclick=()=>{service.value=value;for(const [key,item] of serviceButtons)item.setAttribute("aria-pressed",String(key===value));service.dispatchEvent(new Event("change"));};
+      serviceButtons.push([value,button]);segments.append(button);
+    }
+    form.append(serviceLabel,segments);
     const defaultDay = !direct && selected === "calendar" ? calendarAnchor.value || today : today;
     const checkin = field("วันเข้าพัก","date",initial?.checkin || defaultDay);
     const checkout = field("วันรับกลับ","date",initial?.checkout || defaultDay);
@@ -939,7 +986,7 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
       stayIntake=checkInDetails(booking.intake);
       form.append(stayIntake.panel);
     }
-    note.maxLength = 800;
+    note.maxLength = 800;note.parentElement.classList.add("checkin-wide");
     quantity.min = discount.min = "0";
     discount.step = "0.01";
     checkin.required = checkout.required = quantity.required = true;
@@ -966,10 +1013,20 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
         if (!response.ok) throw Error();
         const result = await response.json();
         if (controller.signal.aborted || call !== requestId) return;
+        const selectedOwner=owner.value;
+        const selectedName=owner.selectedOptions[0]?.textContent || "";
         owner.replaceChildren(new Option("เลือกลูกค้า",""), ...result.customers.map((c) => new Option(c.name,c.id)));
-        dogs.replaceChildren(node("legend","สุนัขและราคา"));
-        choices.clear();
-        submit.disabled = true;
+        if(selectedOwner && ![...owner.options].some(option=>option.value===selectedOwner))owner.append(new Option(selectedName,selectedOwner));
+        owner.value=selectedOwner;
+        ownerOptions.replaceChildren();
+        for(const customer of result.customers){
+          const option=Object.assign(node("button",customer.name),{type:"button",className:"secondary"});
+          option.setAttribute("role","option");
+          option.onclick=()=>{owner.value=customer.id;search.value=customer.name;ownerOptions.hidden=true;search.setAttribute("aria-expanded","false");owner.dispatchEvent(new Event("change"));};
+          ownerOptions.append(option);
+        }
+        if(!result.customers.length)ownerOptions.append(node("p","ไม่พบลูกค้า"));
+        ownerOptions.hidden=false;search.setAttribute("aria-expanded","true");
         status.textContent = result.customers.length ? "" : "ไม่พบลูกค้า";
       } catch {
         if (!controller.signal.aborted) status.textContent = "ค้นหาลูกค้าไม่ได้";
@@ -984,6 +1041,7 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
     async function loadDogs() {
       const call = ++requestId;
       submit.disabled = true;
+      const retained = new Map([...choices].map(([id,value])=>[id,{checked:value.include.checked,rate:value.rate.value}]));
       dogs.replaceChildren(node("legend","สุนัขและราคา"));
       choices.clear();
       if (!owner.value) return;
@@ -991,7 +1049,10 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
       let available = [];
       try {
         const response = await fetch("/api/customers/" + owner.value,{signal:controller.signal});
-        if (response.ok) available = (await response.json()).dogs;
+        if (response.ok) {
+          const data=await response.json();available=data.dogs;
+          ownerFacts.textContent=[data.customer.owner_phone,data.customer.line_id,data.customer.emergency_address].filter(Boolean).join(" · ");
+        }
         else if (!booking || response.status !== 404) throw Error();
       } catch {
         if (!controller.signal.aborted && call === requestId) status.textContent = "โหลดรายชื่อสุนัขไม่ได้";
@@ -1006,13 +1067,21 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
         const rate = Object.assign(node("input"),{type:"number",min:"0",max:"999999.99",step:"0.01",
           value:original ? (original.nightly_rate_cents === null ? "" : original.nightly_rate_cents / 100)
             : rates?.[service.value]?.[dog.size] ?? ""});
-        const row = node("div");
+        const row = Object.assign(node("div"),{className:"checkin-dog-choice"});
         const dogLabel = node("label", dog.name);
         dogLabel.prepend(include);
         const priceLabel = node("label","ราคา (บาท)");
         priceLabel.append(rate);
-        row.append(dogLabel,priceLabel);
+        dogLabel.className="care-share-opt-in";
+        const avatar=Object.assign(node("img"),{className:"customer-dog-photo",alt:dog.name,
+          src:dog.has_photo ? "/api/customers/"+owner.value+"/dogs/"+dog.id+"/photo" : "/static/little-paws-icon.png"});
+        const profile=readProfile(dog);
+        const summary=node("p",[profile.breed,genders[profile.gender],neutered[profile.neutered],sizes[dog.size]].filter(Boolean).join(" · "));
+        const edit=Object.assign(node("button","แก้ไขข้อมูลสุนัข"),{type:"button",className:"secondary"});
+        edit.onclick=()=>{if(!customerDialog.open)customerDialog.showModal();dogEditor(Number(owner.value),dog);};
+        row.append(avatar,dogLabel,summary,priceLabel,edit);
         dogs.append(row);
+        if(retained.has(dog.id)){include.checked=retained.get(dog.id).checked;rate.value=retained.get(dog.id).rate;}
         choices.set(dog.id,{dog,include,rate});
       }
       submit.disabled = choices.size === 0;
@@ -1237,10 +1306,12 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
     coupon_minimum:"ยอดค่าฝากไม่ถึงขั้นต่ำของคูปอง",coupon_exceeds:"ส่วนลดเกินยอดที่หักได้หลังตรวจยอดชำระเดิม",
   };
   function bookingCheckIn(booking, draft = null) {
+    bookingDialog.classList.remove("care-workspace");
+    bookingDialog.classList.toggle("checkin-workspace",true);
     const endpoint = draft ? "/api/stays/check-in" : "/api/bookings/" + booking.id + "/check-in";
     bookingRequest?.abort();
     const controller = bookingRequest = new AbortController();
-    const form = node("form");
+    const form = Object.assign(node("form"),{className:"checkin-form"});
     const status = node("p","");
     status.setAttribute("role","status");
     const today = parts.format(new Date());
@@ -1255,7 +1326,9 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
     const arrival = field("วันที่เช็กอินจริง","date",draft ? draft.checkin : today);
     arrival.max = today < booking.checkout ? today : booking.checkout;
     const arrivalTime = field("เวลาเช็กอินจริง","time",now);
-    const returnTime = field("เวลานัดรับกลับ","time","",false);
+    const pickupDate = field("วันรับกลับ","date",booking.checkout);
+    pickupDate.readOnly = true;
+    const returnTime = field("เวลานัดรับกลับ","time",now,false);
     const amount = field("ยอดรับเพิ่ม (บาท)","number",(booking.balance_cents/100).toFixed(2));
     let coupon = null;
     let couponRequest = 0;
@@ -1263,6 +1336,31 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
     const paymentDay = field("วันที่ชำระ","date",today);
     paymentDay.max = today;
     const paymentTime = field("เวลาชำระ","time",now);
+    const stayTiming=Object.assign(node("section"),{className:"checkin-timing-grid"});
+    for(const input of [arrival,arrivalTime,pickupDate,returnTime])stayTiming.append(input.parentElement);
+    const payments=Object.assign(node("section"),{className:"checkin-payment-grid"});
+    for(const input of [amount,paymentDay,paymentTime])payments.append(input.parentElement);
+    const identity=Object.assign(node("section"),{className:"checkin-identity-summary"});
+    const ownerInfo=node("p",booking.customer);
+    const editCustomer=Object.assign(node("button","แก้ไขข้อมูลลูกค้า"),{type:"button",className:"secondary"});
+    editCustomer.onclick=()=>showCustomer(booking.customer_id || draft.customerId);
+    identity.append(node("h4","ลูกค้า"),ownerInfo,editCustomer);
+    const dogInfo=Object.assign(node("div"),{className:"checkin-dog-summary"});
+    for(const dog of booking.dogs || draft?.dogs || []){
+      const row=Object.assign(node("div"),{className:"checkin-dog-summary-row"});
+      const photo=Object.assign(node("img"),{className:"customer-dog-photo",alt:dog.name || "",
+        src:"/api/customers/"+(booking.customer_id || draft.customerId)+"/dogs/"+dog.id+"/photo"});
+      photo.onerror=()=>{photo.onerror=null;photo.src="/static/little-paws-icon.png";};
+      row.dataset.dogId=dog.id;row.append(photo,node("strong",dog.name || ""));dogInfo.append(row);
+    }
+    identity.append(dogInfo);
+    fetch("/api/customers/"+(booking.customer_id || draft.customerId),{signal:controller.signal}).then(response=>response.ok?response.json():null).then(data=>{
+      if(data && !controller.signal.aborted){
+        ownerInfo.textContent=[data.customer.name,data.customer.owner_phone,data.customer.line_id].filter(Boolean).join(" · ");
+        for(const row of dogInfo.children){const dog=data.dogs.find(dog=>String(dog.id)===row.dataset.dogId);if(dog){row.querySelector("strong").textContent=dog.name;row.querySelector("img").alt=dog.name;}}
+      }
+    }).catch(()=>{});
+    form.append(identity,stayTiming,payments);
     const couponPanel = node("section");
     couponPanel.className = "intake-details";
     const couponInput = Object.assign(node("input"),{type:"text",inputMode:"numeric",maxLength:6});
@@ -1339,7 +1437,7 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
 
     const accept = Object.assign(node("input"),{type:"checkbox",required:true});
     const acknowledgement = node("span","ลูกค้ารับทราบและยอมรับเงื่อนไข");
-    const acceptLabel = node("label");
+    const acceptLabel = Object.assign(node("label"),{className:"care-share-opt-in checkin-acknowledgement"});
     acceptLabel.append(accept,acknowledgement);
     const signatureArea = node("section");
     signatureArea.className = "checkin-signature";
@@ -1357,7 +1455,12 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
     let warningToken;
     const resetWarning = () => { warningToken = undefined; warnings.hidden = true; submit.textContent = "ยืนยันเช็กอิน"; };
     arrival.addEventListener("change",resetWarning);
-    form.append(intakeForm.panel,termsBox,acceptLabel,signatureArea,warnings,submit,back,status);
+    intakeForm.panel.open = true;
+    totalLine.className = "checkin-bill-summary";
+    const footer = Object.assign(node("div"),{className:"actions checkin-form-actions"});
+    back.classList.add("secondary");
+    footer.append(back,submit);
+    form.append(intakeForm.panel,termsBox,acceptLabel,signatureArea,warnings,footer,status);
     bookingContent.replaceChildren(node("h3","เช็กอิน · " + booking.customer),totalLine,form);
 
     const strokes = [];
@@ -1492,7 +1595,17 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
     });
   }
 
-  function showCareTimeline(stayId, dog) {
+  function careIcon(name) {
+    const svg = document.createElementNS("http://www.w3.org/2000/svg","svg");
+    for (const [key,value] of Object.entries({viewBox:"0 0 24 24",width:"20",height:"20",fill:"none",stroke:"currentColor","stroke-width":"1.8","stroke-linecap":"round","stroke-linejoin":"round","aria-hidden":"true"})) svg.setAttribute(key,value);
+    const path = document.createElementNS(svg.namespaceURI,"path");
+    path.setAttribute("d",name === "edit" ? "m15 4 5 5M4 20l5-1L20 8a3.5 3.5 0 0 0-5-5L4 14Z" : "M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7");
+    svg.append(path); return svg;
+  }
+
+  function showCareTimeline(stayId, dog, initialAction = null) {
+    bookingDialog.classList.remove("checkin-workspace");
+    bookingDialog.classList.add("care-workspace");
     if (!bookingDialog.open) bookingDialog.showModal();
     document.getElementById("booking-status").textContent = "";
     bookingRequest?.abort();
@@ -1509,15 +1622,48 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
     day.append(new Option("วันนี้",today),new Option("ทุกวัน",""));
     const preview = Object.assign(node("button","ดูเฉพาะที่ลูกค้าเห็น"),{type:"button"});
     preview.setAttribute("aria-pressed","false");
-    toolbar.append(back,day,preview);
+    const dateControls = Object.assign(node("div"),{className:"care-date-controls"});
+    const dateStrip = Object.assign(node("div"),{className:"care-date-strip"});
+    dateControls.setAttribute("role","group");
+    dateControls.setAttribute("aria-label","เลือกวันที่");
+    day.hidden = true;
+    const calendar = Object.assign(node("input"),{type:"date",value:today,max:today});
+    calendar.setAttribute("aria-label","เลือกวันที่");
+    calendar.onchange = () => {
+      if (!calendar.value) return;
+      if (![...day.options].some(option => option.value === calendar.value)) day.append(new Option(calendar.value,calendar.value));
+      day.value = calendar.value;
+      loadTimeline(true);
+    };
+    dateControls.append(dateStrip,calendar,day);
+    toolbar.append(back,preview);
+    function renderDates() {
+      dateStrip.replaceChildren();
+      for (const option of day.options) {
+        const chip = Object.assign(node("button",option.value === "" ? "แสดงทั้งหมด" : option.textContent),{type:"button",className:"secondary"});
+        chip.setAttribute("aria-pressed",String(option.value === day.value));
+        chip.onclick = () => { day.value = option.value; loadTimeline(true); };
+        dateStrip.append(chip);
+      }
+    }
     const sharing = node("section");
     sharing.className = "intake-details";
-    const editor = node("section");
+    const editor = Object.assign(node("dialog"),{className:"care-dialog care-activity-dialog"});
+    editor.setAttribute("aria-label","บันทึกกิจกรรม");
+    document.body.append(editor);
+    controller.signal.addEventListener("abort",() => {editor.close(); editor.remove();},{once:true});
+
     const feed = node("section");
     const more = Object.assign(node("button","โหลดกิจกรรมเพิ่มเติม"),{type:"button",hidden:true});
     const status = node("p","กำลังโหลด…");
     status.setAttribute("role","status");
-    bookingContent.replaceChildren(title,toolbar,sharing,status,editor,feed,more);
+    const record = Object.assign(node("button","บันทึกกิจกรรม"),{type:"button",hidden:true});
+    const heading = Object.assign(node("div"),{className:"heading"});
+    heading.append(title,record);
+    const timelinePanel = Object.assign(node("section"),{className:"card care-timeline"});
+    timelinePanel.append(heading,dateControls,status,feed,more);
+    sharing.classList.add("card","care-sharing");
+    bookingContent.replaceChildren(toolbar,timelinePanel,sharing);
     let exportController;
     controller.signal.addEventListener("abort",() => exportController?.abort(),{once:true});
     let showingPublic = false;
@@ -1592,9 +1738,11 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
       return response.json();
     }
     function openEditor(options,event) {
-      const form = node("form");
+      const form = Object.assign(node("form"),{className:"form care-activity-form"});
       const activity = node("select");
-      activity.append(...Object.entries(options).map(([id,label]) => new Option(label,id)));
+      activity.required = true;
+      activity.append(new Option("เลือกกิจกรรม",""));
+      activity.append(...Object.entries(options).map(([id,label]) => new Option(translateLabel(label),id)));
       if (event) {
         const known = Object.keys(options).find((id) => options[id] === event.activity_label);
         if (!known && event.activity_label) activity.append(new Option(event.activity_label,"existing-activity"));
@@ -1604,12 +1752,17 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
       const recorded = event?.recorded_at;
       const date = Object.assign(node("input"),{type:"date",required:true,max:today,value:recorded?.slice(0,10) || today});
       const time = Object.assign(node("input"),{type:"time",required:true,value:recorded?.slice(11,16) || bangkokTime.format(now)});
-      const note = Object.assign(node("textarea"),{rows:2,maxLength:500,value:event?.note || ""});
+      const note = Object.assign(node("textarea"),{rows:3,maxLength:500,value:event?.note || ""});
       const visible = Object.assign(node("input"),{type:"checkbox",checked:event ? Boolean(event.customer_visible) : true});
-      for (const [caption,input] of [["กิจกรรม",activity],["วันที่",date],["เวลา",time],["ข้อความ",note],
-        ["แชร์ให้ลูกค้าเห็น",visible]]) {
+      const dateGrid = Object.assign(node("div"),{className:"formgrid"});
+      for (const [caption,input] of [["วันที่กิจกรรม",date],["เวลากิจกรรม",time]]) {
+        const label = node("label",caption); label.append(input); dateGrid.append(label);
+      }
+      form.append(dateGrid);
+      for (const [caption,input] of [["ประเภทกิจกรรม",activity],["รายละเอียดเพิ่มเติม",note],
+        ["แสดงข้อความและรูปกิจกรรมนี้ให้ลูกค้าเห็น",visible]]) {
         const label = node("label",caption);
-        label.append(input);
+        if(input === visible) {label.className="care-share-opt-in";label.prepend(input);} else label.append(input);
         form.append(label);
       }
       const attachments = node("fieldset");
@@ -1631,18 +1784,26 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
       const camera = Object.assign(node("input"),{type:"file",accept:"image/*"});
       camera.setAttribute("capture","environment");
       for (const [caption,input] of [["เลือกรูปจากเครื่อง",gallery],["📷 ถ่ายรูป",camera]]) {
-        const wrapper = node("label",caption);
-        wrapper.append(input);
-        attachments.append(wrapper);
+        input.hidden = true;
+        const choose = Object.assign(node("button",caption),{type:"button",className:"secondary care-file-action"});
+        choose.onclick = () => input.click();
+        const selected = node("small");
+        selected.setAttribute("role","status");
+        input.onchange=()=>{selected.textContent=Array.from(input.files).map(file=>file.name).join(", ");};
+        attachments.append(input,choose,selected);
       }
       form.append(attachments);
       const submit = node("button","บันทึกกิจกรรม");
-      const cancel = Object.assign(node("button","ปิดฟอร์ม"),{type:"button"});
-      cancel.onclick = () => editor.replaceChildren();
+      const cancel = Object.assign(node("button","ยกเลิก"),{type:"button",className:"secondary"});
+      cancel.onclick = () => editor.close();
       const outcome = node("p","");
       outcome.setAttribute("role","status");
-      form.append(submit,cancel,outcome);
-      editor.replaceChildren(node("h4",event ? "แก้ไขกิจกรรม" : "เพิ่มกิจกรรม"),form);
+      const actions = Object.assign(node("div"),{className:"actions"});
+      actions.append(cancel,submit);
+      form.append(outcome,actions);
+      editor.setAttribute("aria-label",event ? "แก้ไขกิจกรรม" : "บันทึกกิจกรรม");
+      editor.replaceChildren(node("h2",event ? "แก้ไขกิจกรรม" : "บันทึกกิจกรรม"),node("p",dog.name),form);
+      editor.showModal();
       activity.focus();
       const createKey = key();
       let savedEvent;
@@ -1678,6 +1839,7 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
           }
           await savePhotos();
           if (form.isConnected && !controller.signal.aborted) {
+            editor.close();
             editor.replaceChildren();
             if (day.value !== "" && day.value !== date.value) {
               if (![...day.options].some((entry) => entry.value === date.value)) {
@@ -1704,7 +1866,7 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
         query.set("before_at",next.recordedAt);
         query.set("before_id",next.id);
       }
-      if (reset) { feed.replaceChildren(); editor.replaceChildren(); next = null; }
+      if (reset) { feed.replaceChildren(); next = null; }
       more.disabled = true;
       status.textContent = "กำลังโหลด…";
       try {
@@ -1713,24 +1875,32 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
         const data = await response.json();
         if (loading !== requestNumber || controller.signal.aborted) return;
         renderSharing(data);
-        if (reset && !showingPublic && data.status === "checked_in") {
-          const add = Object.assign(node("button","เพิ่มกิจกรรม"),{type:"button"});
-          add.onclick = () => openEditor(data.options);
-          feed.append(add);
+        record.hidden = showingPublic || data.status !== "checked_in";
+        record.onclick = () => openEditor(data.options);
+        if (initialAction && !record.hidden) {
+          const event = typeof initialAction === "object" ? data.events.find(event=>event.id===initialAction.eventId) : null;
+          if(initialAction === "record" || event) {initialAction=null;openEditor(data.options,event);}
         }
         const extraDays = [...new Set([selectedDay,...data.days])].filter((value) => value && value !== today).sort().reverse();
         day.replaceChildren(new Option("วันนี้",today),new Option("ทุกวัน",""),
           ...extraDays.map((value) => new Option(bookingDate.format(new Date(value)),value)));
         day.value = selectedDay;
+        renderDates();
         for (const event of data.events) {
-          const card = node("article");
+          const card = Object.assign(node("article"),{className:"care-event"});
+          const eventHeading = Object.assign(node("div"),{className:"care-event-heading"});
+          const eventCopy = Object.assign(node("div"),{className:"care-event-copy"});
+          const eventMeta = Object.assign(node("div"),{className:"care-event-meta"});
+          eventHeading.append(eventCopy);
+          card.append(eventHeading);
           const moment = new Date(event.recorded_at);
           const local = Number.isFinite(moment.valueOf()) ? bangkokTime.format(moment) : "";
-          const label = event.activity_label || {food:"ให้อาหารแล้ว",medicine:"ให้ยาแล้ว",custom:"กิจกรรมอื่น"}[event.kind] || "กิจกรรม";
-          card.append(node("h4",[local,label].filter(Boolean).join(" · ")));
-          if (!selectedDay) card.append(node("p",bookingDate.format(new Date(event.recorded_at.slice(0,10)))));
-          if (!showingPublic) card.append(node("p",event.customer_visible ? "ลูกค้าเห็นกิจกรรมนี้" : "สำหรับพนักงาน"));
-          if (event.note) card.append(node("p",event.note));
+          const label = translateLabel(event.activity_label || {food:"ให้อาหารแล้ว",medicine:"ให้ยาแล้ว",custom:"กิจกรรมอื่น"}[event.kind] || "กิจกรรม");
+          eventMeta.append(Object.assign(node("span",local),{className:"care-event-clock"}),node("strong",label));
+          eventCopy.append(eventMeta);
+          if (!selectedDay) eventCopy.append(Object.assign(node("small",bookingDate.format(new Date(event.recorded_at.slice(0,10)))),{className:"muted"}));
+          if (!showingPublic) eventCopy.append(Object.assign(node("small",event.customer_visible ? "แชร์ให้ลูกค้าเห็น" : "สำหรับพนักงาน"),{className:"muted"}));
+          if (event.note) eventCopy.append(Object.assign(node("p",event.note),{className:"care-event-note"}));
           if (event.photos.length) {
             const gallery = Object.assign(node("div"),{className:"care-media-gallery"});
             for (const photo of event.photos) {
@@ -1755,7 +1925,14 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
               } catch (error) { status.textContent = error.message; }
               finally { remove.disabled = false; }
             };
-            card.append(edit,remove);
+            const actions = Object.assign(node("div"),{className:"care-event-actions"});
+            for (const [button,icon] of [[edit,"edit"],[remove,"delete"]]) {
+              button.setAttribute("aria-label",button.textContent);
+              button.title = button.textContent;
+              button.className = "appointment-icon " + (icon === "delete" ? "danger" : "secondary");
+              button.replaceChildren(careIcon(icon));
+            }
+            actions.append(edit,remove); eventHeading.append(actions);
           }
           feed.append(card);
         }
@@ -2008,6 +2185,8 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
   }
 
   async function showStay(id) {
+    bookingDialog.classList.remove("care-workspace");
+    bookingDialog.classList.toggle("checkin-workspace",false);
     bookingRequest?.abort();
     const controller = bookingRequest = new AbortController();
     if (!bookingDialog.open) bookingDialog.showModal();
@@ -2110,6 +2289,7 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
   }
 
   async function showBooking(id) {
+    bookingDialog.classList.remove("care-workspace","checkin-workspace");
     document.getElementById("booking-status").textContent = "";
     bookingContent.replaceChildren(node("p", "กำลังโหลด…"));
     if (!bookingDialog.open) bookingDialog.showModal();
@@ -2298,7 +2478,7 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
   const dashboard = dashboardScreen({translateLabel,node,results,baht,today:() => parts.format(new Date()),
     dateLabel:(day) => bookingDate.format(new Date(day+"T00:00:00Z")),
     monthLabel:(month) => calendarMonth.format(new Date(month+"-01T00:00:00Z")),
-    openStay:showStay,openCustomer:showCustomer,openTimeline:showCareTimeline,viewBooking:showBooking,setMode,
+    openStay:showStay,openCustomer:showCustomer,openTimeline:showCareTimeline,viewBooking:showBooking,setMode,activityIcon:careIcon,onCareChange:()=>load(true),
     checkInBooking:async (id) => {
       try {
         const response = await fetch("/api/bookings/"+id);
@@ -2401,7 +2581,7 @@ export function outstandingPage(isAdmin = false,canExport = false,theme = "class
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <title>ภาพรวมธุรกิจ · Little Paws Homestay Phuket</title>
     <link rel="icon" href="/static/little-paws-icon.png">
-    <style nonce="${nonce}">${css}</style>
+    <style nonce="${nonce}">${css}${careParityCss}</style>
     <link rel="stylesheet" href="/static/style.css?v=80">
     <style nonce="${nonce}">${macStyleBridge}\n${careGalleryCss}</style>
     <body class="staff-app" data-theme="${themeName(theme)}">

@@ -1,5 +1,5 @@
 export function dashboardScreen({translateLabel,node,results,baht,dateLabel,monthLabel,today,openStay,openCustomer,openTimeline,
-  checkInBooking,viewBooking,checkout,setMode}) {
+  checkInBooking,viewBooking,checkout,setMode,activityIcon,onCareChange}) {
   const colors = {"ค่าฝากเลี้ยง":"#24796b","อาหารและขนม":"#a54a4b","อุปกรณ์":"#3b6dab",
     "ทำความสะอาด":"#43804a","ค่าน้ำไฟ":"#a86818","การตลาด":"#8255a0","ค่ารักษาพยาบาล":"#a94d7b","เอกสาร":"#546779","อื่นๆ":"#846343"};
   const button = (label,action,secondary = false) => {
@@ -53,7 +53,54 @@ export function dashboardScreen({translateLabel,node,results,baht,dateLabel,mont
         summary.append(Object.assign(node("small","ล่าสุด "+event.time+" · "+
           (event.label || {food:"ให้อาหารแล้ว",medicine:"ให้ยาแล้ว"}[event.kind] || event.note)),{className:"care-latest"}));
       }
-      care.append(summary,button("บันทึกกิจกรรม / ดูไทม์ไลน์",() => openTimeline(dog.stay_id,{id:dog.dog_id,name:dog.dog})));
+      const careActions = Object.assign(node("div"),{className:"actions care-dashboard-actions"});
+      const identityForCare={id:dog.dog_id,name:dog.dog};
+      careActions.append(button("บันทึกกิจกรรม",()=>openTimeline(dog.stay_id,identityForCare,"record")),
+        button("ดูไทม์ไลน์",()=>openTimeline(dog.stay_id,identityForCare),true));
+      const feed=Object.assign(node("div"),{className:"today-care-feed"});
+      care.append(summary,careActions,feed);
+      let careLoaded=false;
+      care.addEventListener("toggle",async()=>{
+        if(!care.open || careLoaded)return;
+        careLoaded=true;feed.replaceChildren(node("p","กำลังโหลด…"));
+        try{
+          const response=await fetch("/api/stays/"+dog.stay_id+"/dogs/"+dog.dog_id+"/timeline?day="+today());
+          if(!response.ok)throw Error();
+          const data=await response.json();
+          if(!feed.isConnected)return;
+          feed.replaceChildren();
+          for(const event of data.events){
+            const item=Object.assign(node("article"),{className:"care-event"});
+            const heading=Object.assign(node("div"),{className:"care-event-heading"});
+            const copy=Object.assign(node("div"),{className:"care-event-copy"});
+            const meta=Object.assign(node("div"),{className:"care-event-meta"});
+            meta.append(Object.assign(node("span",event.recorded_at.slice(11,16)),{className:"care-event-clock"}),node("strong",translateLabel(event.activity_label || {food:"ให้อาหารแล้ว",medicine:"ให้ยาแล้ว",custom:"กิจกรรมอื่น"}[event.kind] || event.kind)));
+            copy.append(meta);
+            if(event.note)copy.append(Object.assign(node("p",event.note),{className:"care-event-note"}));
+            const actions=Object.assign(node("div"),{className:"care-event-actions"});
+            const edit=button("แก้ไขกิจกรรม",()=>openTimeline(dog.stay_id,identityForCare,{eventId:event.id}),true);
+            const remove=button("ลบกิจกรรม",async()=>{
+              if(!confirm("ลบกิจกรรมนี้หรือไม่?"))return;
+              remove.disabled=true;
+              try{
+                const response=await fetch("/api/stays/"+dog.stay_id+"/dogs/"+dog.dog_id+"/timeline",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"remove-event",eventId:event.id,revision:event.revision})});
+                if(!response.ok)throw Error();await onCareChange();
+              }catch{const status=node("p","โหลดไทม์ไลน์ไม่ได้ กรุณาลองใหม่");status.setAttribute("role","status");item.append(status);remove.disabled=false;}
+            });
+            for(const [control,icon] of [[edit,"edit"],[remove,"delete"]]){control.setAttribute("aria-label",control.textContent);control.title=control.textContent;control.className=icon==="delete"?"danger":"secondary";control.replaceChildren(activityIcon(icon));}
+            actions.append(edit,remove);heading.append(copy,actions);
+            item.append(heading);
+            const gallery=Object.assign(node("div"),{className:"care-media-gallery"});
+            for(const photo of event.photos){
+              const link=Object.assign(node("a"),{href:"/api/stays/"+dog.stay_id+"/dogs/"+dog.dog_id+"/timeline/photos/"+photo.id});
+              link.dataset.carePhoto="";link.setAttribute("aria-haspopup","dialog");
+              link.append(Object.assign(node("img"),{src:link.href,alt:"รูปกิจกรรม",loading:"lazy"}));gallery.append(link);
+            }
+            if(event.photos.length)item.append(gallery);feed.append(item);
+          }
+          if(!data.events.length)feed.append(node("p","ยังไม่มีกิจกรรมในช่วงนี้"));
+        }catch{careLoaded=false;feed.replaceChildren(node("p","โหลดไทม์ไลน์ไม่ได้ กรุณาลองใหม่"));}
+      });
       const actions = Object.assign(node("div"),{className:"boarding-checkout-actions"});
       const checkOut = button("เช็กเอาต์",() => checkout(dog.stay_id,checkOut),true);
       checkOut.classList.add("stay-checkout-button");
