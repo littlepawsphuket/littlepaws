@@ -1,3 +1,4 @@
+import {customerImageCss} from "./customer_image_styles.mjs";
 import {intakeGroups,intakeGroupsEn} from "./stay_terms.mjs";
 
 export const palette = {
@@ -152,7 +153,7 @@ export function documentHtml(doc) {
     footer{text-align:center;font-size:11px;margin-top:16px;color:var(--accent)}footer strong{display:block;font-size:13px}
     @page{size:A4;margin:11mm}@media print{body{background:#fff}main{padding:0}section.payments{break-inside:auto}}
     @media(max-width:470px){main{padding:12px}header{padding:13px}.address{font-size:9px}header h1{font-size:23px}}
-    </style></head><body><main><header><div><div class="brand">${picture(doc.logo,"Little Paws","logo")}Little Paws Homestay Phuket</div>
+    ${format === "png" ? customerImageCss : ""}</style></head><body><main><header><div><div class="brand">${picture(doc.logo,"Little Paws","logo")}Little Paws Homestay Phuket</div>
     <h1>${escape(t[kind])}</h1>${state ? `<p class="status">${escape(state)}</p>` : ""}</div><div class="address">
     ${picture(doc.mascot,"","mascot")}<p>${escape(t.address1)}<br>${escape(t.address2)}<br>${escape(t.phone)}</p></div></header>
     <section class="facts agenda">${linked}${cell(t.checkin,day(doc.checkin))}${cell(t.checkout,day(doc.checkout))}

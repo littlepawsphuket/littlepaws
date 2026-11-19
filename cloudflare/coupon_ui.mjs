@@ -37,32 +37,45 @@ export function couponScreen({node,key,baht,results,message,reload,isActive,thai
   ];
 
   function makeImage(coupon) {
-    const canvas = Object.assign(node("canvas"),{width:840,height:780});
+    const canvas = Object.assign(node("canvas"),{width:720,height:760});
     const ctx = canvas.getContext("2d");
-    const background = ctx.createLinearGradient(0,0,840,780);
+    const font = '"Sukhumvit Set", "Noto Sans Thai", Thonburi, system-ui';
+    ctx.font='500 33px '+font;
+    const conditionLines=[];
+    for(const condition of conditions(coupon)){
+      let text='';
+      for(const word of condition.split(/\s+/)){
+        const next=text ? text+' '+word : word;
+        if(text && ctx.measureText(next).width>640){conditionLines.push(text);text=word;}else text=next;
+      }
+      if(text)conditionLines.push(text);
+    }
+    canvas.height=760+Math.max(0,conditionLines.length-3)*40;
+    const height=canvas.height;
+    const background = ctx.createLinearGradient(0,0,720,height);
     background.addColorStop(0,"#103a32"); background.addColorStop(1,"#225945");
     ctx.fillStyle = background;
-    ctx.fillRect(0,0,840,780);
+    ctx.fillRect(0,0,720,height);
     ctx.fillStyle = "#fff9ee";
     if (typeof ctx.roundRect === "function") {
       ctx.beginPath();
-      ctx.roundRect(40,40,760,700,34);
+      ctx.roundRect(24,24,672,height-48,34);
       ctx.fill();
-    } else ctx.fillRect(40,40,760,700);
-    const font = '"Sukhumvit Set", "Noto Sans Thai", Thonburi, system-ui';
+    } else ctx.fillRect(24,24,672,height-48);
+
     function line(value,y,size,color="#173e32",weight=600) {
       ctx.font = weight + " " + size + "px " + font;
       ctx.textAlign = "center";
       ctx.fillStyle = color;
-      ctx.fillText(value,420,y,710);
+      ctx.fillText(value,360,y,640);
     }
-    line("Little Paws Homestay Phuket",109,28);
-    line(title(coupon),194,64);
+    line("Little Paws Homestay Phuket",87,27);
+    line(title(coupon),163,58);
     const qrSize = coupon.qr.length;
     const moduleSize = 7;
     const outer = (qrSize + 8) * moduleSize;
-    const qrX = Math.floor((840-outer)/2);
-    const qrY = 221;
+    const qrX = Math.floor((720-outer)/2);
+    const qrY = 190;
     ctx.fillStyle = "#fff";
     ctx.fillRect(qrX,qrY,outer,outer);
     ctx.fillStyle = "#121212";
@@ -71,10 +84,9 @@ export function couponScreen({node,key,baht,results,message,reload,isActive,thai
         if (coupon.qr[y][x] === "1") ctx.fillRect(qrX+(x+4)*moduleSize,qrY+(y+4)*moduleSize,moduleSize,moduleSize);
       }
     }
-    line(coupon.code,476,50);
-    const lines = conditions(coupon);
-    lines.forEach((value,index) => line(value,544+index*40,27,"#305347",500));
-    line("Little Paws, Big Love.",700,24,"#875238");
+    line(coupon.code,458,50);
+    conditionLines.forEach((value,index) => line(value,520+index*40,33,"#305347",500));
+    line("Little Paws, Big Love.",height-60,25,"#875238");
     return new Promise((resolve) => canvas.toBlob(resolve,"image/png"));
   }
 

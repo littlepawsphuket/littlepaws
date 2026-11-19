@@ -1,3 +1,4 @@
+import {careImageCss,customerImageViewport} from "./customer_image_styles.mjs";
 import {documentAssets} from "./document_data.mjs";
 import {dogIcon,escape,palette,picture} from "./document_layout.mjs";
 import {privateDocumentHeaders,renderExport} from "./document_exports.mjs";
@@ -48,11 +49,11 @@ export async function exportCare(env,stayId,dogId,{lang,day,format}) {
     }
     recorded.push({...event,photos});
   }
-  const html = careDocumentHtml({dog,profileImage,events:recorded,theme,logo,font,mascot,lang,day});
-  return renderExport(env,{html,lang,format,filename:`little-paws-care-${stayId}-${dogId}-${day}-${lang}.${format}`});
+  const html = careDocumentHtml({dog,profileImage,events:recorded,theme,logo,font,mascot,lang,day,format});
+  return renderExport(env,{html,lang,format,imageViewport:customerImageViewport,filename:`little-paws-care-${stayId}-${dogId}-${day}-${lang}.${format}`});
 }
 
-export function careDocumentHtml({dog,profileImage,events,theme,logo,font,mascot,lang,day}) {
+export function careDocumentHtml({dog,profileImage,events,theme,logo,font,mascot,lang,day,format}) {
   const en = lang === "en";
   const title = en ? "Activity summary" : "สรุปกิจกรรมของน้อง";
   const slogan = en ? "Because every little paw deserves a whole lot of love."
@@ -118,7 +119,7 @@ export function careDocumentHtml({dog,profileImage,events,theme,logo,font,mascot
     @page{size:A4;margin:11mm}
     @media print{body{background:white}main{padding:0}.photos img{max-height:53mm}.photos[data-count="1"] img{max-height:104mm}}
     @media(max-width:480px){main{padding:11px}.profile{padding:13px;gap:10px}.profile img,.dog-icon{width:69px;height:69px}h1{font-size:28px}article{padding:10px}}
-    </style></head><body><main>
+    ${format === "png" ? careImageCss : ""}</style></head><body><main>
     <header class="brand">${picture(logo,"Little Paws","logo")}<strong>Little Paws Homestay Phuket</strong>${picture(mascot,"","mascot")}</header>
     <section class="profile">${picture(profileImage,dog.name) || dogIcon}<div><small>${escape(title)}</small><h1>${escape(dog.name)}</h1>
     <strong>${en?"Owner":"เจ้าของ"} · ${escape(dog.owner)}</strong>${meta ? `<p>${escape(meta)}</p>` : ""}<p>${escape(dates)}</p></div></section>
