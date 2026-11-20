@@ -1,3 +1,4 @@
+import {careTemplates} from "./care_templates.mjs";
 import {authorizedStaff} from "./stay_payments.mjs";
 import {shareActive,shareExpiryHours,validCarePhotoKey} from "./timeline.mjs";
 import {validDay} from "./bookings.mjs";
@@ -42,11 +43,13 @@ export async function staffTimeline(db, stayId, dogId, day, before, origin, visi
     ...event, photos:JSON.parse(event.photos).map(([id,key]) => ({id,key})),
   }));
   const last = items.at(-1);
+  const options=await careOptions(db);
+  const templateSetting=await db.prepare("SELECT value FROM system_settings WHERE key='care_templates'").bind().first();
   return {
     dog_name:row.dog_name, status:row.status, can_share:Boolean(row.can_share), can_configure_link:Boolean(origin),
     expiry_hours:row.expiry_hours, has_link:Boolean(row.token), view_count:row.view_count,
     share_url:row.token && row.can_share && origin ? origin + "/updates/" + row.token : null,
-    days:days.results.map((entry) => entry.day), events:items, options:await careOptions(db),
+    days:days.results.map((entry) => entry.day), events:items, options, templates:careTemplates(templateSetting?.value,options),
     next:events.results.length>items.length ? {recordedAt:last.recorded_at,id:last.id} : null,
   };
 }

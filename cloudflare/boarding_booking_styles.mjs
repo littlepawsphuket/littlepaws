@@ -100,3 +100,52 @@ export const boardingBookingCss = `
 .staff-app #stays>.reservation-card{padding:18px}
 }
 `;
+
+export const compactBoardingCss = `
+.staff-app #stays>.reservation-card{padding:18px;margin-bottom:14px}
+.staff-app .reservation-identity{display:flex;align-items:flex-start;gap:14px}
+.staff-app .reservation-identity>.record-heading{flex:1;min-width:0;margin:0;align-items:flex-start}
+.staff-app .reservation-identity .record-dog-photos{margin:0;display:flex;flex-wrap:wrap;gap:8px;max-width:45%}
+.staff-app .reservation-identity .record-dog-photos figure{margin:0;display:grid;gap:3px;text-align:center;max-width:90px}
+.staff-app .reservation-identity .record-dog-photos img{width:64px;height:64px;border-radius:14px;object-fit:cover}
+.staff-app .reservation-identity figcaption{font-size:13px;line-height:1.3;overflow-wrap:anywhere}
+.staff-app .reservation-card .record-heading h3{margin:0 0 3px}
+.staff-app .reservation-card .record-reference{display:block;margin:3px 0;font-size:12px}
+.staff-app .reservation-card .reservation-period{margin:10px 0;font-size:14px}
+.staff-app .reservation-card .record-amounts{padding:10px 12px;margin:10px 0;gap:8px}
+.staff-app .reservation-card .record-actions{margin-top:10px;gap:8px}
+.staff-app .reservation-card .record-actions button{font-size:14px;padding:8px 12px}
+.staff-app .boarding-list .current-dog-heading{display:grid!important;grid-template-columns:minmax(0,1fr)!important;gap:8px!important}
+.staff-app .current-dog-identity{width:100%;min-width:0}
+.staff-app .current-dog-identity>div{flex:1;min-width:0}
+.staff-app .current-dog-identity small{overflow-wrap:anywhere}
+.staff-app .current-dog-pickup{display:flex!important;align-items:center;justify-content:space-between;gap:8px;width:100%;text-align:end;margin:0!important}
+.staff-app .current-dog-pickup small{font-size:12px;min-width:0}
+.staff-app .current-dog-pickup strong{flex:none;white-space:nowrap}
+.staff-app .booking-forecast{margin:0 0 16px;padding:16px}
+.staff-app .booking-forecast h2{font-size:19px;margin:0 0 4px}
+.staff-app .booking-forecast p{margin:4px 0 8px;font-size:14px}
+.staff-app .booking-forecast .record-amounts{margin:10px 0;padding:12px;grid-template-columns:repeat(2,minmax(0,1fr))}
+.staff-app .booking-forecast .record-amounts>div:first-child{grid-column:1/-1;border-bottom:1px solid var(--season-border,#c8ded4);padding-bottom:8px}
+.staff-app .booking-forecast .record-amounts>div:first-child strong{font-size:28px}
+.staff-app .booking-forecast .record-amounts>div:nth-child(2){border-left:0;padding-left:0}
+.staff-app .booking-forecast .record-amounts strong{white-space:nowrap;overflow-wrap:normal;font-size:20px}
+.staff-app .booking-forecast>small{display:block;font-size:12px;color:#607368}
+.staff-app .care-note-templates{border:1px solid var(--season-border,#c8ded4);border-radius:14px;padding:12px;width:100%;box-sizing:border-box;background:var(--season-card,#f7faf8)}
+.staff-app .care-note-templates summary{font-weight:700;cursor:pointer;min-height:36px}
+.staff-app .care-note-templates input{width:100%;box-sizing:border-box;margin:10px 0}
+.staff-app .care-template-choices{display:grid;gap:8px;max-height:280px;overflow:auto}
+.staff-app .care-template-choice{text-align:start;white-space:normal;font-size:15px;line-height:1.6;padding:12px;margin:0!important}
+.staff-app .template-settings-list{display:grid;gap:12px;flex-basis:100%;width:100%}
+.staff-app .template-settings-row{display:flex;gap:8px;align-items:start;width:100%}
+.staff-app .template-settings-row textarea{flex:1;min-width:0;box-sizing:border-box;width:100%}
+.staff-app .template-settings-row button{flex:none}
+@media(max-width:480px){
+.staff-app .reservation-identity{gap:10px}.staff-app .reservation-identity .record-dog-photos{max-width:40%}
+.staff-app .reservation-identity .record-dog-photos img{width:56px;height:56px}
+.staff-app .reservation-identity .record-heading h3{font-size:17px}
+.staff-app .reservation-identity .record-heading{gap:5px;flex-wrap:wrap}
+.staff-app .reservation-card .record-amounts strong,.staff-app .booking-forecast .record-amounts strong{font-size:17px}
+.staff-app .current-dog-pickup{flex-wrap:nowrap!important}
+}
+`;

@@ -1002,6 +1002,17 @@ assert.equal(timelineWithNewOption.expiry_hours,0);
 settings = await readSettings();
 assert.equal((await writeSettings({section:"care",action:"remove",name:"ถ่ายรูป",revisions:settings.revisions})).status,200);
 assert.ok(!("activity:ถ่ายรูป" in (await (await staffCall(staffCarePath,{},context)).json()).options));
+// Templates share admin authorization and optimistic revisions; event text stays untouched.
+settings=await readSettings();
+assert.equal(settings.templates.food.length,5);
+const noteBefore=sqlite.prepare("SELECT note FROM care_events WHERE id=1").get()?.note;
+const templateDraft={...settings.templates,food:["Warm test message 🩷"]};
+assert.equal((await writeSettings({section:"templates",templates:templateDraft,revisions:settings.revisions})).status,200);
+assert.equal((await writeSettings({section:"templates",templates:templateDraft,revisions:settings.revisions})).status,409);
+assert.deepEqual((await (await staffCall(staffCarePath,{},context)).json()).templates.food,["Warm test message 🩷"]);
+assert.equal(sqlite.prepare("SELECT note FROM care_events WHERE id=1").get()?.note,noteBefore);
+settings=await readSettings();
+assert.equal((await writeSettings({section:"templates",templates:{food:["x".repeat(501)]},revisions:settings.revisions})).status,400);
 const holidaysPath = settingsPath + "/holidays";
 const holiday = {name:"วันหยุดทดสอบ",starts_on:"2030-01-07",ends_on:"2030-01-09"};
 assert.equal((await staffCall(holidaysPath,customerWrite("POST",{...holiday,ends_on:"2030-01-06"}),context)).status,400);

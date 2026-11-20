@@ -1,3 +1,4 @@
+import {careTemplates,validCareTemplates} from "./care_templates.mjs";
 import {configuredRates,defaultRates} from "./booking_writes.mjs";
 import {validDay} from "./bookings.mjs";
 import {customActivities,standardActivities} from "./care_staff.mjs";
@@ -7,7 +8,7 @@ export const themes = {
   songkran:"สงกรานต์",buddhist:"วันสำคัญทางพระพุทธศาสนา",japan:"ญี่ปุ่น",
 };
 
-const settingKeys = ["rates","capacity","care_link_hours","care_activities","theme"];
+const settingKeys = ["rates","capacity","care_link_hours","care_activities","care_templates","theme"];
 const authorizedAdmin = `EXISTS (SELECT 1 FROM app_users u JOIN staff_access_identities a ON a.user_id=u.id
   WHERE u.id=? AND a.email=? AND u.active=1 AND u.is_admin=1)`;
 
@@ -35,6 +36,7 @@ export async function systemSettings(db) {
     rates:configuredRates(stored.rates), capacity:decode(stored.capacity,0),
     careLinkHours:decode(stored.care_link_hours,48), theme:themeName(decode(stored.theme,"classic")),
     activities:customActivities(stored.care_activities), standardActivities:Object.values(standardActivities),
+    templates:careTemplates(stored.care_templates,{...standardActivities,...Object.fromEntries(customActivities(stored.care_activities).map(label=>["activity:"+label,label]))}),
     holidays:holidays.results, revisions,
   };
 }
@@ -83,6 +85,16 @@ export async function saveSystemSetting(db,form,actor) {
       const reserved = [...activities,...Object.values(standardActivities)];
       if (activities.length >= 100 || reserved.some((label) => label.toLowerCase() === name.toLowerCase())) return "invalid";
       changes = {care_activities:[...activities,name]};
+    }
+  }
+  if(section === "templates") {
+    // Use the current activity revision as well: never overwrite a concurrent activity edit.
+    const options={...standardActivities,...Object.fromEntries(customActivities(expected.care_activities).map(label=>["activity:"+label,label]))};
+    if(validCareTemplates(form.templates,options)) {
+      const stored=decode(expected.care_templates,{});
+      const merged={...(stored && typeof stored==='object' && !Array.isArray(stored) ? stored : {}),...form.templates};
+      if(new TextEncoder().encode(JSON.stringify(merged)).length<=24000)
+        changes={care_templates:merged,care_activities:customActivities(expected.care_activities)};
     }
   }
   if (!changes) return "invalid";

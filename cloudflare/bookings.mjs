@@ -7,6 +7,17 @@ const quotePending = `(NOT EXISTS (SELECT 1 FROM appointment_dogs ad WHERE ad.ap
 const deposited = `COALESCE((SELECT SUM(ROUND(t.amount * 100)) FROM transactions t
   WHERE t.deposit_appointment_id=a.id AND t.payment_type='deposit'), 0)`;
 
+// Aggregate the full waiting queue, independently of page size and calendar cells.
+export async function bookingForecast(db) {
+  return db.prepare(`SELECT COUNT(*) AS booking_count,
+    COALESCE(SUM(CASE WHEN ${quotePending} THEN 1 ELSE 0 END),0) AS unpriced_count,
+    COALESCE(SUM(CASE WHEN ${quotePending} THEN 0 ELSE ROUND(a.agreed_total*100) END),0) AS total_cents,
+    COALESCE(SUM(${deposited}),0) AS deposit_cents,
+    COALESCE(SUM(CASE WHEN ${quotePending} THEN 0
+      ELSE MAX(0,ROUND(a.agreed_total*100)-${deposited}) END),0) AS balance_cents
+    FROM appointments a WHERE a.status='pending' AND a.stay_id IS NULL`).bind().first();
+}
+
 // Search pending bookings without exposing notes, contact details, or payment records.
 export async function pendingBookings(db, after, search) {
   const {results} = await db.prepare(`
@@ -25,7 +36,7 @@ export async function pendingBookings(db, after, search) {
     ORDER BY a.id LIMIT 26
   `).bind(after, search, search, search, search).all();
   const bookings = results.slice(0, 25);
-  return {bookings, nextAfter: results.length > bookings.length ? bookings.at(-1).id : null};
+  return {bookings, forecast:await bookingForecast(db), nextAfter: results.length > bookings.length ? bookings.at(-1).id : null};
 }
 
 export async function bookingDetails(db, id) {
@@ -145,5 +156,5 @@ export async function bookingCalendar(db, start, end) {
     db.prepare(`SELECT id,name,starts_on,ends_on FROM shop_holidays
       WHERE starts_on<=? AND ends_on>=? ORDER BY starts_on,id`).bind(end,start),
   ]);
-  return {bookings:bookings.results,holidays:holidays.results};
+  return {bookings:bookings.results,holidays:holidays.results,forecast:await bookingForecast(db)};
 }

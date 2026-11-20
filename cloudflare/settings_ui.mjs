@@ -3,7 +3,7 @@ export function settingsScreen({node,results,message,themeLabels,thaiDate,reload
     overnight:["ฝากค้างคืน","บาท/คืน"],daycare:["ฝากระหว่างวัน","บาท/วัน"],monthly:["ฝากรายเดือน","บาท/เดือน"],
   };
   const sizes = {small:"S · เล็ก",medium:"M · กลาง",large:"L · ใหญ่"};
-  const sections = {rates:"ราคา",holidays:"วันหยุดร้าน",capacity:"ความจุและอายุลิงก์",care:"ประเภทกิจกรรม",theme:"ธีม"};
+  const sections = {rates:"ราคา",holidays:"วันหยุดร้าน",capacity:"ความจุและอายุลิงก์",care:"ประเภทกิจกรรม",templates:"ข้อความช่วยบันทึก",theme:"ธีม"};
   let section = "rates";
   let data;
 
@@ -119,6 +119,36 @@ export function settingsScreen({node,results,message,themeLabels,thaiDate,reload
     }
   }
 
+  function templateForm(panel) {
+    panel.append(node("p","เลือกหมวดแล้วเพิ่มหรือแก้ไขข้อความได้ ข้อความเหล่านี้เป็นเพียงตัวช่วย กรุณาตรวจให้ตรงกับการดูแลจริงก่อนบันทึกกิจกรรม"));
+    const form=node("form");
+    const category=node("select");
+    const labels={...Object.fromEntries(["food","medicine","walk","play","rest","custom"].map((key,index)=>[key,data.standardActivities[index]])),
+      ...Object.fromEntries(data.activities.map(label=>["activity:"+label,label]))};
+    for(const [key,label] of Object.entries(labels))category.append(new Option(label,key));
+    const drafts=structuredClone(data.templates);
+    const dirty=new Set();
+    const list=grid("template-settings-list");
+    function renderRows(){
+      list.replaceChildren();
+      const items=drafts[category.value] || [];
+      items.forEach((text,index)=>{
+        const row=grid("template-settings-row");
+        const input=Object.assign(node("textarea"),{rows:3,maxLength:500,required:true,value:text});
+        input.setAttribute("aria-label","ข้อความ "+(index+1));
+        input.oninput=()=>{items[index]=input.value;dirty.add(category.value);};
+        const remove=button("นำออก");remove.onclick=()=>{items.splice(index,1);dirty.add(category.value);renderRows();};
+        row.append(input,remove);list.append(row);
+      });
+    }
+    category.onchange=renderRows;
+    const add=button("เพิ่มข้อความ");add.onclick=()=>{const items=drafts[category.value] ||= [];if(items.length<30){items.push("");dirty.add(category.value);renderRows();list.lastElementChild?.querySelector("textarea")?.focus();}};
+    const save=submit("บันทึกข้อความช่วยบันทึก");
+    form.append(field("หมวดกิจกรรม",category),list,add,save);
+    saveForm(form,control=>writeSetting(control,{templates:Object.fromEntries(Object.entries(drafts).filter(([key])=>dirty.has(key) || (!dirty.size && key===category.value)).map(([key,items])=>[key,items.map(text=>text.trim()).filter(Boolean)]))}));
+    renderRows();panel.append(form);
+  }
+
   function holidayForm(panel, previous = null) {
     const part = grid("settings-holidays");
     const form = node("form");
@@ -200,7 +230,7 @@ export function settingsScreen({node,results,message,themeLabels,thaiDate,reload
     const panel = Object.assign(node("section"),{className:"settings-panel"});
     panel.dataset.section=section;
     panel.append(node("h2",sections[section]));
-    const forms = {rates:rateForm,holidays:holidayForm,capacity:capacityForm,care:careForm,theme:themeForm};
+    const forms = {rates:rateForm,holidays:holidayForm,capacity:capacityForm,care:careForm,templates:templateForm,theme:themeForm};
     forms[section](panel);
     const paths=["M4 5h16v14H4zM4 10h16M8 14h3","M4 19V9m8 10V5m8 14V2","M4 4h16v6a2 2 0 0 0 0 4v6H4v-6a2 2 0 0 0 0-4zM12 7v2m0 6v2","M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8M22 21v-2a4 4 0 0 0-3-3.87","M4 4h13l3 3v13H4zM8 4v6h8V4M8 20v-7h8v7","M3 4h7a3 3 0 0 1 3 3v14a4 4 0 0 0-4-2H3zM13 7a3 3 0 0 1 3-3h5v15h-5a4 4 0 0 0-3 2"];
     [...tools.children].forEach((tool,index)=>{

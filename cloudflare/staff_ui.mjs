@@ -9,7 +9,7 @@ import {reportScreen} from "./report_ui.mjs";
 import {applyStaffTheme,staffHeader,staffFooter,macStyleBridge} from "./staff_shell.mjs";
 import {installCarePhotoViewer} from "../app/static/care-gallery.js";
 import {workspaceCss} from "./workspace_styles.mjs";
-import {boardingBookingCss} from "./boarding_booking_styles.mjs";
+import {boardingBookingCss,compactBoardingCss} from "./boarding_booking_styles.mjs";
 import {careParityCss} from "./care_parity_styles.mjs";
 import {careGalleryCss} from "./care_gallery_styles.mjs";
 import {accountScreen} from './account_ui.mjs';
@@ -225,7 +225,7 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
       }
       grid.append(cell);
     }
-    results.replaceChildren(grid);
+    results.replaceChildren(bookingForecastView(data.forecast),grid);
   }
 
   const financeToolbar = document.getElementById("finance-toolbar");
@@ -378,13 +378,14 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
       if (requestId !== requestNumber) return;
       if (directory) {
         cursor = data.nextAfter;
+        if(selected === "bookings" && !results.querySelector(".booking-forecast")) results.prepend(bookingForecastView(data.forecast));
         const render = selected === "bookings" ? bookingCard : customerCard;
         for (const record of data[selected]) results.append(render(record));
       } else {
         cursor = data.nextBefore;
         for (const stay of data.stays) results.append(card(stay));
       }
-      if (!results.childElementCount) results.append(node("p", {
+      if (!results.childElementCount || (selected === "bookings" && !results.querySelector(".reservation-card"))) results.append(node("p", {
         customers:"ไม่พบลูกค้า", bookings:"ไม่พบการจองที่รอเช็กอิน", current:"ไม่มีสุนัขที่กำลังเข้าพัก",
         outstanding:"ไม่มียอดค้างชำระ", history:"ไม่พบการเข้าพักตามตัวกรอง",
       }[selected]));
@@ -1774,7 +1775,7 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
         ? "รายการหรือสถานะเปลี่ยนแล้ว กรุณาโหลดข้อมูลใหม่" : "บันทึกไม่ได้ กรุณาตรวจวัน เวลา และรายละเอียด");
       return response.json();
     }
-    function openEditor(options,event) {
+    function openEditor(options,event,templates={}) {
       const form = Object.assign(node("form"),{className:"form care-activity-form"});
       const activity = node("select");
       activity.required = true;
@@ -1802,6 +1803,43 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
         if(input === visible) {label.className="care-share-opt-in";label.prepend(input);} else label.append(input);
         form.append(label);
       }
+      const suggestions=Object.assign(node("details"),{className:"care-note-templates"});
+      suggestions.append(node("summary","เลือกข้อความแนะนำ"));
+      const search=Object.assign(node("input"),{type:"search",placeholder:"ค้นหาข้อความแนะนำ"});
+      search.setAttribute("aria-label","ค้นหาข้อความแนะนำ");
+      const choices=Object.assign(node("div"),{className:"care-template-choices"});
+      const hint=node("small","เลือกแล้วแก้ไขข้อความให้ตรงกับการดูแลจริงได้ก่อนบันทึก");
+      suggestions.append(hint,search,choices);
+      // Thai has no word boundaries: match compact text and short fragments as well as words.
+      const normalize=value=>value.normalize("NFKC").toLocaleLowerCase().replace(/[\s\p{P}\p{S}]/gu,"");
+      function showSuggestions(){
+        const query=normalize(search.value || note.value);
+        const items=templates[activity.value] || [];
+        const rank=text=>{
+          const value=normalize(text);
+          if(!query)return 1;
+          if(value.includes(query))return 100;
+          let score=0;
+          for(let i=0;i<query.length-1;i++)if(value.includes(query.slice(i,i+2)))score++;
+          return score;
+        };
+        const matched=items.map(text=>({text,score:rank(text)})).filter(item=>item.score>0).sort((a,b)=>b.score-a.score);
+        choices.replaceChildren();
+        for(const {text} of matched.slice(0,8)){
+          const choose=Object.assign(node("button",text),{type:"button",className:"secondary care-template-choice"});
+          choose.onclick=()=>{
+            if(note.value.trim() && note.value!==text && !confirm("แทนที่รายละเอียดเพิ่มเติมด้วยข้อความนี้หรือไม่?"))return;
+            note.value=text;search.value="";suggestions.open=false;note.focus();
+          };
+          choices.append(choose);
+        }
+        if(!matched.length)choices.append(node("p","ไม่พบข้อความแนะนำ สามารถพิมพ์รายละเอียดเองได้"));
+      }
+      activity.addEventListener("change",()=>{search.value="";showSuggestions();});
+      search.addEventListener("input",showSuggestions);
+      note.addEventListener("input",()=>{suggestions.open=Boolean(note.value.trim());showSuggestions();});
+      suggestions.addEventListener("toggle",()=>{if(suggestions.open)showSuggestions();});
+      note.parentElement.after(suggestions);showSuggestions();
       const attachments = node("fieldset");
       attachments.className = "intake-details";
       attachments.append(node("legend","รูปกิจกรรม · สูงสุด 4 รูป"));
@@ -1913,10 +1951,10 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
         if (loading !== requestNumber || controller.signal.aborted) return;
         renderSharing(data);
         record.hidden = showingPublic || data.status !== "checked_in";
-        record.onclick = () => openEditor(data.options);
+        record.onclick = () => openEditor(data.options,null,data.templates);
         if (initialAction && !record.hidden) {
           const event = typeof initialAction === "object" ? data.events.find(event=>event.id===initialAction.eventId) : null;
-          if(initialAction === "record" || event) {initialAction=null;openEditor(data.options,event);}
+          if(initialAction === "record" || event) {initialAction=null;openEditor(data.options,event,data.templates);}
         }
         const extraDays = [...new Set([selectedDay,...data.days])].filter((value) => value && value !== today).sort().reverse();
         day.replaceChildren(new Option("วันนี้",today),new Option("ทุกวัน",""),
@@ -1952,7 +1990,7 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
           if (!showingPublic && data.status === "checked_in") {
             const edit = Object.assign(node("button","แก้ไขกิจกรรม"),{type:"button"});
             const remove = Object.assign(node("button","ลบกิจกรรม"),{type:"button",className:"delete-deposit"});
-            edit.onclick = () => openEditor(data.options,event);
+            edit.onclick = () => openEditor(data.options,event,data.templates);
             remove.onclick = async () => {
               if (!confirm("ลบกิจกรรมนี้หรือไม่?")) return;
               remove.disabled = true;
@@ -2404,12 +2442,29 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
     }
   }
 
+  function bookingForecastView(summary) {
+    const view=Object.assign(node("section"),{className:"card booking-forecast"});
+    view.setAttribute("aria-label","รายได้คาดการณ์จากการจอง");
+    if(!summary)return view;
+    view.append(node("h2","รายได้คาดการณ์จากการจอง"),node("p","การจองที่รอเช็กอินทั้งหมด · "+summary.booking_count+" รายการ"),
+      recordAmounts([["ยอดจองรวม",summary.total_cents],["รับมัดจำแล้ว",summary.deposit_cents],["ยอดรอรับชำระ",summary.balance_cents]]),
+      node("small","ยอดประมาณการหลังส่วนลด ไม่รวมรายการที่เช็กอินหรือยกเลิกแล้ว"));
+    if(summary.unpriced_count) view.append(node("p","ยังไม่กำหนดราคา · "+summary.unpriced_count+" รายการ (ยังไม่รวมในยอดประมาณการ)"));
+    return view;
+  }
+  function compactCardHeader(record,state,label,reference) {
+    const header=recordHeading(record.customer,"",label,state);
+    const copy=header.firstElementChild;
+    copy.append(Object.assign(node("small",reference || "#"+record.id),{className:"record-reference"}));
+    const content=Object.assign(node("div"),{className:"reservation-identity"});
+    content.append(cardDogPhotos(record),header);
+    return content;
+  }
+
   function bookingCard(booking) {
     const article = Object.assign(node("article"),{className:"card reservation-card"});
-    article.append(recordHeading(booking.customer,booking.dogs || "","รอเช็กอิน","pending"),
-      Object.assign(node("p",booking.booking_number || "#"+booking.id),{className:"record-reference"}),
-      node("p",[booking.checkin,booking.checkout].map(day=>bookingDate.format(new Date(day))).join(" – ")));
-    article.append(cardDogPhotos(booking));
+    article.append(compactCardHeader(booking,"pending","รอเช็กอิน",booking.booking_number),
+      Object.assign(node("p",[booking.checkin,booking.checkout].map(day=>bookingDate.format(new Date(day))).join(" – ")),{className:"reservation-period"}));
     article.append(recordAmounts([["ยอดรวม",booking.quote_pending ? null : booking.total_cents],
       ["รับมัดจำ",booking.deposit_cents],["ยอดคงเหลือ",booking.quote_pending ? null : Math.max(0,booking.total_cents-booking.deposit_cents)]]));
     const details=Object.assign(node("button","ดูการจอง"),{type:"button"});
@@ -2420,12 +2475,10 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
 
   function card(stay) {
     const article = Object.assign(node("article"),{className:"card reservation-card"});
-    article.append(recordHeading(stay.customer,stay.dogs || "",statuses[stay.status] || stay.status,stay.status),
-      Object.assign(node("p",stay.stay_number || "#"+stay.id),{className:"record-reference"}));
-    article.append(cardDogPhotos(stay));
+    article.append(compactCardHeader(stay,stay.status,statuses[stay.status] || stay.status,stay.stay_number));
     if (stay.checkin && stay.checkout) {
       const date = (value) => bookingDate.format(new Date(value+"T00:00:00Z"));
-      article.append(node("p",date(stay.checkin) + " – " + date(stay.checkout)));
+      article.append(Object.assign(node("p",date(stay.checkin) + " – " + date(stay.checkout)),{className:"reservation-period"}));
     }
     if (stay.due_cents > 0) article.append(Object.assign(node("strong","ค้างชำระ " + baht.format(stay.due_cents/100)),
       {className:"stay-due"}));
@@ -2638,7 +2691,7 @@ export function outstandingPage(isAdmin = false,canExport = false,theme = "class
     <link rel="icon" href="/static/little-paws-icon.png">
     <style nonce="${nonce}">${css}${careParityCss}${boardingBookingCss}${workspaceCss}</style>
     <link rel="stylesheet" href="/static/style.css?v=80">
-    <style nonce="${nonce}">${macStyleBridge}\n${careGalleryCss}</style>
+    <style nonce="${nonce}">${macStyleBridge}\n${careGalleryCss}\n${compactBoardingCss}</style>
     <body class="staff-app" data-theme="${themeName(theme)}">
     ${staffHeader(theme,isAdmin,displayName,language)}
     <main>
