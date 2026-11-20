@@ -1,3 +1,4 @@
+import {eventInteractions} from "./care_interactions.mjs";
 import {careTemplates} from "./care_templates.mjs";
 import {authorizedStaff} from "./stay_payments.mjs";
 import {shareActive,shareExpiryHours,validCarePhotoKey} from "./timeline.mjs";
@@ -21,7 +22,7 @@ export function timelineOrigin(value) {
   } catch { return null; }
 }
 
-export async function staffTimeline(db, stayId, dogId, day, before, origin, visibleOnly) {
+export async function staffTimeline(db, stayId, dogId, day, before, origin, visibleOnly, focusEvent=null) {
   const [record,days,events] = await db.batch([
     db.prepare(`SELECT d.name AS dog_name,s.status,${shareActive} AS can_share,
         ${shareExpiryHours} AS expiry_hours,l.token,l.view_count
@@ -31,10 +32,10 @@ export async function staffTimeline(db, stayId, dogId, day, before, origin, visi
     db.prepare(`SELECT e.id,e.activity_label,e.kind,e.recorded_at,e.note,e.customer_visible,e.cloud_revision AS revision,
         (SELECT json_group_array(json_array(p.id,p.object_key)) FROM care_photos p WHERE p.event_id=e.id) AS photos
       FROM care_events e WHERE e.stay_id=? AND e.dog_id=?
-        AND (?=0 OR e.customer_visible=1) AND (? IS NULL OR substr(e.recorded_at,1,10)=?)
+        AND (?=0 OR e.customer_visible=1) AND (? IS NULL OR e.id=?) AND (? IS NULL OR substr(e.recorded_at,1,10)=?)
         AND (? IS NULL OR e.recorded_at<? OR (e.recorded_at=? AND e.id<?))
       ORDER BY e.recorded_at DESC,e.id DESC LIMIT 26`)
-      .bind(stayId,dogId,visibleOnly,day,day,before?.recordedAt ?? null,before?.recordedAt ?? null,
+      .bind(stayId,dogId,visibleOnly,focusEvent,focusEvent,day,day,before?.recordedAt ?? null,before?.recordedAt ?? null,
         before?.recordedAt ?? null,before?.id ?? null),
   ]);
   const row = record.results[0];
@@ -42,6 +43,11 @@ export async function staffTimeline(db, stayId, dogId, day, before, origin, visi
   const items = events.results.slice(0,25).map((event) => ({
     ...event, photos:JSON.parse(event.photos).map(([id,key]) => ({id,key})),
   }));
+  const feedback=await eventInteractions(db,items.map(event=>event.id));
+  for(const event of items){
+    event.comments=feedback.comments.filter(comment=>comment.event_id===event.id);
+    for(const photo of event.photos)photo.hearted=feedback.hearts.some(heart=>heart.photo_id===photo.id);
+  }
   const last = items.at(-1);
   const options=await careOptions(db);
   const templateSetting=await db.prepare("SELECT value FROM system_settings WHERE key='care_templates'").bind().first();

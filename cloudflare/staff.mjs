@@ -1,3 +1,4 @@
+import {staffReply,careNotifications,markCareCommentsRead} from "./care_interactions.mjs";
 import {stayCardDogs} from "./card_dogs.mjs";
 import { receiveStayPayment, stayBalance, authorizedStaff } from "./stay_payments.mjs";
 import { validDay, pendingBookings, bookingCalendar, bookingDetails, receiveBookingDeposit, deleteBookingDeposit } from "./bookings.mjs";
@@ -146,6 +147,7 @@ export default {
     const customerMatch = /^\/api\/customers\/(\d+)(?:\/dogs\/(\d+)\/photo)?$/.exec(url.pathname);
     const careExportMatch = /^\/api\/stays\/(\d+)\/dogs\/(\d+)\/timeline\/export\.(html|pdf|png)$/.exec(url.pathname);
     const careMediaMatch = /^\/api\/stays\/(\d+)\/dogs\/(\d+)\/timeline\/events\/(\d+)\/photos(?:\/(\d+))?$/.exec(url.pathname);
+    const careNotificationRoute = url.pathname === "/api/care/notifications";
     const timelineMatch = /^\/api\/stays\/(\d+)\/dogs\/(\d+)\/timeline(?:\/photos\/(\d+))?$/.exec(url.pathname);
     const staySummaryMatch = /^\/api\/stays\/(\d+)$/.exec(url.pathname);
     const documentMatch = /^\/api\/documents\/(booking|deposit|stay)\/(\d+)(?:\/(\d+))?\.(html|pdf|png)$/.exec(url.pathname);
@@ -170,7 +172,7 @@ export default {
     const reopenMatch = /^\/api\/stays\/(\d+)\/recheck-in$/.exec(url.pathname);
     const backupRoute=['/api/backup/snapshot','/api/backup/media'].includes(url.pathname);
     const manualMatch=/^\/api\/manual\/(?:(usage|backup)\.html|images\/([a-z]+)\.webp)$/.exec(url.pathname);
-    if (!backupRoute && !manualMatch && !userMatch && !accountMatch && !reopenMatch && !match && !stayChangeMatch && !depositMatch && !dogMatch && !customerMatch && !bookingMatch && !checkInMatch && !couponMatch && !documentMatch && !directCheckIn && !directPreview && !couponPreview && !staySummaryMatch && !timelineMatch && !careMediaMatch && !careExportMatch && !isFile && !settings && !holidayMatch && !history && !ledgerMatch && !assetMatch && !overview && !reportMatch && !["/", "/api/account", "/api/dashboard/finance", "/api/customers", "/api/bookings", "/api/bookings/rates", "/api/bookings/calendar", "/api/bookings/pending", "/api/stays/outstanding", "/api/stays/current"].includes(url.pathname)) return json({error: "not_found"}, 404);
+    if (!careNotificationRoute && !backupRoute && !manualMatch && !userMatch && !accountMatch && !reopenMatch && !match && !stayChangeMatch && !depositMatch && !dogMatch && !customerMatch && !bookingMatch && !checkInMatch && !couponMatch && !documentMatch && !directCheckIn && !directPreview && !couponPreview && !staySummaryMatch && !timelineMatch && !careMediaMatch && !careExportMatch && !isFile && !settings && !holidayMatch && !history && !ledgerMatch && !assetMatch && !overview && !reportMatch && !["/", "/api/account", "/api/dashboard/finance", "/api/customers", "/api/bookings", "/api/bookings/rates", "/api/bookings/calendar", "/api/bookings/pending", "/api/stays/outstanding", "/api/stays/current"].includes(url.pathname)) return json({error: "not_found"}, 404);
     try {
       const user = await authorizedUser(env, ctx, request);
       if (!user) return json({error: "access_required"}, 403);
@@ -370,6 +372,10 @@ export default {
         }
         return json({status},{saved:200,invalid:400,conflict:409}[status]);
       }
+      if(careNotificationRoute){
+        if(request.method!=="GET")return json({error:"method_not_allowed"},405);
+        return json(await careNotifications(env.DB,user));
+      }
       if (timelineMatch) {
         const [stayId,dogId,photoId] = timelineMatch.slice(1).map((value) => value === undefined ? null : Number(value));
         if (![stayId,dogId,photoId ?? 1].every((value) => Number.isSafeInteger(value) && value > 0)) {
@@ -389,8 +395,10 @@ export default {
           if ((day !== null && !validDay(day)) ||
               (beforeAt !== null && (beforeAt.length > 60 || !Number.isFinite(Date.parse(beforeAt)) ||
                 !Number.isSafeInteger(beforeId) || beforeId < 1))) return json({error:"invalid_search"},400);
+          const focused=url.searchParams.has("event_id") ? Number(url.searchParams.get("event_id")) : null;
+          if(focused!==null && (!Number.isSafeInteger(focused)||focused<1))return json({error:"invalid_search"},400);
           const timeline = await staffTimeline(env.DB,stayId,dogId,day,
-            beforeAt === null ? null : {recordedAt:beforeAt,id:beforeId},origin,Number(url.searchParams.get("preview") === "1"));
+            beforeAt === null ? null : {recordedAt:beforeAt,id:beforeId},origin,Number(url.searchParams.get("preview") === "1"),focused);
           return timeline ? json(timeline) : json({error:"not_found"},404);
         }
         if (request.method !== "POST" || photoId !== null) return json({error:"method_not_allowed"},405);
@@ -401,7 +409,9 @@ export default {
         const form = await smallJson(request);
         if (!form) return json({error:"invalid"},400);
         if (form.action === "create" && !origin) return json({status:"origin_missing"},503);
-        const result = ["add-event","edit-event","remove-event"].includes(form.action)
+        const result = form.action === "read-comments" ? await markCareCommentsRead(env.DB,stayId,dogId,form,user)
+          : form.action === "reply-comment" ? await staffReply(env.DB,stayId,dogId,form,user)
+          : ["add-event","edit-event","remove-event"].includes(form.action)
           ? await writeCareEvent(env.DB,env.MEDIA,stayId,dogId,form,user)
           : await manageTimelineLink(env.DB,stayId,dogId,form,user);
         const payload = typeof result === "string" ? {status:result} : result;

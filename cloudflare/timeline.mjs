@@ -1,3 +1,7 @@
+import {customerTheme,customerThemeCss,customerThemeBanner,customerThemeAsset} from "./customer_theme.mjs";
+import {eventInteractions,guardianInteraction} from "./care_interactions.mjs";
+import {discussionMarkup,guardianInteractions} from "./guardian_interactions_ui.mjs";
+import {interactionCss} from "./care_interactions.mjs";
 const tokenPattern = /^[A-Za-z0-9_-]{43}$/;
 const datePattern = /^\d{4}-\d{2}-\d{2}$/;
 const thaiToday = new Intl.DateTimeFormat("en-CA", {
@@ -12,7 +16,7 @@ const headers = {
   "Referrer-Policy": "no-referrer",
   "X-Robots-Tag": "noindex, nofollow, noarchive",
   "X-Content-Type-Options": "nosniff",
-  "Content-Security-Policy": "default-src 'none'; script-src 'self'; img-src 'self'; font-src 'self'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'",
+  "Content-Security-Policy": "default-src 'none'; script-src 'self'; connect-src 'self'; img-src 'self'; font-src 'self'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'",
 };
 
 function respond(body, status, moreHeaders = {}) {
@@ -60,12 +64,13 @@ async function timeline(env, token, url, printable = false) {
   const lang = url.searchParams.get("lang") === "en" ? "en" : "th";
   const en = lang === "en";
   const [links, days, activities] = await env.DB.batch([
-    env.DB.prepare(`SELECT d.id AS dog_id,d.name,dp.object_key,cfg.value AS expiry_hours
+    env.DB.prepare(`SELECT d.id AS dog_id,d.name,dp.object_key,cfg.value AS expiry_hours,
+        (SELECT value FROM system_settings WHERE key='theme') AS theme_value
       ${activeLink} ${profileJoin} WHERE ${activeCondition}`).bind(token),
     env.DB.prepare(`SELECT DISTINCT substr(e.recorded_at,1,10) AS day ${activeLink}
       JOIN care_events e ON e.stay_id=l.stay_id AND e.dog_id=l.dog_id
       WHERE ${activeCondition} AND e.customer_visible=1 ORDER BY day DESC`).bind(token),
-    env.DB.prepare(`SELECT e.kind,e.activity_label,e.recorded_at,e.note,
+    env.DB.prepare(`SELECT e.id,e.kind,e.activity_label,e.recorded_at,e.note,
         (SELECT group_concat(p.id) FROM care_photos p WHERE p.event_id=e.id) AS photos
       ${activeLink} JOIN care_events e ON e.stay_id=l.stay_id AND e.dog_id=l.dog_id
       WHERE ${activeCondition} AND e.customer_visible=1
@@ -77,6 +82,7 @@ async function timeline(env, token, url, printable = false) {
   if (!link || (day !== "all" && day !== today && !visibleDays.includes(day))) return missing();
 
   const route = `/updates/${token}`;
+  const theme=customerTheme(link.theme_value);
   const photoPath = printable ? url.origin + route : route;
   const dateLabel = (value) => new Intl.DateTimeFormat(en ? "en-GB" : "th-TH", {
     dateStyle: "medium", timeZone: "UTC",
@@ -85,6 +91,7 @@ async function timeline(env, token, url, printable = false) {
     ${value === day ? 'aria-current="page"' : ""}>${escape(label)}</a>`;
   const availableDays = [...new Set([today, ...visibleDays])].sort().reverse();
   let lastDay = "";
+  const feedback=printable ? {comments:[],hearts:[]} : await eventInteractions(env.DB,activities.results.map(event=>event.id));
   const cards = activities.results.map((event) => {
     const eventDay = event.recorded_at.slice(0, 10);
     const heading = eventDay !== lastDay ? `<h2>${escape(dateLabel(eventDay))}</h2>` : "";
@@ -95,8 +102,9 @@ async function timeline(env, token, url, printable = false) {
       ${escape(label)}</h3><p>${escape(event.note)}</p>
       <div class="photos${printable ? "" : " care-media-gallery"}">${photos.map((id) => {
         const image = `<img loading="${printable ? "eager" : "lazy"}" src="${photoPath}/photos/${id}" alt="${en ? "Activity photo" : "รูปกิจกรรม"}">`;
-        return printable ? image : `<a href="${photoPath}/photos/${id}" data-care-photo aria-haspopup="dialog">${image}</a>`;
-      }).join("")}</div></article>`;
+        const liked=feedback.hearts.some(heart=>heart.photo_id===Number(id));
+        return printable ? image : `<div class="care-photo-tile"><a href="${photoPath}/photos/${id}" data-care-photo aria-haspopup="dialog">${image}</a><button type="button" class="care-heart" data-photo="${id}" aria-pressed="${liked}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8Z"/></svg><span>${liked?(en?'Loved · 1':'ส่งหัวใจแล้ว · 1'):(en?'Send love':'ส่งหัวใจ')}</span></button></div>`;
+      }).join("")}</div>${printable ? "" : discussionMarkup(feedback.comments.filter(comment=>comment.event_id===event.id),event.id,route,lang)}</article>`;
   }).join("");
   const expiryHours = link.expiry_hours === null ? 48 : Number(link.expiry_hours);
   const hours = Number.isInteger(expiryHours) ? expiryHours : 48;
@@ -133,8 +141,8 @@ async function timeline(env, token, url, printable = false) {
       h2{break-after:avoid-page}h1{font-size:26pt}
       .photos img{width:auto;max-width:100%;height:auto;max-height:115mm}
     }
-    ${printable ? "" : careGalleryCss}
-    </style><main><header><strong>Little Paws Homestay Phuket</strong>
+    ${printable ? "" : careGalleryCss+interactionCss+customerThemeCss(theme)}
+    </style><main>${printable ? "" : customerThemeBanner(theme,route)}<header><strong>Little Paws Homestay Phuket</strong>
     <div class="profile-heading">${profile}<div><span class="section-label">${title}</span><h1>${escape(link.name)}</h1></div></div>
     ${viewerLinks}</header>${controls}
     ${cards || `<p>${en ? "No activities yet." : "ยังไม่มีกิจกรรม"}</p>`}
@@ -204,17 +212,39 @@ async function documentFont(env, token) {
 
 async function galleryScript(env, token) {
   const active = await env.DB.prepare(`SELECT 1 ${activeLink} WHERE ${activeCondition}`).bind(token).first();
-  return active ? respond(`(${installCarePhotoViewer.toString()})();`,200,{"Content-Type":"text/javascript; charset=utf-8"}) : missing();
+  return active ? respond(`(${installCarePhotoViewer.toString()})();(${guardianInteractions.toString()})();`,200,{"Content-Type":"text/javascript; charset=utf-8"}) : missing();
 }
 
 export default {
   async fetch(request, env) {
-    if (request.method !== "GET") return respond("Method not allowed", 405, {Allow:"GET"});
+
     const url = new URL(request.url);
     const path = url.pathname.split("/");
     const token = path[2];
     if (path[1] !== "updates" || !tokenPattern.test(token || "")) return missing();
     try {
+      if(path.length===4 && path[3]==="interactions") {
+        const json=(body,status=200)=>respond(JSON.stringify(body),status,{"Content-Type":"application/json; charset=utf-8"});
+        if(request.method==="GET") {
+          const id=Number(url.searchParams.get("event"));
+          if(!Number.isSafeInteger(id) || id<1)return missing();
+          const allowed=await env.DB.prepare(`SELECT e.id ${activeLink} JOIN care_events e ON e.stay_id=l.stay_id AND e.dog_id=l.dog_id
+            WHERE ${activeCondition} AND e.id=? AND e.customer_visible=1`).bind(token,id).first();
+          return allowed ? json({comments:(await eventInteractions(env.DB,[id])).comments}) : missing();
+        }
+        if(request.method!=="POST")return respond("Method not allowed",405,{Allow:"GET, POST"});
+        if(request.headers.get("Origin")!==url.origin)return json({status:"invalid_origin"},403);
+        if(request.headers.get("Content-Type")?.split(";",1)[0].trim().toLowerCase()!=="application/json")return json({status:"invalid"},415);
+        const reader=request.body?.getReader();if(!reader)return json({status:"invalid"},400);
+        const chunks=[];let size=0;
+        try {for(;;){const {done,value}=await reader.read();if(done)break;size+=value.length;if(size>4096){await reader.cancel();return json({status:"invalid"},413);}chunks.push(value);}}finally{reader.releaseLock();}
+        const bytes=new Uint8Array(size);let offset=0;for(const chunk of chunks){bytes.set(chunk,offset);offset+=chunk.length;}
+        let form;try{form=JSON.parse(new TextDecoder().decode(bytes));}catch{return json({status:"invalid"},400);}
+        if(!form || typeof form!=="object" || Array.isArray(form))return json({status:"invalid"},400);
+        const result=await guardianInteraction(env.DB,token,form,shareActive);
+        return json(result,{saved:200,invalid:400,not_found:404,rate_limited:429}[result.status] || 400);
+      }
+      if (request.method !== "GET") return respond("Method not allowed", 405, {Allow:"GET"});
       if (path.length === 3) {
         const page = await timeline(env, token, url);
         const speculative = ["Purpose","Sec-Purpose"].some((name) =>
@@ -224,6 +254,11 @@ export default {
             WHERE token IN (SELECT l.token ${activeLink} WHERE ${activeCondition})`).bind(token).run();
         }
         return page;
+      }
+      if(path.length===5 && path[3]==="theme"){
+        const active=await env.DB.prepare(`SELECT 1 ${activeLink} WHERE ${activeCondition}`).bind(token).first();
+        if(!active)return missing();const asset=customerThemeAsset(path[4]);
+        return asset ? respond(asset.bytes,200,{"Content-Type":asset.type}) : missing();
       }
       if (path.length === 4 && path[3] === "timeline.pdf") return await timelinePdf(env, token, url);
       if (path.length === 4 && path[3] === "profile.jpg") return await profilePhoto(env, token);

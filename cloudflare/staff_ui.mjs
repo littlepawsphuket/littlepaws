@@ -1,3 +1,4 @@
+import {interactionCss,notificationCss} from "./care_interactions.mjs";
 import {couponScreen} from "./coupon_ui.mjs";
 import {settingsScreen} from "./settings_ui.mjs";
 import {ledgerScreen} from "./ledger_ui.mjs";
@@ -10,7 +11,7 @@ import {applyStaffTheme,staffHeader,staffFooter,macStyleBridge} from "./staff_sh
 import {installCarePhotoViewer} from "../app/static/care-gallery.js";
 import {workspaceCss} from "./workspace_styles.mjs";
 import {boardingBookingCss,compactBoardingCss} from "./boarding_booking_styles.mjs";
-import {careParityCss} from "./care_parity_styles.mjs";
+import {careParityCss,checkinTouchCss} from "./care_parity_styles.mjs";
 import {careGalleryCss} from "./care_gallery_styles.mjs";
 import {accountScreen} from './account_ui.mjs';
 import {backupScreen} from './backup_ui.mjs';
@@ -1026,7 +1027,27 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
     formActions.append(submit);
     if(booking){const back=Object.assign(node("button","กลับไปหน้าสรุป"),{type:"button",className:"secondary"});
       back.onclick=()=>stayEdit ? showStay(booking.id) : showBooking(booking.id);formActions.append(back);}
-    form.append(dogs,warnings,formActions,status);
+    const liveBill=Object.assign(node("section"),{className:"checkin-live-bill checkin-wide"});
+    liveBill.setAttribute("aria-live","polite");
+    function refreshLiveBill(){
+      const chosen=[...choices.values()].filter(entry=>entry.include.checked);
+      liveBill.replaceChildren(node("h4","สรุปค่าใช้จ่าย"));
+      if(!chosen.length){liveBill.append(node("p","เลือกสุนัขเพื่อดูราคา"));return;}
+      if(chosen.some(entry=>entry.rate.value==="")){liveBill.append(node("p","กรุณาระบุราคาของสุนัขทุกตัว"));return;}
+      const q=Math.round(Number(quantity.value)*100),off=Math.round(Number(discount.value)*100);
+      if(!Number.isSafeInteger(q)||q<0||!Number.isSafeInteger(off)||off<0)return;
+      let subtotal=0;
+      for(const {dog,rate} of chosen){
+        const cents=Math.round(Number(rate.value)*100);if(!Number.isSafeInteger(cents)||cents<0)return;
+        const total=Math.floor((cents*q+50)/100);subtotal+=total;
+        liveBill.append(node("p",dog.name+" · "+quantity.value+" "+services[service.value][1]+" × "+baht.format(cents/100)+" = "+baht.format(total/100)));
+      }
+      if(off>subtotal){liveBill.append(node("p","ส่วนลดเกินค่าบริการ กรุณาตรวจยอด"));return;}
+      const net=Math.floor((subtotal-off)/100)*100;
+      liveBill.append(recordAmounts([["ค่าบริการรวม",subtotal],["ส่วนลด",off],["ยอดสุทธิ",net]]));
+    }
+    form.addEventListener("input",refreshLiveBill);form.addEventListener("change",refreshLiveBill);
+    form.append(dogs,liveBill,warnings,formActions,status);refreshLiveBill();
     bookingContent.replaceChildren(node("h3",stayEdit ? "แก้ไขการเข้าพัก" : direct ? "เช็กอินโดยตรง" : booking ? "แก้ไขการจอง" : "สร้างการจอง"),form);
     function defaults() {
       quantity.step = service.value === "monthly" ? "0.01" : "1";
@@ -1040,6 +1061,7 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
     service.addEventListener("change", () => {
       defaults();
       for (const {dog,rate} of choices.values()) rate.value = rates?.[service.value]?.[dog.size] ?? "";
+      refreshLiveBill();
     });
     async function searchOwners() {
       const call = ++requestId;
@@ -1120,7 +1142,7 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
         if(retained.has(dog.id)){include.checked=retained.get(dog.id).checked;rate.value=retained.get(dog.id).rate;}
         choices.set(dog.id,{dog,include,rate});
       }
-      submit.disabled = choices.size === 0;
+      submit.disabled = choices.size === 0;refreshLiveBill();
     }
     owner.addEventListener("change", loadDogs);
     function clearWarnings() {
@@ -1285,7 +1307,15 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
           const wrapper = node("label",label);
           wrapper.append(input);
           fields.push([field,() => input.value.trim()]);
-          grid.append(wrapper);
+          if(typeof kind === "object"){
+            wrapper.hidden=true;
+            const group=node("div");group.append(node("strong",label));
+            const segments=Object.assign(node("div"),{className:"touch-answer-options"});segments.setAttribute("role","group");segments.setAttribute("aria-label",label);
+            const choices=[["","ไม่ระบุ"],...Object.entries(kind)];
+            for(const [value,caption] of choices){const choice=Object.assign(node("button",caption),{type:"button",className:"secondary"});
+              choice.setAttribute("aria-pressed",String(input.value===value));choice.onclick=()=>{input.value=value;for(const item of segments.children)item.setAttribute("aria-pressed",String(item===choice));};segments.append(choice);}
+            group.append(segments,wrapper);grid.append(group);
+          }else grid.append(wrapper);
         }
       }
       panel.append(fieldset);
@@ -1366,7 +1396,7 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
     const pickupDate = field("วันรับกลับ","date",booking.checkout);
     pickupDate.readOnly = true;
     const returnTime = field("เวลานัดรับกลับ","time",now,false);
-    const amount = field("ยอดรับเพิ่ม (บาท)","number",(booking.balance_cents/100).toFixed(2));
+    const amount = field("ยอดรับชำระครั้งนี้ (บาท)","number",(booking.balance_cents/100).toFixed(2));
     let coupon = null;
     let couponRequest = 0;
     Object.assign(amount,{min:"0",step:"0.01",max:(booking.balance_cents/100).toFixed(2)});
@@ -1397,20 +1427,35 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
         for(const row of dogInfo.children){const dog=data.dogs.find(dog=>String(dog.id)===row.dataset.dogId);if(dog){row.querySelector("strong").textContent=dog.name;row.querySelector("img").alt=dog.name;}}
       }
     }).catch(()=>{});
+    payments.prepend(node("h4","รับชำระเงิน"),node("p","ปรับยอดรับชำระได้ หากชำระบางส่วน ระบบจะเก็บยอดค้างชำระไว้ให้ติดตาม"));
     form.append(identity,stayTiming,payments);
     const couponPanel = node("section");
     couponPanel.className = "intake-details";
     const couponInput = Object.assign(node("input"),{type:"text",inputMode:"numeric",maxLength:6});
     const couponLabel = node("label","รหัสคูปอง");
-    couponLabel.append(couponInput);
     const applyCoupon = Object.assign(node("button","ใช้คูปอง"),{type:"button"});
     const resetCoupon = Object.assign(node("button","นำคูปองออก"),{type:"button",hidden:true});
     const couponStatus = node("p","");
     couponStatus.setAttribute("role","status");
-    couponPanel.append(couponLabel,applyCoupon,resetCoupon,couponStatus);
+    const couponRow=Object.assign(node("div"),{className:"checkin-coupon-row"});couponRow.append(couponInput,applyCoupon);couponLabel.append(couponRow);
+    couponPanel.classList.add("checkin-coupon-panel");couponPanel.append(couponLabel,resetCoupon,couponStatus);
     form.append(couponPanel);
     const totalLine = node("p");
+    const signingBill=Object.assign(node("section"),{className:"checkin-signing-bill"});signingBill.setAttribute("aria-live","polite");
     const money = (cents) => baht.format(cents/100);
+    function renderSigningBill(){
+      const total=coupon?.total_cents ?? booking.total_cents;
+      const balance=coupon?.balance_cents ?? booking.balance_cents;
+      const received=Math.max(0,Math.round(Number(amount.value || 0)*100));
+      const originalDiscount=booking.discount_cents ?? draft?.discountCents ?? 0;
+      signingBill.replaceChildren(node("h4","ตรวจสอบค่าใช้จ่ายก่อนลงนาม"),recordAmounts([
+        ["ค่าบริการรวม",booking.total_cents+originalDiscount+(booking.rounding_cents || 0)],
+        ["ส่วนลดเดิม",originalDiscount],["ส่วนลดคูปอง",coupon?.discount_cents || 0],
+        ["ยอดสุทธิ",total],["รับมัดจำแล้ว",booking.paid_cents || 0],["รับชำระครั้งนี้",received],
+        ["ยอดค้างชำระหลังเช็กอิน",Math.max(0,balance-received)]]));
+      if(received>balance)signingBill.append(node("p","ยอดรับชำระเกินยอดคงเหลือ กรุณาตรวจยอด"));
+    }
+    amount.addEventListener("input",renderSigningBill);
     function updateBill(nextCoupon) {
       const oldBalance = coupon?.balance_cents ?? booking.balance_cents;
       const newBalance = nextCoupon?.balance_cents ?? booking.balance_cents;
@@ -1421,7 +1466,8 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
       coupon = nextCoupon;
       resetCoupon.hidden = !coupon;
       totalLine.textContent = "ยอดสุทธิ " + money(coupon?.total_cents ?? booking.total_cents) +
-        " · รับมัดจำแล้ว " + money(booking.paid_cents) + " · คงเหลือ " + money(newBalance);
+        " · รับมัดจำแล้ว " + money(booking.paid_cents || 0) + " · คงเหลือ " + money(newBalance);
+      renderSigningBill();
     }
     updateBill(null);
     resetCoupon.addEventListener("click",() => {
@@ -1468,9 +1514,14 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
     picker.append(new Option("ไทย","th"),new Option("English","en"));
     picker.value=document.documentElement.lang;
     const languageLabel = node("label","ภาษาเงื่อนไข");
-    languageLabel.append(picker);
+    languageLabel.append(picker);languageLabel.hidden=true;
+    const languageButtons=Object.assign(node("div"),{className:"terms-language-switch"});languageButtons.setAttribute("role","group");languageButtons.setAttribute("aria-label","ภาษาเงื่อนไข");
+    for(const [value,label] of [["th","ไทย"],["en","English"]]){
+      const choice=Object.assign(node("button",label),{type:"button",className:"secondary"});choice.setAttribute("aria-pressed",String(picker.value===value));
+      choice.onclick=()=>{if(picker.value===value)return;picker.value=value;for(const item of languageButtons.children)item.setAttribute("aria-pressed",String(item===choice));picker.dispatchEvent(new Event("change"));};languageButtons.append(choice);
+    }
     const termsContent = node("div");
-    termsBox.append(languageLabel,termsContent);
+    termsBox.append(languageLabel,languageButtons,termsContent);
 
     const accept = Object.assign(node("input"),{type:"checkbox",required:true});
     const acknowledgement = node("span","ลูกค้ารับทราบและยอมรับเงื่อนไข");
@@ -1497,7 +1548,7 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
     const footer = Object.assign(node("div"),{className:"actions checkin-form-actions"});
     back.classList.add("secondary");
     footer.append(back,submit);
-    form.append(intakeForm.panel,termsBox,acceptLabel,signatureArea,warnings,footer,status);
+    form.append(intakeForm.panel,termsBox,signingBill,acceptLabel,signatureArea,warnings,footer,status);
     bookingContent.replaceChildren(node("h3","เช็กอิน · " + booking.customer),totalLine,form);
 
     const strokes = [];
@@ -1640,6 +1691,49 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
     svg.append(path); return svg;
   }
 
+  function careDiscussion(event,stayId,dogId,readOnly=false) {
+    const section=Object.assign(node("section"),{className:"care-discussion"});
+    const status=Object.assign(node("p"),{className:"care-interaction-status"});status.setAttribute("role","status");
+    function render(comments){
+      section.replaceChildren(node("h4","ความคิดเห็นจากผู้ปกครอง · "+comments.filter(comment=>!comment.parent_id).length));
+      if(!comments.length)section.append(node("small","ยังไม่มีความคิดเห็นจากผู้ปกครอง"));
+      function row(comment){
+        const box=Object.assign(node("div"),{className:"care-comment"});box.dataset.author=comment.author_kind;
+        const heading=Object.assign(node("div"),{className:"care-comment-header"});
+        const moment=new Date(comment.created_at);
+        heading.append(node("strong",comment.author_kind === "guardian" ? "ผู้ปกครอง" : "ทีม Little Paws"),
+          node("time",bookingDate.format(new Date(parts.format(moment)))+" · "+bangkokTime.format(moment)));
+        box.append(heading,node("p",comment.body));return box;
+      }
+      for(const comment of comments.filter(comment=>!comment.parent_id)){
+        section.append(row(comment));
+        for(const reply of comments.filter(reply=>reply.parent_id===comment.id))section.append(row(reply));
+        if(readOnly)continue;
+        const replyBox=node("details");replyBox.append(node("summary","ตอบกลับความคิดเห็น"));
+        const form=Object.assign(node("form"),{className:"care-comment-form"});
+        const input=Object.assign(node("textarea"),{rows:2,required:true,maxLength:500});
+        const label=node("label","ข้อความตอบกลับ");label.append(input);
+        const submit=Object.assign(node("button","ส่งคำตอบ"),{type:"submit"});form.append(label,submit);replyBox.append(form);section.append(replyBox);
+        let pending=null;
+        input.oninput=()=>{if(pending?.body!==input.value.trim())pending=null;};
+        form.onsubmit=async submitEvent=>{
+          submitEvent.preventDefault();if(submit.disabled || !input.value.trim())return;
+          const bytes=()=>[...crypto.getRandomValues(new Uint8Array(16))].map(value=>value.toString(16).padStart(2,"0")).join("").replace(/(.{8})(.{4})(.{4})(.{4})(.{12})/,"$1-$2-$3-$4-$5");
+          pending ||= {key:crypto.randomUUID ? crypto.randomUUID() : bytes(),body:input.value.trim()};
+          submit.disabled=true;input.disabled=true;status.textContent="กำลังส่ง…";
+          try{
+            const response=await fetch("/api/stays/"+stayId+"/dogs/"+dogId+"/timeline",{method:"POST",headers:{"Content-Type":"application/json"},
+              body:JSON.stringify({action:"reply-comment",eventId:event.id,parentId:comment.id,...pending})});
+            if(!response.ok)throw Error();
+            const data=await response.json();render(data.comments);status.textContent="ตอบกลับแล้ว 🩷";
+          }catch{status.textContent="ส่งคำตอบไม่สำเร็จ กรุณาลองใหม่";submit.disabled=false;input.disabled=false;}
+        };
+      }
+      section.append(status);
+    }
+    render(event.comments || []);return section;
+  }
+
   function showCareTimeline(stayId, dog, initialAction = null) {
     bookingDialog.classList.remove("checkin-workspace","record-workspace");
     bookingDialog.classList.add("care-workspace");
@@ -1648,6 +1742,7 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
     bookingRequest?.abort();
     const controller = bookingRequest = new AbortController();
     const endpoint = "/api/stays/" + stayId + "/dogs/" + dog.id + "/timeline";
+    let focusedEvent=initialAction?.commentEventId || null;
     const title = node("h3","ไทม์ไลน์ · " + dog.name);
     const toolbar = node("div");
     toolbar.className = "photo-actions";
@@ -1657,6 +1752,7 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
     day.setAttribute("aria-label","วันที่ของกิจกรรม");
     const today = parts.format(new Date());
     day.append(new Option("วันนี้",today),new Option("ทุกวัน",""));
+    if(initialAction?.eventDay){if(initialAction.eventDay!==today)day.append(new Option(initialAction.eventDay,initialAction.eventDay));day.value=initialAction.eventDay;}
     const preview = Object.assign(node("button","ดูเฉพาะที่ลูกค้าเห็น"),{type:"button"});
     preview.setAttribute("aria-pressed","false");
     const dateControls = Object.assign(node("div"),{className:"care-date-controls"});
@@ -1668,6 +1764,7 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
     calendar.setAttribute("aria-label","เลือกวันที่");
     calendar.onchange = () => {
       if (!calendar.value) return;
+      focusedEvent=null;
       if (![...day.options].some(option => option.value === calendar.value)) day.append(new Option(calendar.value,calendar.value));
       day.value = calendar.value;
       loadTimeline(true);
@@ -1680,7 +1777,7 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
       for (const option of day.options) {
         const chip = Object.assign(node("button",option.value === "" ? "แสดงทั้งหมด" : option.textContent),{type:"button",className:"secondary"});
         chip.setAttribute("aria-pressed",String(option.value === day.value));
-        chip.onclick = () => { day.value = option.value; loadTimeline(true); };
+        chip.onclick = () => { focusedEvent=null;day.value = option.value; loadTimeline(true); };
         dateStrip.append(chip);
       }
     }
@@ -1936,6 +2033,7 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
       const selectedDay = day.value;
       const query = new URLSearchParams();
       if (selectedDay) query.set("day",selectedDay);
+      if(focusedEvent)query.set("event_id",focusedEvent);
       if (showingPublic) query.set("preview","1");
       if (!reset && next) {
         query.set("before_at",next.recordedAt);
@@ -1983,10 +2081,13 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
               link.dataset.carePhoto = "";
               link.setAttribute("aria-haspopup","dialog");
               link.append(Object.assign(node("img"),{src:link.href,alt:"รูปกิจกรรม",loading:"lazy"}));
-              gallery.append(link);
+              const tile=Object.assign(node("div"),{className:"care-photo-tile"});tile.append(link);
+              if(photo.hearted)tile.append(Object.assign(node("span","❤️ ผู้ปกครองส่งหัวใจ"),{className:"care-heart-count"}));
+              gallery.append(tile);
             }
             card.append(gallery);
           }
+          card.append(careDiscussion(event,stayId,dog.id,showingPublic));
           if (!showingPublic && data.status === "checked_in") {
             const edit = Object.assign(node("button","แก้ไขกิจกรรม"),{type:"button"});
             const remove = Object.assign(node("button","ลบกิจกรรม"),{type:"button",className:"delete-deposit"});
@@ -2012,6 +2113,8 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
           feed.append(card);
         }
         status.textContent = feed.querySelector("article") ? "" : "ยังไม่มีกิจกรรมในช่วงนี้";
+        if(!showingPublic && data.events.length)markDiscussionRead(stayId,dog.id,data.events.map(event=>event.id));
+        if(focusedEvent)feed.querySelector(".care-discussion")?.scrollIntoView({block:"nearest",behavior:"smooth"});
         next = data.next;
         more.hidden = !next;
       } catch {
@@ -2349,7 +2452,7 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
         }
       }
       if(!qr.hidden){
-        const paymentQr=Object.assign(node("details"),{className:"record-qr"});
+        const paymentQr=Object.assign(node("details"),{className:"record-qr",open:true});
         const image=Object.assign(node("img"),{src:qr.href,alt:"QR สำหรับชำระเงิน",loading:"lazy"});
         paymentQr.append(node("summary","QR สำหรับชำระเงิน"),image);bookingContent.append(paymentQr);
       }
@@ -2586,7 +2689,7 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
   const dashboard = dashboardScreen({translateLabel,node,results,baht,today:() => parts.format(new Date()),
     dateLabel:(day) => bookingDate.format(new Date(day+"T00:00:00Z")),
     monthLabel:(month) => calendarMonth.format(new Date(month+"-01T00:00:00Z")),
-    openStay:showStay,openCustomer:showCustomer,openTimeline:showCareTimeline,viewBooking:showBooking,setMode,activityIcon:careIcon,onCareChange:()=>load(true),
+    openStay:showStay,openCustomer:showCustomer,openTimeline:showCareTimeline,discussionView:careDiscussion,markDiscussionRead,viewBooking:showBooking,setMode,activityIcon:careIcon,onCareChange:()=>load(true),
     checkInBooking:async (id) => {
       try {
         const response = await fetch("/api/bookings/"+id);
@@ -2672,6 +2775,47 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
     load(true);
   });
   more.addEventListener("click", () => load());
+  const careBell=document.getElementById("care-notification-bell");
+  const careBadge=document.getElementById("care-notification-count");
+  const notifications=Object.assign(node("dialog"),{className:"care-notifications"});notifications.setAttribute("aria-label","ความคิดเห็นใหม่จากผู้ปกครอง");
+  const closeNotifications=Object.assign(node("button","ปิด"),{type:"button",className:"secondary"});closeNotifications.onclick=()=>notifications.close();
+  const notificationHeader=Object.assign(node("div"),{className:"heading"});notificationHeader.append(node("h3","ความคิดเห็นใหม่จากผู้ปกครอง"),closeNotifications);
+  const notificationList=Object.assign(node("div"),{className:"care-notification-list"});
+  const notificationStatus=node("p");notificationStatus.setAttribute("role","status");
+  notifications.append(notificationHeader,notificationList,notificationStatus);document.body.append(notifications);
+  let notificationLoading=false,notificationRefreshQueued=false;
+  async function refreshCareNotifications(){
+    if(notificationLoading){notificationRefreshQueued=true;return;}
+    if(document.visibilityState==="hidden")return;
+    notificationLoading=true;
+    try{
+      const response=await fetch("/api/care/notifications");if(!response.ok)throw Error();const data=await response.json();
+      careBadge.hidden=!data.unread_count;careBadge.textContent=data.unread_count>99?"99+":String(data.unread_count);
+      careBell.setAttribute("aria-label","ความคิดเห็นใหม่จากผู้ปกครอง · "+data.unread_count);
+      notificationList.replaceChildren();
+      for(const item of data.items){
+        const open=Object.assign(node("button"),{type:"button",className:"care-notification-item"});
+        open.append(node("strong",item.dog_name+" · "+item.customer),node("p",item.body),
+          node("small",bookingDate.format(new Date(parts.format(new Date(item.created_at))))+" · "+bangkokTime.format(new Date(item.created_at))));
+        open.onclick=()=>{notifications.close();showCareTimeline(item.stay_id,{id:item.dog_id,name:item.dog_name},{commentEventId:item.event_id,eventDay:item.recorded_at.slice(0,10)});};
+        notificationList.append(open);
+      }
+      if(!data.items.length)notificationList.append(node("p","ยังไม่มีความคิดเห็นใหม่"));
+      notificationStatus.textContent="";
+    }catch{if(notifications.open)notificationStatus.textContent="โหลดการแจ้งเตือนไม่ได้ กรุณาลองใหม่";}
+    finally{notificationLoading=false;if(notificationRefreshQueued){notificationRefreshQueued=false;refreshCareNotifications();}}
+  }
+  async function markDiscussionRead(stayId,dogId,eventIds){
+    try{
+      const response=await fetch("/api/stays/"+stayId+"/dogs/"+dogId+"/timeline",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"read-comments",eventIds})});
+      if(response.ok)refreshCareNotifications();
+    }catch{}
+  }
+  careBell.onclick=()=>{notifications.showModal();refreshCareNotifications();};
+  setInterval(refreshCareNotifications,30000);
+  document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible")refreshCareNotifications();});
+  addEventListener("focus",refreshCareNotifications);refreshCareNotifications();
+
   function restoreNavigation() {
     const mode = location.hash.slice(1);
     if (Object.hasOwn(screenTitles,mode) &&
@@ -2691,7 +2835,7 @@ export function outstandingPage(isAdmin = false,canExport = false,theme = "class
     <link rel="icon" href="/static/little-paws-icon.png">
     <style nonce="${nonce}">${css}${careParityCss}${boardingBookingCss}${workspaceCss}</style>
     <link rel="stylesheet" href="/static/style.css?v=80">
-    <style nonce="${nonce}">${macStyleBridge}\n${careGalleryCss}\n${compactBoardingCss}</style>
+    <style nonce="${nonce}">${macStyleBridge}\n${careGalleryCss}\n${compactBoardingCss}\n${interactionCss}\n${notificationCss}\n${checkinTouchCss}</style>
     <body class="staff-app" data-theme="${themeName(theme)}">
     ${staffHeader(theme,isAdmin,displayName,language)}
     <main>

@@ -26,7 +26,7 @@ export function staffHeader(theme,isAdmin,displayName,language='th') {
     <div class="header-controls"><nav class="language-switch" aria-label="Language">
       <a href="/?lang=th" data-ui-language="th" aria-current="${language==='th'}" lang="th">TH</a>
       <a href="/?lang=en" data-ui-language="en" aria-current="${language==='en'}" lang="en">EN</a>
-    </nav><details class="account-menu"><summary class="account-avatar" aria-label="เมนูบัญชี" title="เมนูบัญชี">${shellIcon("user")}</summary>
+    </nav><button type="button" id="care-notification-bell" class="care-notification-bell" aria-label="ความคิดเห็นใหม่จากผู้ปกครอง" title="ความคิดเห็นใหม่จากผู้ปกครอง" aria-haspopup="dialog"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M9 21h6"/></svg><span id="care-notification-count" hidden>0</span></button><details class="account-menu"><summary class="account-avatar" aria-label="เมนูบัญชี" title="เมนูบัญชี">${shellIcon("user")}</summary>
       <div class="account-menu-panel"><strong id="account-name">${escape(displayName)}</strong><p>เข้าสู่ระบบด้วย Cloudflare Access</p>
       <button type="button" id="open-account">แก้ไขข้อมูลผู้ใช้ / รหัสผ่าน</button>
       ${isAdmin ? '<button type="button" id="open-users">จัดการผู้ใช้งาน</button>' : ''}

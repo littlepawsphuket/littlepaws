@@ -82,3 +82,30 @@ export const careParityCss = `
 .staff-app .service-segments{flex-wrap:wrap}.staff-app .service-segments button{padding:10px 6px;font-size:14px}
 }
 `;
+
+export const checkinTouchCss=`
+.staff-app .checkin-form :is(button,select,input:not([type=checkbox]):not([type=radio])){min-height:48px;font-size:16px}
+.staff-app .touch-answer-options,.staff-app .terms-language-switch{display:flex;flex-wrap:wrap;gap:7px;margin:8px 0}
+.staff-app .touch-answer-options button,.staff-app .terms-language-switch button{margin:0;min-height:48px;padding:10px 16px;border-radius:14px;touch-action:manipulation;box-shadow:none}
+.staff-app .terms-language-switch{width:fit-content;padding:5px;border:1px solid var(--season-border,#c8ded4);border-radius:18px;background:var(--season-card,#f6faf6)}
+.staff-app .checkin-form .intake-choice{display:flex;gap:7px;flex-wrap:wrap}
+.staff-app .checkin-form .intake-choice label,.staff-app .checkin-form .intake-grid label:has(input[type=checkbox]){box-sizing:border-box;display:flex;align-items:center;gap:8px;min-height:48px;padding:10px 12px;border:1px solid var(--season-border,#c8ded4);border-radius:14px;cursor:pointer;touch-action:manipulation}
+.staff-app .checkin-form :is(input[type=radio],input[type=checkbox]){flex:none;width:22px!important;height:22px;min-height:22px}
+.staff-app .checkin-form .intake-choice label:has(input:checked),.staff-app .checkin-form .intake-grid label:has(input:checked){background:var(--brand-teal,#155747);color:white}
+.staff-app .checkin-dog-choice:has(input[type=checkbox]:checked){border:2px solid var(--brand-teal,#155747);background:var(--season-card,#f4f9f5)}
+.staff-app .checkin-live-bill,.staff-app .checkin-signing-bill{padding:18px;border-radius:18px;border:1px solid var(--season-border,#c8ded4);background:var(--season-card,#f3f9f5)}
+.staff-app .checkin-live-bill h4,.staff-app .checkin-signing-bill h4{margin:0 0 12px;font-size:19px}
+.staff-app .checkin-live-bill>p{margin:6px 0;font-size:14px}.staff-app .checkin-live-bill .record-amounts{margin-bottom:0}
+.staff-app .checkin-signing-bill .record-amounts{grid-template-columns:repeat(2,minmax(0,1fr));margin:0;background:white;gap:10px}
+.staff-app .checkin-signing-bill .record-amounts>div{border:0;padding:0;min-width:0}
+.staff-app .checkin-signing-bill .record-amounts>div:last-child{grid-column:1/-1;border-top:1px solid var(--season-border,#c8ded4);padding-top:12px}
+.staff-app .checkin-signing-bill .record-amounts>div:last-child strong{font-size:28px}
+.staff-app .checkin-payment-grid>h4,.staff-app .checkin-payment-grid>p{grid-column:1/-1;margin:0}
+.staff-app .checkin-payment-grid>label:first-of-type{padding:12px;border-radius:12px;background:var(--season-card,#f2f8f4);border:1px solid var(--season-border,#c8ded4)}
+.staff-app .checkin-coupon-panel{display:block!important;min-width:0}
+.staff-app .checkin-coupon-panel>label{display:block}
+.staff-app .checkin-coupon-row{display:flex;flex-wrap:nowrap;gap:8px;align-items:center;margin-top:7px;max-width:480px}
+.staff-app .checkin-coupon-row input{width:9ch!important;min-width:0!important;flex:1 1 9ch;letter-spacing:.18em;font-variant-numeric:tabular-nums}
+.staff-app .checkin-coupon-row button{flex:0 0 auto;margin:0!important;white-space:nowrap;padding:10px 16px}
+@media(pointer:coarse){.staff-app .checkin-form .care-share-opt-in{min-height:52px;padding:12px}.staff-app .checkin-signature{scroll-margin-top:16px}}
+`;

@@ -1,5 +1,5 @@
 export function dashboardScreen({translateLabel,node,results,baht,dateLabel,monthLabel,today,openStay,openCustomer,openTimeline,
-  checkInBooking,viewBooking,checkout,setMode,activityIcon,onCareChange}) {
+  checkInBooking,viewBooking,checkout,discussionView,markDiscussionRead,setMode,activityIcon,onCareChange}) {
   const colors = {"ค่าฝากเลี้ยง":"#24796b","อาหารและขนม":"#a54a4b","อุปกรณ์":"#3b6dab",
     "ทำความสะอาด":"#43804a","ค่าน้ำไฟ":"#a86818","การตลาด":"#8255a0","ค่ารักษาพยาบาล":"#a94d7b","เอกสาร":"#546779","อื่นๆ":"#846343"};
   const button = (label,action,secondary = false) => {
@@ -94,11 +94,16 @@ export function dashboardScreen({translateLabel,node,results,baht,dateLabel,mont
             for(const photo of event.photos){
               const link=Object.assign(node("a"),{href:"/api/stays/"+dog.stay_id+"/dogs/"+dog.dog_id+"/timeline/photos/"+photo.id});
               link.dataset.carePhoto="";link.setAttribute("aria-haspopup","dialog");
-              link.append(Object.assign(node("img"),{src:link.href,alt:"รูปกิจกรรม",loading:"lazy"}));gallery.append(link);
+              link.append(Object.assign(node("img"),{src:link.href,alt:"รูปกิจกรรม",loading:"lazy"}));
+              const tile=Object.assign(node("div"),{className:"care-photo-tile"});tile.append(link);
+              if(photo.hearted)tile.append(Object.assign(node("span","❤️ ผู้ปกครองส่งหัวใจ"),{className:"care-heart-count"}));
+              gallery.append(tile);
             }
-            if(event.photos.length)item.append(gallery);feed.append(item);
+            if(event.photos.length)item.append(gallery);
+            item.append(discussionView(event,dog.stay_id,dog.dog_id));feed.append(item);
           }
           if(!data.events.length)feed.append(node("p","ยังไม่มีกิจกรรมในช่วงนี้"));
+          else markDiscussionRead(dog.stay_id,dog.dog_id,data.events.map(event=>event.id));
         }catch{careLoaded=false;feed.replaceChildren(node("p","โหลดไทม์ไลน์ไม่ได้ กรุณาลองใหม่"));}
       });
       const actions = Object.assign(node("div"),{className:"boarding-checkout-actions"});

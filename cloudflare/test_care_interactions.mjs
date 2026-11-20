@@ -1,0 +1,84 @@
+import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
+import {DatabaseSync} from 'node:sqlite';
+import worker,{shareActive} from './timeline.mjs';
+import {guardianInteraction,staffReply,eventInteractions,careNotifications,markCareCommentsRead} from './care_interactions.mjs';
+import {cloudSnapshot} from './cloud_backup.mjs';
+const sqlite=new DatabaseSync(':memory:');
+sqlite.exec(`PRAGMA foreign_keys=ON;
+CREATE TABLE stays(id INTEGER PRIMARY KEY,status,cancelled_at,actual_checkout_at,customer_id);
+CREATE TABLE customers(id INTEGER PRIMARY KEY,name);INSERT INTO customers VALUES(1,'Demo owner');
+CREATE TABLE dogs(id INTEGER PRIMARY KEY,name);
+CREATE TABLE stay_dogs(stay_id,dog_id);
+CREATE TABLE care_share_links(stay_id,dog_id,token,view_count INTEGER DEFAULT 0);
+CREATE TABLE system_settings(key PRIMARY KEY,value);
+CREATE TABLE dog_photos(dog_id,object_key);
+CREATE TABLE care_events(id INTEGER PRIMARY KEY,stay_id,dog_id,customer_visible,kind,activity_label,recorded_at,note);
+CREATE TABLE care_photos(id INTEGER PRIMARY KEY,event_id REFERENCES care_events(id) ON DELETE CASCADE,object_key);
+CREATE TABLE app_users(id INTEGER PRIMARY KEY,active,is_admin);
+CREATE TABLE staff_access_identities(user_id,email);
+INSERT INTO app_users VALUES(1,1,1),(2,0,0),(3,1,0);INSERT INTO staff_access_identities VALUES(1,'staff@example.test'),(2,'off@example.test'),(3,'otherstaff@example.test');
+INSERT INTO stays VALUES(1,'checked_in',NULL,NULL,1),(2,'completed',NULL,'2020-01-01',1);
+INSERT INTO dogs VALUES(1,'A dog'),(2,'Other dog');INSERT INTO stay_dogs VALUES(1,1),(1,2),(2,1);
+INSERT INTO system_settings VALUES('theme','"japan"');`);
+sqlite.exec(await readFile(new URL('./care_interactions.sql',import.meta.url),'utf8'));
+for(const [stay,dog,letter] of [[1,1,'a'],[1,2,'b'],[2,1,'c']])sqlite.prepare('INSERT INTO care_share_links(stay_id,dog_id,token) VALUES(?,?,?)').run(stay,dog,letter.repeat(43));
+sqlite.exec(`INSERT INTO care_events VALUES(1,1,1,1,'food','ทานอาหาร','2026-11-20T08:00:00+07:00','Hello'),
+(2,1,1,0,'food','ทานอาหาร','2026-11-20T08:00:00+07:00','PRIVATE'),
+(3,1,2,1,'food','ทานอาหาร','2026-11-20T08:00:00+07:00','OTHER'),
+(4,2,1,1,'food','ทานอาหาร','2026-11-20T08:00:00+07:00','EXPIRED');
+INSERT INTO care_photos VALUES(1,1,'care/1.jpg'),(2,2,'care/2.jpg'),(3,3,'care/3.jpg');`);
+const db={prepare(sql){return {bind:(...args)=>({
+ first:async()=>sqlite.prepare(sql).get(...args),all:async()=>({results:sqlite.prepare(sql).all(...args)}),
+ run:async()=>{const result=sqlite.prepare(sql).run(...args);return {meta:{changes:result.changes}};}
+})};},batch:async statements=>Promise.all(statements.map(stmt=>stmt.all()))};
+const env={DB:db};const token='a'.repeat(43),root='https://timeline.example.test/updates/'+token;
+const post=body=>worker.fetch(new Request(root+'/interactions',{method:'POST',headers:{Origin:'https://timeline.example.test','Content-Type':'application/json'},body:JSON.stringify(body)}),env);
+const heart={action:'heart',eventId:1,photoId:1,liked:true};
+assert.equal((await post(heart)).status,200);assert.equal((await post(heart)).status,200);
+assert.equal(sqlite.prepare('SELECT COUNT(*) n FROM care_photo_hearts').get().n,1);
+assert.equal((await post({...heart,liked:false})).status,200);assert.equal(sqlite.prepare('SELECT COUNT(*) n FROM care_photo_hearts').get().n,0);
+assert.equal((await post({...heart,photoId:3})).status,404);
+assert.equal((await post({...heart,eventId:2,photoId:2})).status,404);
+assert.equal((await worker.fetch(new Request(root+'/interactions',{method:'POST',headers:{Origin:'https://evil.example','Content-Type':'application/json'},body:JSON.stringify(heart)}),env)).status,403);
+const form={action:'comment',eventId:1,body:'<script>alert(1)</script> 🩷',key:crypto.randomUUID(),author_kind:'staff',author:'Admin'};
+assert.equal((await post(form)).status,200);assert.equal((await post(form)).status,200);
+assert.equal(sqlite.prepare('SELECT COUNT(*) n FROM care_comments').get().n,1);
+const parent=sqlite.prepare('SELECT * FROM care_comments').get();assert.equal(parent.author_kind,'guardian');assert.equal(parent.staff_user_id,null);
+assert.equal((await post({...form,key:crypto.randomUUID()})).status,429);
+assert.equal((await post({...form,body:'x'.repeat(501)})).status,400);
+assert.equal((await post({...form,eventId:3})).status,404);
+assert.equal((await worker.fetch(new Request(root+'/interactions?event=3'),env)).status,404);
+const reply={eventId:1,parentId:parent.id,body:'ขอบคุณครับ 🩷',key:crypto.randomUUID()};
+assert.equal((await staffReply(db,1,1,reply,{id:2,email:'off@example.test'})).status,'conflict');
+assert.equal((await staffReply(db,1,2,reply,{id:1,email:'staff@example.test'})).status,'conflict');
+assert.equal((await staffReply(db,1,1,reply,{id:1,email:'staff@example.test'})).status,'saved');
+assert.equal((await staffReply(db,1,1,reply,{id:1,email:'staff@example.test'})).status,'saved');
+assert.equal((await eventInteractions(db,[1])).comments.length,2);
+const actor={id:1,email:'staff@example.test'};
+assert.equal((await careNotifications(db,actor)).unread_count,1);
+assert.equal((await careNotifications(db,actor)).items[0].event_id,1);
+await markCareCommentsRead(db,1,2,{eventIds:[1]},actor);assert.equal((await careNotifications(db,actor)).unread_count,1);
+await markCareCommentsRead(db,1,1,{eventIds:[1]},actor);assert.equal((await careNotifications(db,actor)).unread_count,0);
+assert.equal((await careNotifications(db,{id:3,email:'otherstaff@example.test'})).unread_count,1);
+assert.equal((await careNotifications(db,{id:2,email:'off@example.test'})).unread_count,0);
+const page=await worker.fetch(new Request(root+'?day=all'),env);assert.equal(page.status,200);const html=await page.text();
+assert.match(html,/ผู้ปกครอง/);assert.match(html,/ขอบคุณครับ/);assert.ok(html.includes('&lt;script&gt;alert(1)&lt;/script&gt;'));assert.ok(!html.includes('<script>alert(1)'));
+assert.ok(html.includes('theme-japan.webp'));assert.ok(html.includes('care-heart'));assert.ok(!html.includes('PRIVATE'));assert.ok(!html.includes('OTHER'));
+assert.match(page.headers.get('Content-Security-Policy'),/connect-src 'self'/);
+assert.equal((await worker.fetch(new Request(root+'/theme/theme-japan.webp'),env)).status,200);
+assert.equal((await worker.fetch(new Request(root+'/theme/style.css'),env)).status,404);
+sqlite.exec("UPDATE stays SET status='completed',actual_checkout_at='2020-01-01' WHERE id=1");
+assert.equal((await post(heart)).status,404);assert.equal((await post({...form,key:crypto.randomUUID()})).status,404);
+assert.equal((await worker.fetch(new Request(root+'/interactions?event=1'),env)).status,404);
+assert.equal((await worker.fetch(new Request(root+'/theme/theme-japan.webp'),env)).status,404);
+sqlite.exec("ALTER TABLE care_events ADD COLUMN cloud_revision TEXT");
+const {staffTimeline}=await import('./care_staff.mjs');
+sqlite.exec("UPDATE stays SET status='checked_in',actual_checkout_at=NULL WHERE id=1");
+for(let id=100;id<130;id++)sqlite.prepare("INSERT INTO care_events(id,stay_id,dog_id,customer_visible,kind,activity_label,recorded_at,note) VALUES(?,1,1,1,'food','Meal','2026-11-20T11:00:00+07:00','Newer event')").run(id);
+const focused=await staffTimeline(db,1,1,'2026-11-20',null,null,0,1);
+assert.deepEqual(focused.events.map(event=>event.id),[1]);
+assert.equal(focused.events[0].comments.length,2); // Notification can reach an event older than the first25 rows.
+const snapshot=await cloudSnapshot(db);assert.equal(snapshot.rows.care_comments.length,2);
+sqlite.exec('DELETE FROM care_events WHERE id=1');assert.equal(sqlite.prepare('SELECT COUNT(*) n FROM care_comments').get().n,0);
+console.log('Care interactions passed: scoped hearts, idempotent comments/replies, guardian name, rate limits, hidden/other/expired isolation, XSS, theme assets, backup, cascades.');
