@@ -90,7 +90,7 @@ assert.equal((await staffCommentMutation(db,1,2,like,actor)).status,'not_found')
 assert.equal((await staffCommentMutation(db,1,1,like,{id:2,email:'off@example.test'})).status,'not_found');
 assert.equal((await post({...like,liked:false})).status,200);
 assert.equal((await eventInteractions(db,[1])).comments.find(c=>c.id===parent.id).like_count,1);
-assert.match(await (await worker.fetch(new Request(root+'?lang=en'),env)).text(),/Parents/);
+assert.match(await (await worker.fetch(new Request(root+'?day=all&lang=en'),env)).text(),/Parents/);
 assert.equal((await post({...mutate,action:'delete-comment',expectedBody:mutate.body})).status,200);
 assert.equal((await post({...mutate,action:'delete-comment',expectedBody:mutate.body})).status,200);
 publicRow=(await eventInteractions(db,[1])).comments.find(c=>c.id===parent.id);
