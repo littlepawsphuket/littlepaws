@@ -1703,12 +1703,40 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
         const moment=new Date(comment.created_at);
         heading.append(node("strong",comment.author_kind === "guardian" ? "ผู้ปกครอง" : "ทีม Little Paws"),
           node("time",bookingDate.format(new Date(parts.format(moment)))+" · "+bangkokTime.format(moment)));
-        box.append(heading,node("p",comment.body));return box;
+        const body=node("p",comment.deleted_at ? "ลบความคิดเห็นแล้ว" : comment.body);box.append(heading,body);
+        if(comment.updated_at)heading.append(node("small","แก้ไขแล้ว"));
+        if(comment.deleted_at){box.classList.add("is-deleted");return box;}
+        if(!readOnly){
+          const actions=Object.assign(node("div"),{className:"care-comment-actions"});
+          async function mutate(control,form){
+            control.disabled=true;status.textContent="กำลังบันทึก…";
+            try{const response=await fetch("/api/stays/"+stayId+"/dogs/"+dogId+"/timeline",{method:"POST",headers:{"Content-Type":"application/json"},
+              body:JSON.stringify({eventId:event.id,commentId:comment.id,expectedBody:comment.body,...form})});
+              if(!response.ok)throw Error();render((await response.json()).comments);status.textContent="บันทึกแล้ว";return true;
+            }catch{status.textContent="บันทึกไม่ได้ ข้อมูลอาจมีการเปลี่ยนแปลง กรุณาโหลดไทม์ไลน์ใหม่";return false;}finally{control.disabled=false;}
+          }
+          const like=Object.assign(node("button","♡ ถูกใจ · "+(Number(comment.like_count)||0)),{type:"button"});like.setAttribute("aria-pressed",String(Boolean(comment.liked)));
+          like.onclick=()=>mutate(like,{action:"like-comment",liked:!comment.liked});actions.append(like);
+          if(comment.can_edit){
+            const edit=Object.assign(node("button","แก้ไข"),{type:"button"}),remove=Object.assign(node("button","ลบ"),{type:"button"});
+            edit.onclick=()=>{
+              if(box.querySelector(".care-comment-editor"))return;
+              const form=Object.assign(node("form"),{className:"care-comment-editor"});
+              const input=Object.assign(node("textarea"),{required:true,maxLength:500,rows:3,value:comment.body});input.setAttribute("aria-label","แก้ไขความคิดเห็น");
+              const save=Object.assign(node("button","บันทึก"),{type:"submit"}),cancel=Object.assign(node("button","ยกเลิก"),{type:"button"});cancel.onclick=()=>form.remove();form.append(input,save,cancel);box.append(form);input.focus();
+              form.onsubmit=async e=>{e.preventDefault();if(save.disabled)return;input.disabled=true;
+                if(!await mutate(save,{action:"edit-comment",body:input.value.trim()}))input.disabled=false;};
+            };
+            remove.onclick=()=>{if(confirm("ลบความคิดเห็นนี้หรือไม่? ข้อความตอบกลับยังคงอยู่"))mutate(remove,{action:"delete-comment"});};
+            actions.append(edit,remove);
+          }
+          box.append(actions);
+        }return box;
       }
       for(const comment of comments.filter(comment=>!comment.parent_id)){
         section.append(row(comment));
         for(const reply of comments.filter(reply=>reply.parent_id===comment.id))section.append(row(reply));
-        if(readOnly)continue;
+        if(readOnly || comment.deleted_at)continue;
         const replyBox=node("details");replyBox.append(node("summary","ตอบกลับความคิดเห็น"));
         const form=Object.assign(node("form"),{className:"care-comment-form"});
         const input=Object.assign(node("textarea"),{rows:2,required:true,maxLength:500});
@@ -1872,7 +1900,7 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
         ? "รายการหรือสถานะเปลี่ยนแล้ว กรุณาโหลดข้อมูลใหม่" : "บันทึกไม่ได้ กรุณาตรวจวัน เวลา และรายละเอียด");
       return response.json();
     }
-    function openEditor(options,event,templates={}) {
+    function openEditor(options,event,templates={},englishTemplates={}) {
       const form = Object.assign(node("form"),{className:"form care-activity-form"});
       const activity = node("select");
       activity.required = true;
@@ -1906,12 +1934,18 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
       search.setAttribute("aria-label","ค้นหาข้อความแนะนำ");
       const choices=Object.assign(node("div"),{className:"care-template-choices"});
       const hint=node("small","เลือกแล้วแก้ไขข้อความให้ตรงกับการดูแลจริงได้ก่อนบันทึก");
-      suggestions.append(hint,search,choices);
+      let templateLanguage=document.documentElement.lang === "en" ? "en" : "th";
+      const languages=Object.assign(node("div"),{className:"service-segments"});languages.setAttribute("role","group");languages.setAttribute("aria-label","ภาษาข้อความแนะนำ");
+      for(const [code,label] of [["th","TH"],["en","EN"]]){
+        const button=Object.assign(node("button",label),{type:"button"});button.setAttribute("aria-pressed",String(code===templateLanguage));
+        button.onclick=()=>{templateLanguage=code;for(const item of languages.children)item.setAttribute("aria-pressed",String(item===button));search.value="";showSuggestions(true);};languages.append(button);
+      }
+      suggestions.append(hint,languages,search,choices);
       // Thai has no word boundaries: match compact text and short fragments as well as words.
       const normalize=value=>value.normalize("NFKC").toLocaleLowerCase().replace(/[\s\p{P}\p{S}]/gu,"");
-      function showSuggestions(){
-        const query=normalize(search.value || note.value);
-        const items=templates[activity.value] || [];
+      function showSuggestions(ignoreNote=false){
+        const query=normalize(search.value || (ignoreNote ? "" : note.value));
+        const items=(templateLanguage === "en" ? englishTemplates : templates)[activity.value] || [];
         const rank=text=>{
           const value=normalize(text);
           if(!query)return 1;
@@ -1922,7 +1956,7 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
         };
         const matched=items.map(text=>({text,score:rank(text)})).filter(item=>item.score>0).sort((a,b)=>b.score-a.score);
         choices.replaceChildren();
-        for(const {text} of matched.slice(0,8)){
+        for(const {text} of matched.slice(0,30)){
           const choose=Object.assign(node("button",text),{type:"button",className:"secondary care-template-choice"});
           choose.onclick=()=>{
             if(note.value.trim() && note.value!==text && !confirm("แทนที่รายละเอียดเพิ่มเติมด้วยข้อความนี้หรือไม่?"))return;
@@ -2049,10 +2083,10 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
         if (loading !== requestNumber || controller.signal.aborted) return;
         renderSharing(data);
         record.hidden = showingPublic || data.status !== "checked_in";
-        record.onclick = () => openEditor(data.options,null,data.templates);
+        record.onclick = () => openEditor(data.options,null,data.templates,data.templates_en);
         if (initialAction && !record.hidden) {
           const event = typeof initialAction === "object" ? data.events.find(event=>event.id===initialAction.eventId) : null;
-          if(initialAction === "record" || event) {initialAction=null;openEditor(data.options,event,data.templates);}
+          if(initialAction === "record" || event) {initialAction=null;openEditor(data.options,event,data.templates,data.templates_en);}
         }
         const extraDays = [...new Set([selectedDay,...data.days])].filter((value) => value && value !== today).sort().reverse();
         day.replaceChildren(new Option("วันนี้",today),new Option("ทุกวัน",""),
@@ -2091,7 +2125,7 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
           if (!showingPublic && data.status === "checked_in") {
             const edit = Object.assign(node("button","แก้ไขกิจกรรม"),{type:"button"});
             const remove = Object.assign(node("button","ลบกิจกรรม"),{type:"button",className:"delete-deposit"});
-            edit.onclick = () => openEditor(data.options,event,data.templates);
+            edit.onclick = () => openEditor(data.options,event,data.templates,data.templates_en);
             remove.onclick = async () => {
               if (!confirm("ลบกิจกรรมนี้หรือไม่?")) return;
               remove.disabled = true;

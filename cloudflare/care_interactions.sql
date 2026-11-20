@@ -22,3 +22,16 @@ CREATE TABLE IF NOT EXISTS care_comment_reads (
   PRIMARY KEY(user_id,comment_id)
 );
 CREATE INDEX IF NOT EXISTS ix_care_comments_guardian ON care_comments(author_kind,id);
+
+-- Comment tombstones preserve replies and make deletion recoverable.
+CREATE TABLE IF NOT EXISTS care_comment_state (
+  comment_id INTEGER PRIMARY KEY REFERENCES care_comments(id) ON DELETE CASCADE,
+  updated_at TEXT,
+  deleted_at TEXT
+);
+CREATE TABLE IF NOT EXISTS care_comment_likes (
+  comment_id INTEGER NOT NULL REFERENCES care_comments(id) ON DELETE CASCADE,
+  actor_key TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY(comment_id,actor_key)
+);

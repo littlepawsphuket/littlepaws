@@ -1,4 +1,4 @@
-import {staffReply,careNotifications,markCareCommentsRead} from "./care_interactions.mjs";
+import {staffCommentMutation,staffReply,careNotifications,markCareCommentsRead} from "./care_interactions.mjs";
 import {stayCardDogs} from "./card_dogs.mjs";
 import { receiveStayPayment, stayBalance, authorizedStaff } from "./stay_payments.mjs";
 import { validDay, pendingBookings, bookingCalendar, bookingDetails, receiveBookingDeposit, deleteBookingDeposit } from "./bookings.mjs";
@@ -317,7 +317,7 @@ export default {
         if (request.headers.get("Content-Type")?.split(";",1)[0].trim().toLowerCase() !== "application/json") {
           return json({error:"invalid_content_type"},415);
         }
-        const data = await smallJson(request,65536);
+        const data = await smallJson(request,262144);
         if (!data) return json({status:"invalid"},400);
         const status = settings ? await saveSystemSetting(env.DB,data,user)
           : await writeHoliday(env.DB,id,data,user,request.method);
@@ -398,7 +398,7 @@ export default {
           const focused=url.searchParams.has("event_id") ? Number(url.searchParams.get("event_id")) : null;
           if(focused!==null && (!Number.isSafeInteger(focused)||focused<1))return json({error:"invalid_search"},400);
           const timeline = await staffTimeline(env.DB,stayId,dogId,day,
-            beforeAt === null ? null : {recordedAt:beforeAt,id:beforeId},origin,Number(url.searchParams.get("preview") === "1"),focused);
+            beforeAt === null ? null : {recordedAt:beforeAt,id:beforeId},origin,Number(url.searchParams.get("preview") === "1"),focused,user);
           return timeline ? json(timeline) : json({error:"not_found"},404);
         }
         if (request.method !== "POST" || photoId !== null) return json({error:"method_not_allowed"},405);
@@ -410,6 +410,7 @@ export default {
         if (!form) return json({error:"invalid"},400);
         if (form.action === "create" && !origin) return json({status:"origin_missing"},503);
         const result = form.action === "read-comments" ? await markCareCommentsRead(env.DB,stayId,dogId,form,user)
+          : ["edit-comment","delete-comment","like-comment"].includes(form.action) ? await staffCommentMutation(env.DB,stayId,dogId,form,user)
           : form.action === "reply-comment" ? await staffReply(env.DB,stayId,dogId,form,user)
           : ["add-event","edit-event","remove-event"].includes(form.action)
           ? await writeCareEvent(env.DB,env.MEDIA,stayId,dogId,form,user)

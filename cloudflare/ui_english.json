@@ -445,7 +445,7 @@
   "หมวดกิจกรรม": "Activity category",
   "ความคิดเห็นจากผู้ปกครอง · ": "Guardian comments · ",
   "ยังไม่มีความคิดเห็นจากผู้ปกครอง": "No guardian comments yet",
-  "ผู้ปกครอง": "ผู้ปกครอง",
+  "ผู้ปกครอง": "Parents",
   "ทีม Little Paws": "Little Paws team",
   "ตอบกลับความคิดเห็น": "Reply to comment",
   "ข้อความตอบกลับ": "Your reply",
@@ -470,5 +470,11 @@
   "ความคิดเห็นใหม่จากผู้ปกครอง": "New guardian comments",
   "ความคิดเห็นใหม่จากผู้ปกครอง · ": "New guardian comments · ",
   "ยังไม่มีความคิดเห็นใหม่": "No new comments",
-  "โหลดการแจ้งเตือนไม่ได้ กรุณาลองใหม่": "Could not load notifications. Please try again."
+  "โหลดการแจ้งเตือนไม่ได้ กรุณาลองใหม่": "Could not load notifications. Please try again.",
+  "ลบความคิดเห็นแล้ว": "Comment deleted",
+  "บันทึกไม่ได้ ข้อมูลอาจมีการเปลี่ยนแปลง กรุณาโหลดไทม์ไลน์ใหม่": "Could not save. The comment may have changed. Please reload the timeline.",
+  "♡ ถูกใจ · ": "♡ Like · ",
+  "แก้ไขความคิดเห็น": "Edit comment",
+  "ลบความคิดเห็นนี้หรือไม่? ข้อความตอบกลับยังคงอยู่": "Delete this comment? Replies will remain.",
+  "ภาษาข้อความแนะนำ": "Suggested message language"
 }

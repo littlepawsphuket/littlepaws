@@ -1,6 +1,6 @@
 const tableNames=['customers','dogs','stays','stay_dogs','transactions','appointments','appointment_dogs',
   'dog_photos','stay_consents','system_settings','shop_holidays','coupons','coupon_uses','stay_payment_deletions',
-  'care_comment_reads','care_comments','care_photo_hearts','care_events','care_photos','app_users','app_user_photos','care_share_links','staff_access_identities',
+  'care_comment_state','care_comment_likes','care_comment_reads','care_comments','care_photo_hearts','care_events','care_photos','app_users','app_user_photos','care_share_links','staff_access_identities',
   'booking_deposit_deletions','staff_credential_attempts','staff_security_events'];
 export const backupBrandKeys=[...['little-paws-logo.png','balen-gucci-relax.webp','sukhumvit-set.woff2',
   ...['christmas','valentine','halloween','songkran','buddhist','japan'].map(theme=>'mascot-'+theme+'.webp')].map(name=>'brand/'+name),

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {DatabaseSync} from 'node:sqlite';
 import worker,{shareActive} from './timeline.mjs';
-import {guardianInteraction,staffReply,eventInteractions,careNotifications,markCareCommentsRead} from './care_interactions.mjs';
+import {guardianInteraction,staffCommentMutation,staffReply,eventInteractions,careNotifications,markCareCommentsRead} from './care_interactions.mjs';
 import {cloudSnapshot} from './cloud_backup.mjs';
 const sqlite=new DatabaseSync(':memory:');
 sqlite.exec(`PRAGMA foreign_keys=ON;
@@ -68,8 +68,41 @@ assert.ok(html.includes('theme-japan.webp'));assert.ok(html.includes('care-heart
 assert.match(page.headers.get('Content-Security-Policy'),/connect-src 'self'/);
 assert.equal((await worker.fetch(new Request(root+'/theme/theme-japan.webp'),env)).status,200);
 assert.equal((await worker.fetch(new Request(root+'/theme/style.css'),env)).status,404);
+
+const replyRow=sqlite.prepare("SELECT * FROM care_comments WHERE author_kind='staff'").get();
+const mutate={eventId:1,commentId:parent.id,action:'edit-comment',expectedBody:parent.body,body:'Edited by Parents 🩷'};
+assert.equal((await post(mutate)).status,200);
+assert.equal((await post({...mutate,body:'Stale overwrite'})).status,400); // stale revision
+assert.equal((await post({...mutate,commentId:replyRow.id,expectedBody:replyRow.body})).status,400);
+assert.equal((await staffCommentMutation(db,1,1,{...mutate,expectedBody:mutate.body},actor)).status,'conflict');
+assert.equal((await staffCommentMutation(db,1,1,{...mutate,commentId:replyRow.id,expectedBody:replyRow.body}, {id:3,email:'otherstaff@example.test'})).status,'conflict');
+assert.equal((await staffCommentMutation(db,1,1,{...mutate,commentId:replyRow.id,expectedBody:replyRow.body,body:'Staff edited'},actor)).status,'saved');
+const like={action:'like-comment',eventId:1,commentId:parent.id,liked:true};
+assert.equal((await post(like)).status,200);assert.equal((await post(like)).status,200);
+assert.equal((await staffCommentMutation(db,1,1,like,actor)).status,'saved');
+let publicRow=(await eventInteractions(db,[1])).comments.find(c=>c.id===parent.id);
+assert.equal(publicRow.like_count,2);assert.equal(publicRow.liked,1);assert.equal(publicRow.can_edit,1);
+assert.equal((await eventInteractions(db,[1],actor)).comments.find(c=>c.id===parent.id).can_edit,0);
+assert.equal((await eventInteractions(db,[1],actor)).comments.find(c=>c.id===replyRow.id).can_edit,1);
+assert.equal((await post({...like,eventId:3})).status,404);
+assert.equal((await post({...like,eventId:2})).status,404);
+assert.equal((await staffCommentMutation(db,1,2,like,actor)).status,'not_found');
+assert.equal((await staffCommentMutation(db,1,1,like,{id:2,email:'off@example.test'})).status,'not_found');
+assert.equal((await post({...like,liked:false})).status,200);
+assert.equal((await eventInteractions(db,[1])).comments.find(c=>c.id===parent.id).like_count,1);
+assert.match(await (await worker.fetch(new Request(root+'?lang=en'),env)).text(),/Parents/);
+assert.equal((await post({...mutate,action:'delete-comment',expectedBody:mutate.body})).status,200);
+assert.equal((await post({...mutate,action:'delete-comment',expectedBody:mutate.body})).status,200);
+publicRow=(await eventInteractions(db,[1])).comments.find(c=>c.id===parent.id);
+assert.equal(publicRow.body,'');assert.ok(publicRow.deleted_at);assert.equal(publicRow.can_edit,0);
+assert.equal((await eventInteractions(db,[1])).comments.length,2); // Replies are preserved.
+assert.equal((await post(like)).status,404);
+assert.equal((await staffReply(db,1,1,{...reply,key:crypto.randomUUID()},actor)).status,'conflict');
+assert.equal((await careNotifications(db,{id:3,email:'otherstaff@example.test'})).unread_count,0);
+assert.equal((await staffCommentMutation(db,1,1,{eventId:1,commentId:replyRow.id,action:'delete-comment',expectedBody:'Staff edited'},actor)).status,'saved');
+assert.equal(sqlite.prepare('SELECT COUNT(*) n FROM care_comment_state').get().n,2);
 sqlite.exec("UPDATE stays SET status='completed',actual_checkout_at='2020-01-01' WHERE id=1");
-assert.equal((await post(heart)).status,404);assert.equal((await post({...form,key:crypto.randomUUID()})).status,404);
+assert.equal((await post(like)).status,404);assert.equal((await post(heart)).status,404);assert.equal((await post({...form,key:crypto.randomUUID()})).status,404);
 assert.equal((await worker.fetch(new Request(root+'/interactions?event=1'),env)).status,404);
 assert.equal((await worker.fetch(new Request(root+'/theme/theme-japan.webp'),env)).status,404);
 sqlite.exec("ALTER TABLE care_events ADD COLUMN cloud_revision TEXT");
@@ -79,6 +112,7 @@ for(let id=100;id<130;id++)sqlite.prepare("INSERT INTO care_events(id,stay_id,do
 const focused=await staffTimeline(db,1,1,'2026-11-20',null,null,0,1);
 assert.deepEqual(focused.events.map(event=>event.id),[1]);
 assert.equal(focused.events[0].comments.length,2); // Notification can reach an event older than the first25 rows.
-const snapshot=await cloudSnapshot(db);assert.equal(snapshot.rows.care_comments.length,2);
+const snapshot=await cloudSnapshot(db);assert.equal(snapshot.rows.care_comments.length,2);assert.equal(snapshot.rows.care_comment_state.length,2);assert.equal(snapshot.rows.care_comment_likes.length,1);
 sqlite.exec('DELETE FROM care_events WHERE id=1');assert.equal(sqlite.prepare('SELECT COUNT(*) n FROM care_comments').get().n,0);
+assert.equal(sqlite.prepare('SELECT COUNT(*) n FROM care_comment_likes').get().n,0);
 console.log('Care interactions passed: scoped hearts, idempotent comments/replies, guardian name, rate limits, hidden/other/expired isolation, XSS, theme assets, backup, cascades.');

@@ -22,7 +22,7 @@ export function timelineOrigin(value) {
   } catch { return null; }
 }
 
-export async function staffTimeline(db, stayId, dogId, day, before, origin, visibleOnly, focusEvent=null) {
+export async function staffTimeline(db, stayId, dogId, day, before, origin, visibleOnly, focusEvent=null,actor=null) {
   const [record,days,events] = await db.batch([
     db.prepare(`SELECT d.name AS dog_name,s.status,${shareActive} AS can_share,
         ${shareExpiryHours} AS expiry_hours,l.token,l.view_count
@@ -43,7 +43,7 @@ export async function staffTimeline(db, stayId, dogId, day, before, origin, visi
   const items = events.results.slice(0,25).map((event) => ({
     ...event, photos:JSON.parse(event.photos).map(([id,key]) => ({id,key})),
   }));
-  const feedback=await eventInteractions(db,items.map(event=>event.id));
+  const feedback=await eventInteractions(db,items.map(event=>event.id),actor);
   for(const event of items){
     event.comments=feedback.comments.filter(comment=>comment.event_id===event.id);
     for(const photo of event.photos)photo.hearted=feedback.hearts.some(heart=>heart.photo_id===photo.id);
@@ -55,7 +55,7 @@ export async function staffTimeline(db, stayId, dogId, day, before, origin, visi
     dog_name:row.dog_name, status:row.status, can_share:Boolean(row.can_share), can_configure_link:Boolean(origin),
     expiry_hours:row.expiry_hours, has_link:Boolean(row.token), view_count:row.view_count,
     share_url:row.token && row.can_share && origin ? origin + "/updates/" + row.token : null,
-    days:days.results.map((entry) => entry.day), events:items, options, templates:careTemplates(templateSetting?.value,options),
+    days:days.results.map((entry) => entry.day), events:items, options, templates:careTemplates(templateSetting?.value,options), templates_en:careTemplates(templateSetting?.value,options,"en"),
     next:events.results.length>items.length ? {recordedAt:last.recorded_at,id:last.id} : null,
   };
 }

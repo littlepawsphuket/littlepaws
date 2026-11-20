@@ -1,4 +1,4 @@
-import {careTemplates,validCareTemplates} from "./care_templates.mjs";
+import {careTemplates,validCareTemplates,mergeCareTemplates} from "./care_templates.mjs";
 import {configuredRates,defaultRates} from "./booking_writes.mjs";
 import {validDay} from "./bookings.mjs";
 import {customActivities,standardActivities} from "./care_staff.mjs";
@@ -37,6 +37,7 @@ export async function systemSettings(db) {
     careLinkHours:decode(stored.care_link_hours,48), theme:themeName(decode(stored.theme,"classic")),
     activities:customActivities(stored.care_activities), standardActivities:Object.values(standardActivities),
     templates:careTemplates(stored.care_templates,{...standardActivities,...Object.fromEntries(customActivities(stored.care_activities).map(label=>["activity:"+label,label]))}),
+    templates_en:careTemplates(stored.care_templates,{...standardActivities,...Object.fromEntries(customActivities(stored.care_activities).map(label=>["activity:"+label,label]))},"en"),
     holidays:holidays.results, revisions,
   };
 }
@@ -91,9 +92,8 @@ export async function saveSystemSetting(db,form,actor) {
     // Use the current activity revision as well: never overwrite a concurrent activity edit.
     const options={...standardActivities,...Object.fromEntries(customActivities(expected.care_activities).map(label=>["activity:"+label,label]))};
     if(validCareTemplates(form.templates,options)) {
-      const stored=decode(expected.care_templates,{});
-      const merged={...(stored && typeof stored==='object' && !Array.isArray(stored) ? stored : {}),...form.templates};
-      if(new TextEncoder().encode(JSON.stringify(merged)).length<=24000)
+      const merged=mergeCareTemplates(expected.care_templates,form.templates);
+      if(new TextEncoder().encode(JSON.stringify(merged)).length<=96000)
         changes={care_templates:merged,care_activities:customActivities(expected.care_activities)};
     }
   }

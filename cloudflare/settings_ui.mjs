@@ -126,26 +126,32 @@ export function settingsScreen({node,results,message,themeLabels,thaiDate,reload
     const labels={...Object.fromEntries(["food","medicine","walk","play","rest","custom"].map((key,index)=>[key,data.standardActivities[index]])),
       ...Object.fromEntries(data.activities.map(label=>["activity:"+label,label]))};
     for(const [key,label] of Object.entries(labels))category.append(new Option(label,key));
-    const drafts=structuredClone(data.templates);
+    const drafts={th:structuredClone(data.templates),en:structuredClone(data.templates_en)};
+    let language="th";
+    const languages=grid("service-segments");languages.setAttribute("role","group");languages.setAttribute("aria-label","ภาษาข้อความแนะนำ");
+    for(const code of ["th","en"]){const control=button(code.toUpperCase());control.setAttribute("aria-pressed",String(code===language));
+      control.onclick=()=>{language=code;for(const item of languages.children)item.setAttribute("aria-pressed",String(item===control));renderRows();};languages.append(control);}
     const dirty=new Set();
     const list=grid("template-settings-list");
     function renderRows(){
       list.replaceChildren();
-      const items=drafts[category.value] || [];
+      const items=drafts[language][category.value] || [];
       items.forEach((text,index)=>{
         const row=grid("template-settings-row");
         const input=Object.assign(node("textarea"),{rows:3,maxLength:500,required:true,value:text});
         input.setAttribute("aria-label","ข้อความ "+(index+1));
-        input.oninput=()=>{items[index]=input.value;dirty.add(category.value);};
-        const remove=button("นำออก");remove.onclick=()=>{items.splice(index,1);dirty.add(category.value);renderRows();};
+        input.oninput=()=>{items[index]=input.value;dirty.add(language+":"+category.value);};
+        const remove=button("นำออก");remove.onclick=()=>{items.splice(index,1);dirty.add(language+":"+category.value);renderRows();};
         row.append(input,remove);list.append(row);
       });
     }
     category.onchange=renderRows;
-    const add=button("เพิ่มข้อความ");add.onclick=()=>{const items=drafts[category.value] ||= [];if(items.length<30){items.push("");dirty.add(category.value);renderRows();list.lastElementChild?.querySelector("textarea")?.focus();}};
+    const add=button("เพิ่มข้อความ");add.onclick=()=>{const items=drafts[language][category.value] ||= [];if(items.length<30){items.push("");dirty.add(language+":"+category.value);renderRows();list.lastElementChild?.querySelector("textarea")?.focus();}};
     const save=submit("บันทึกข้อความช่วยบันทึก");
-    form.append(field("หมวดกิจกรรม",category),list,add,save);
-    saveForm(form,control=>writeSetting(control,{templates:Object.fromEntries(Object.entries(drafts).filter(([key])=>dirty.has(key) || (!dirty.size && key===category.value)).map(([key,items])=>[key,items.map(text=>text.trim()).filter(Boolean)]))}));
+    form.append(field("หมวดกิจกรรม",category),languages,list,add,save);
+    saveForm(form,control=>writeSetting(control,{templates:Object.fromEntries(["th","en"].map(lang=>[lang,
+      Object.fromEntries(Object.entries(drafts[lang]).filter(([key])=>dirty.has(lang+":"+key) || (!dirty.size && lang===language && key===category.value))
+        .map(([key,items])=>[key,items.map(text=>text.trim()).filter(Boolean)]))]))}));
     renderRows();panel.append(form);
   }
 

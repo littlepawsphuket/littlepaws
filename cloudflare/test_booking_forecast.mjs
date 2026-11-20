@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
 import {bookingForecast,pendingBookings,bookingCalendar} from './bookings.mjs';
-import {careTemplates,validCareTemplates,defaultCareTemplates} from './care_templates.mjs';
+import {careTemplates,validCareTemplates,defaultCareTemplates,englishCareTemplates} from './care_templates.mjs';
 const sql=new DatabaseSync(':memory:');
 sql.exec(`CREATE TABLE appointments(id INTEGER PRIMARY KEY,booking_number,customer_id,checkin,checkout,charged_nights,agreed_total,status,stay_id);
 CREATE TABLE customers(id INTEGER PRIMARY KEY,name);CREATE TABLE dogs(id INTEGER PRIMARY KEY,name,customer_id,archived);
@@ -24,8 +24,8 @@ const first=await pendingBookings(db,0,'');assert.equal(first.bookings.length,25
 const filtered=await pendingBookings(db,0,'nothing');assert.equal(filtered.bookings.length,0);assert.deepEqual(filtered.forecast,summary);
 assert.deepEqual((await bookingCalendar(db,'2026-11-01','2026-11-30')).forecast,summary);
 const options={food:'Food',rest:'Rest','activity:ถ่ายรูป':'ถ่ายรูป'};
-for(const list of Object.values(defaultCareTemplates))assert.equal(list.length,5);
-const templates=careTemplates(null,options);assert.equal(templates['activity:ถ่ายรูป'].length,5);
+for(const list of Object.values(defaultCareTemplates))assert.equal(list.length,10);
+const templates=careTemplates(null,options);assert.equal(templates['activity:ถ่ายรูป'].length,10);
 assert.ok(templates['activity:ถ่ายรูป'].every(text=>text.includes('ถ่ายรูป')));
 assert.equal(validCareTemplates(templates,options),true);
 assert.equal(validCareTemplates({food:['a'.repeat(501)]},options),false);
@@ -38,7 +38,7 @@ INSERT INTO app_users VALUES(1,1,1),(2,1,0);INSERT INTO staff_access_identities 
 const settingsDb={prepare:query=>({bind:(...args)=>({first:async()=>sql.prepare(query).get(...args),all:async()=>({results:sql.prepare(query).all(...args)}),run:async()=>({meta:{changes:sql.prepare(query).run(...args).changes}})})})};
 settingsDb.batch=async queries=>Promise.all(queries.map(q=>q.all()));
 const original=await systemSettings(settingsDb);
-assert.equal(original.templates.food.length,5);
+assert.equal(original.templates.food.length,10);
 const form={section:'templates',templates:{...original.templates,food:['A warm message 🩷']},revisions:original.revisions};
 assert.equal(await saveSystemSetting(settingsDb,form,{id:2,email:'staff@example.test'}),'conflict');
 assert.equal(await saveSystemSetting(settingsDb,form,{id:1,email:'admin@example.test'}),'saved');
@@ -46,3 +46,12 @@ assert.equal(await saveSystemSetting(settingsDb,form,{id:1,email:'admin@example.
 assert.deepEqual((await systemSettings(settingsDb)).templates.food,['A warm message 🩷']);
 assert.equal(await saveSystemSetting(settingsDb,{...form,templates:{food:['x'.repeat(501)]}},{id:1,email:'admin@example.test'}),'invalid');
 console.log('Settings round trip passed: admin-only, conflict protection, persistence, invalid text rejected.');
+
+for(const list of Object.values(englishCareTemplates))assert.equal(list.length,10);
+const current=await systemSettings(settingsDb);
+const bilingual={section:'templates',templates:{en:{food:['English draft 🩷']}},revisions:current.revisions};
+assert.equal(await saveSystemSetting(settingsDb,bilingual,{id:1,email:'admin@example.test'}),'saved');
+const saved=await systemSettings(settingsDb);assert.deepEqual(saved.templates.food,['A warm message 🩷']);assert.deepEqual(saved.templates_en.food,['English draft 🩷']);
+assert.equal(saved.templates_en.rest.length,10);
+assert.equal(validCareTemplates({th:{en:{food:['bad']}}},options),false);
+console.log('Bilingual templates passed: ten per category/language, independent editing, legacy drafts retained.');
