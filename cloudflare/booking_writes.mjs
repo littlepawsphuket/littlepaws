@@ -1,3 +1,4 @@
+import {overnightPricing,saveBookingPrice,savedBoardingPrice,freezeLegacyPrice} from "./boarding_pricing.mjs";
 import {validDay, randomReference} from "./bookings.mjs";
 import {bookingSnapshot, bookingWarnings} from "./booking_warnings.mjs";
 import {authorizedStaff} from "./stay_payments.mjs";
@@ -10,7 +11,7 @@ const pending = "a.status='pending' AND a.stay_id IS NULL";
 const hasPayments = "EXISTS (SELECT 1 FROM transactions t WHERE t.deposit_appointment_id=a.id AND t.payment_type!='')";
 const keyPattern = /^[0-9a-f]{32}$/;
 
-export function bookingValues(form) {
+export function bookingValues(form, agreedPrice = null) {
   const {customerId,checkin,checkout,service,quantity100,discountCents,dogs,note} = form;
   if (!Number.isSafeInteger(customerId) || customerId < 1 || !validDay(checkin) || !validDay(checkout) ||
       checkout < checkin || !Object.hasOwn(defaultRates,service) ||
@@ -28,11 +29,16 @@ export function bookingValues(form) {
     quotePending ||= dog.rate === null;
     subtotal += Math.floor(((dog.rate ?? 0) * quantity100 + 50) / 100);
   }
-  if (!quotePending && discountCents > subtotal) return null;
+  const pricing=overnightPricing(form);
+  if(pricing===null)return null;
+  subtotal+=pricing?.fee_cents || 0;
+  if (pricing && agreedPrice) subtotal=Number(agreedPrice.total)+(Number(agreedPrice.discount_cents)||0)+(Number(agreedPrice.rounding_cents)||0);
+  if (!quotePending && discountCents > subtotal && !agreedPrice) return null;
   const rawNet = Math.max(0,subtotal-discountCents);
   const rounding = form.wholeBaht === true ? rawNet % 100 : 0;
-  return {fields:[customerId,checkin,checkout,quantity100/100,(rawNet-rounding)/100,note,discountCents,rounding,service],
-    subtotal, dogIds:[...ids], dogRows:JSON.stringify(dogs), quotePending, netCents:rawNet-rounding};
+  const data={fields:[customerId,checkin,checkout,quantity100/100,(rawNet-rounding)/100,note,discountCents,rounding,service],
+    subtotal, pricing, dogIds:[...ids], dogRows:JSON.stringify(dogs), quotePending, netCents:rawNet-rounding};
+  return agreedPrice ? freezeLegacyPrice(data,agreedPrice) : data;
 }
 
 export async function bookingRates(db) {
@@ -52,10 +58,18 @@ export const allDogsOwned = `(SELECT count(*) FROM dogs d JOIN json_each(?) choi
       SELECT 1 FROM appointment_dogs ad WHERE ad.appointment_id=? AND ad.dog_id=d.id))) = ?`;
 
 export async function saveBooking(db, id, form, actor) {
-  const data = bookingValues(form);
+  let agreedPrice=null;
+  const saved=id===null ? null : await savedBoardingPrice(db,"booking",id);
+  if(id!==null && form.pricingVersion===1 && (!saved || saved.grandfathered)){
+    agreedPrice=await db.prepare(`SELECT a.discount_cents,a.rounding_cents,ROUND(a.agreed_total*100) AS total
+      FROM appointments a WHERE a.id=? AND ${authorizedStaff}`).bind(id,actor.id,actor.email).first();
+    if(!agreedPrice)return {status:"not_found"};
+  }
+  const data = bookingValues(form,agreedPrice);
   if (!data || (id === null && (typeof form.key !== "string" || !keyPattern.test(form.key))) ||
       (id !== null && form.revision !== null &&
         (typeof form.revision !== "string" || !/^[a-f0-9-]{36}$/.test(form.revision)))) return {status:"invalid"};
+  if(!data.pricing && saved)return {status:"conflict"};
   const identity = [actor.id,actor.email];
   const revision = crypto.randomUUID();
   const owner = form.customerId;
@@ -95,16 +109,18 @@ export async function saveBooking(db, id, form, actor) {
               WHERE deposit_appointment_id=a.id AND payment_type!=''),0))
             AND (${bookingSnapshot})=?`)
         .bind(...data.fields,revision,id,owner,form.revision,...eligible,...identity,Number(data.quotePending),data.netCents,...unchanged);
-    const [update,,, result] = await db.batch([
+    const writes = await db.batch([
       primary,
       db.prepare("DELETE FROM appointment_dogs WHERE appointment_id=(SELECT id FROM appointments WHERE cloud_revision=?)").bind(revision),
       db.prepare(`INSERT INTO appointment_dogs(appointment_id,dog_id,nightly_rate_cents)
         SELECT a.id,json_extract(d.value,'$.id'),json_extract(d.value,'$.rate')
         FROM appointments a CROSS JOIN json_each(?) d WHERE a.cloud_revision=?`).bind(data.dogRows,revision),
+      ...(data.pricing ? [saveBookingPrice(db,revision,data.pricing)] : []),
       id === null
         ? db.prepare(`SELECT a.id,a.status FROM appointments a WHERE a.create_key=? AND ${authorizedStaff}`).bind(form.key,...identity)
         : db.prepare(`SELECT a.id,a.status FROM appointments a WHERE a.id=? AND ${authorizedStaff}`).bind(id,...identity),
     ]);
+    const update=writes[0],result=writes.at(-1);
     if (update.meta.changes === 1) return {status:id === null ? "created" : "saved",id:result.results[0].id};
     if (id !== null) {
       const latest = await bookingWarnings(db,id,form.checkin,form.checkout,data.dogIds);

@@ -465,7 +465,7 @@ export default {
         const result = couponPreview ? await previewCheckInCoupon(env.DB,form,user) : directPreview ? await previewDirectStay(env.DB,form,user)
           : directCheckIn ? await checkInDirect(env.DB,form,user) : await checkInBooking(env.DB,id,form,user);
         return json(result, {ready:200,created:201,saved:200,invalid:400,consent_required:422,not_found:404,conflict:409,warning:409,coupon_invalid:400,
-          coupon_unavailable:409,coupon_minimum:422,coupon_exceeds:422}[result.status]);
+          coupon_unavailable:409,coupon_minimum:422,coupon_exceeds:422,payment_exceeds:422}[result.status]);
       }
       if (request.method !== "GET" && (bookingMatch || url.pathname === "/api/bookings")) {
         const id = bookingMatch ? Number(bookingMatch[1]) : null;

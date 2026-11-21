@@ -1,3 +1,4 @@
+import {savedBoardingPrice,saveStayPrice,freezeLegacyPrice} from "./boarding_pricing.mjs";
 import {quoteCoupon, unchangedCoupon, couponCondition, saveCouponUse} from "./coupons.mjs";
 import terms, {intakeGroups} from "./stay_terms.mjs";
 import {authorizedStaff, normalizePayment} from "./stay_payments.mjs";
@@ -100,6 +101,30 @@ async function bookedCouponSource(db, id, actor) {
     `).bind(id,actor.id,actor.email).first();
 }
 
+async function pricedBooking(db,id,form,actor) {
+  const source=await db.prepare(`SELECT a.*,ROUND(a.agreed_total*100) AS total,
+    COALESCE((SELECT SUM(ROUND(t.amount*100)) FROM transactions t WHERE t.deposit_appointment_id=a.id AND t.payment_type!=''),0) AS paid
+    FROM appointments a WHERE a.id=? AND a.status='pending' AND ${authorizedStaff}`).bind(id,actor.id,actor.email).first();
+  if(!source)return null;
+  if(source.stay_id)return {source};
+  const dogs=(await db.prepare(`SELECT dog_id AS id,nightly_rate_cents AS rate FROM appointment_dogs WHERE appointment_id=? ORDER BY dog_id`).bind(id).all()).results;
+  const draft={customerId:source.customer_id,checkin:form.arrivalDay,checkout:form.pickupDay || source.checkout,
+    checkinTime:form.arrivalTime,checkoutTime:form.pickupTime,quantity100:form.quantity100,
+    pricingVersion:1,service:source.service_type,discountCents:source.discount_cents,note:source.note,dogs,wholeBaht:true};
+  const previous=await savedBoardingPrice(db,"booking",id);
+  const data=bookingValues(draft,(!previous || previous.grandfathered) ? source : null);
+  return data && !data.quotePending ? {source,draft,data} : null;
+}
+export async function previewBookedPrice(db,form,actor) {
+  if(!Number.isSafeInteger(form.bookingId) || form.bookingId<1 || form.pricingVersion!==1)return {status:'invalid'};
+  const price=await pricedBooking(db,form.bookingId,form,actor);
+  if(!price || price.source.stay_id)return {status:'not_found'};
+  if(price.source.cloud_revision!==form.revision)return {status:'conflict'};
+  if(price.data.netCents<price.source.paid)return {status:'payment_exceeds'};
+  return {status:'ready',total_cents:price.data.netCents,balance_cents:price.data.netCents-price.source.paid,
+    pricing:price.data.pricing,discount_cents:price.source.discount_cents};
+}
+
 export async function previewCheckInCoupon(db, form, actor) {
   let quote;
   if (form.draft && typeof form.draft === "object" && form.bookingId === undefined) {
@@ -108,7 +133,9 @@ export async function previewCheckInCoupon(db, form, actor) {
     const data = bookingValues(form.draft);
     quote = await quoteCoupon(db,form.code,data.subtotal,form.draft.discountCents,0);
   } else if (Number.isSafeInteger(form.bookingId) && form.bookingId > 0) {
-    const source = await bookedCouponSource(db,form.bookingId,actor);
+    const priced=form.pricingVersion===1 ? await pricedBooking(db,form.bookingId,form,actor) : null;
+    if(form.pricingVersion===1 && !priced)return {status:"invalid"};
+    const source = priced ? {...priced.source,subtotal:priced.data.subtotal} : await bookedCouponSource(db,form.bookingId,actor);
     if (!source || source.stay_id || source.subtotal === null) return {status:"not_found"};
     quote = await quoteCoupon(db,form.code,source.subtotal,source.discount_cents,source.paid);
   } else return {status:"invalid"};
@@ -124,8 +151,18 @@ export async function checkInBooking(db, id, form, actor) {
   const marker = crypto.randomUUID();
   let quote;
   let adjustment = 0;
+  const priced=form.pricingVersion===1 ? await pricedBooking(db,id,form,actor) : null;
+  if(form.pricingVersion===1 && !priced)return {status:"invalid"};
+  if(priced?.source.stay_id)return {status:"saved",stayId:priced.source.stay_id};
+  if(!priced && await savedBoardingPrice(db,"booking",id))return {status:"conflict"};
+  if(priced){
+    if(priced.source.cloud_revision!==revision)return {status:"conflict"};
+    if(priced.data.netCents<priced.source.paid)return {status:"payment_exceeds"};
+    adjustment=priced.source.total-priced.data.netCents;
+    if(!form.couponCode && expectedBalance!==priced.data.netCents-priced.source.paid)return {status:"conflict"};
+  }
   if (form.couponCode) {
-    const source = await bookedCouponSource(db,id,actor);
+    const source = priced ? {...priced.source,subtotal:priced.data.subtotal} : await bookedCouponSource(db,id,actor);
     if (source?.stay_id) return {status:"saved",stayId:source.stay_id};
     if (!source || source.subtotal === null) return {status:"not_found"};
     quote = await quoteCoupon(db,form.couponCode,source.subtotal,source.discount_cents,source.paid);
@@ -138,14 +175,14 @@ export async function checkInBooking(db, id, form, actor) {
   }
   for (let attempt=0; attempt<5; attempt++) {
     const code = randomReference();
-    const [write,,,,,,,lookup] = await db.batch([
+    const writes = await db.batch([
       db.prepare(`INSERT INTO stays(customer_id,checkin,checkout,charged_nights,agreed_total,status,note,
         discount_cents,rounding_cents,actual_checkin_at,intake,payment_tracking,create_key,stay_number)
-        SELECT a.customer_id,a.checkin,a.checkout,a.charged_nights,(ROUND(a.agreed_total*100)-?)/100.0,'checked_in',a.note,
+        SELECT a.customer_id,COALESCE(?,a.checkin),COALESCE(?,a.checkout),COALESCE(?,a.charged_nights),(ROUND(a.agreed_total*100)-?)/100.0,'checked_in',a.note,
           a.discount_cents+?,COALESCE(?,a.rounding_cents),?,json_patch(?,json_object('service_type',a.service_type,'arrival_time',?,
           'pickup_time',?)),1,?,?
         FROM appointments a WHERE a.id=? AND a.stay_id IS NULL AND a.status='pending'
-          AND a.cloud_revision IS ? AND ?<=a.checkout AND ${authorizedStaff}
+          AND a.cloud_revision IS ? AND ?<=COALESCE(?,a.checkout) AND ${authorizedStaff}
           AND EXISTS (SELECT 1 FROM appointment_dogs d WHERE d.appointment_id=a.id)
           AND NOT EXISTS (SELECT 1 FROM appointment_dogs d WHERE d.appointment_id=a.id AND d.nightly_rate_cents IS NULL)
           AND ROUND(a.agreed_total*100)-COALESCE((SELECT SUM(ROUND(t.amount*100)) FROM transactions t
@@ -153,8 +190,9 @@ export async function checkInBooking(db, id, form, actor) {
           AND ${unchangedCoupon}
           AND NOT EXISTS (SELECT 1 FROM appointments b WHERE b.booking_number=?)
         ON CONFLICT DO NOTHING`)
-        .bind(adjustment,quote?.discount ?? 0,quote?.rounding ?? null,arrival,JSON.stringify(intake),arrivalTime,pickupTime,
-          marker,code,id,revision,arrivalDay,...identity,expectedBalance+adjustment,...couponCondition(quote?.coupon),code),
+        .bind(priced?.draft.checkin ?? null,priced?.draft.checkout ?? null,priced ? priced.draft.quantity100/100 : null,
+          adjustment,quote?.discount ?? 0,quote?.rounding ?? priced?.data.fields[7] ?? null,arrival,JSON.stringify(intake),arrivalTime,pickupTime,
+          marker,code,id,revision,arrivalDay,priced?.draft.checkout ?? null,...identity,priced ? priced.source.total-priced.source.paid : expectedBalance+adjustment,...couponCondition(quote?.coupon),code),
       db.prepare(`INSERT INTO stay_dogs(stay_id,dog_id,nightly_rate_cents)
         SELECT s.id,d.dog_id,d.nightly_rate_cents FROM stays s CROSS JOIN appointment_dogs d
         WHERE s.create_key=? AND d.appointment_id=?`).bind(marker,id),
@@ -165,8 +203,10 @@ export async function checkInBooking(db, id, form, actor) {
       saveCouponUse(db,marker,quote,checkIn.signedAt),
       db.prepare(`UPDATE appointments AS a SET stay_id=(SELECT id FROM stays WHERE create_key=?)
         WHERE a.id=? AND EXISTS (SELECT 1 FROM stays WHERE create_key=?)`).bind(marker,id,marker),
+      ...(priced ? [saveStayPrice(db,marker,priced.data.pricing)] : []),
       db.prepare("SELECT id AS stay_id FROM stays WHERE create_key=?").bind(marker),
     ]);
+    const write=writes[0],lookup=writes.at(-1);
     if (write.meta.changes === 1) return {status:"created",stayId:lookup.results[0].stay_id};
     const existing = await db.prepare(`SELECT a.stay_id,a.status,a.cloud_revision,a.checkout,
       a.agreed_total,(SELECT COALESCE(SUM(ROUND(t.amount*100)),0) FROM transactions t
@@ -187,19 +227,20 @@ export async function checkInBooking(db, id, form, actor) {
 const activeOwner = "EXISTS (SELECT 1 FROM customers c WHERE c.id=? AND c.archived=0)";
 
 export async function previewDirectStay(db, draft, actor) {
+  if(draft?.bookingId!==undefined)return previewBookedPrice(db,draft,actor);
   const booking = bookingValues(draft);
   if (!booking || booking.quotePending) return {status:"invalid"};
   const customer = await db.prepare(`SELECT c.name FROM customers c WHERE c.id=? AND c.archived=0
     AND ${allDogsOwned} AND ${authorizedStaff}`).bind(draft.customerId,JSON.stringify(booking.dogIds),
     draft.customerId,null,booking.dogIds.length,actor.id,actor.email).first();
   if (!customer) return {status:"invalid"};
-  return {status:"ready",customer:customer.name,total_cents:booking.netCents,balance_cents:booking.netCents};
+  return {status:"ready",customer:customer.name,total_cents:booking.netCents,balance_cents:booking.netCents,pricing:booking.pricing};
 }
 
 export async function checkInDirect(db, form, actor) {
   const checkIn = checkInValues(form);
   if (checkIn.status) return checkIn;
-  const draft = form.draft;
+  const draft = form.draft && form.pricingVersion===1 ? {...form.draft,checkin:form.arrivalDay,checkout:form.pickupDay || form.draft.checkout,checkinTime:form.arrivalTime,checkoutTime:form.pickupTime,quantity100:form.quantity100,pricingVersion:1} : form.draft;
   if (!draft || typeof draft !== "object") return {status:"invalid"};
   const booking = bookingValues(draft);
   if (!booking || booking.quotePending ||
@@ -225,7 +266,7 @@ export async function checkInDirect(db, form, actor) {
       return await replay() || {status:"warning",warnings:warnings.warnings,token:warnings.token};
     }
     const code = randomReference();
-    const [write,,,,,result] = await db.batch([
+    const writes = await db.batch([
       db.prepare(`INSERT INTO stays(customer_id,checkin,checkout,charged_nights,agreed_total,status,note,
           discount_cents,rounding_cents,actual_checkin_at,intake,payment_tracking,create_key,stay_number,direct_checkin_key)
         SELECT ?,?,?,?,?,'checked_in',?,?,?,?,?,1,?,?,?
@@ -242,8 +283,10 @@ export async function checkInDirect(db, form, actor) {
       consentInsert(db,marker,checkIn),
       paymentInsert(db,marker,checkIn),
       saveCouponUse(db,marker,quote,checkIn.signedAt),
+      ...(booking.pricing ? [saveStayPrice(db,marker,booking.pricing)] : []),
       db.prepare("SELECT id FROM stays WHERE create_key=?").bind(marker),
     ]);
+    const write=writes[0],result=writes.at(-1);
     if (write.meta.changes === 1) return {status:"created",stayId:result.results[0].id};
   }
   return await replay() || {status:"conflict"};

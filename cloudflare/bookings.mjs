@@ -1,3 +1,4 @@
+import {savedBoardingPrice} from "./boarding_pricing.mjs";
 import {bookingCardDogs} from "./card_dogs.mjs";
 import {authorizedStaff, normalizePayment} from "./stay_payments.mjs";
 
@@ -62,7 +63,7 @@ export async function bookingDetails(db, id) {
   const quotePending = !dogs.results.length || dogs.results.some((dog) => dog.nightly_rate_cents === null);
   const paidCents = payments.results.reduce((sum, payment) => sum + payment.amount_cents, 0);
   return {
-    ...booking, dogs: dogs.results, payments: payments.results, paid_cents: paidCents,
+    ...booking, pricing:await savedBoardingPrice(db,booking.stay_id ? "stay" : "booking",booking.stay_id || id), dogs: dogs.results, payments: payments.results, paid_cents: paidCents,
     balance_cents: quotePending ? null : Math.max(0, booking.total_cents - paidCents),
   };
 }

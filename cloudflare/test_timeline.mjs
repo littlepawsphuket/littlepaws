@@ -58,6 +58,7 @@ const env = {
   },
 };
 sqlite.exec(await readFile(new URL("./care_interactions.sql",import.meta.url),"utf8"));
+sqlite.exec(await readFile(new URL("./boarding_charges.sql",import.meta.url),"utf8"));
 const path = (letter) => `/updates/${letter.repeat(43)}`;
 const get = (route) => worker.fetch(new Request("https://example.test"+route), env);
 const viewCount = (letter = "a") => sqlite.prepare("SELECT view_count FROM care_share_links WHERE token=?").get(letter.repeat(43)).view_count;

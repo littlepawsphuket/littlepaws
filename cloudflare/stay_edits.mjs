@@ -1,3 +1,4 @@
+import {savedBoardingPrice,freezeLegacyPrice} from "./boarding_pricing.mjs";
 import {bookingValues} from './booking_writes.mjs';
 import {bookingWarnings,bookingSnapshot} from './booking_warnings.mjs';
 import {authorizedStaff} from './stay_payments.mjs';
@@ -9,11 +10,6 @@ export const stayPaymentSnapshot=`SELECT json_group_array(json_array(id,amount,p
   (SELECT id,amount,payment_type FROM transactions WHERE stay_id=s.id ORDER BY id)`;
 
 export async function editStay(db,id,form,actor) {
-  const data=bookingValues(form),intake=normalizeIntake(form.intake);
-  if(!data || data.quotePending || !intake || (form.revision!==null &&
-      (typeof form.revision!=='string' || !/^[a-f0-9-]{36}$/.test(form.revision))) ||
-      typeof form.paymentSnapshot!=='string' || form.paymentSnapshot.length>20000 ||
-      typeof form.couponCode!=='string' || (form.couponCode && !/^\d{6}$/.test(form.couponCode))) return {status:'invalid'};
   const source=await db.prepare(`SELECT s.*,ROUND(agreed_total*100) AS total,
     (${stayPaymentSnapshot}) AS payment_snapshot,
     COALESCE((SELECT SUM(ROUND(t.amount*100)) FROM transactions t WHERE t.stay_id=s.id AND t.payment_type!=''),0) AS paid,
@@ -21,6 +17,14 @@ export async function editStay(db,id,form,actor) {
     (SELECT c.code FROM coupon_uses u JOIN coupons c ON c.id=u.coupon_id WHERE u.stay_id=s.id) AS coupon_code
     FROM stays s WHERE s.id=? AND ${authorizedStaff}`).bind(id,actor.id,actor.email).first();
   if(!source)return {status:'not_found'};
+  const previousPrice=await savedBoardingPrice(db,'stay',id);
+  const legacyPrice=form.pricingVersion===1 && (!previousPrice || previousPrice.grandfathered);
+  const data=bookingValues(form,legacyPrice ? source : null),intake=normalizeIntake(form.intake);
+  if(!data || data.quotePending || !intake || (form.revision!==null &&
+      (typeof form.revision!=='string' || !/^[a-f0-9-]{36}$/.test(form.revision))) ||
+      typeof form.paymentSnapshot!=='string' || form.paymentSnapshot.length>20000 ||
+      typeof form.couponCode!=='string' || (form.couponCode && !/^\d{6}$/.test(form.couponCode))) return {status:'invalid'};
+  if(!data.pricing && previousPrice)return {status:'conflict'};
   if(source.status!=='checked_in' || source.cancelled_at)return {status:'stay_closed'};
   if(source.cloud_revision!==form.revision || source.payment_snapshot!==form.paymentSnapshot ||
       source.customer_id!==form.customerId)return {status:'conflict'};
@@ -34,17 +38,17 @@ export async function editStay(db,id,form,actor) {
       coupon=quote.coupon;discount=quote.discount;
     }
   }
-  const totalDiscount=form.discountCents+discount;
+  const totalDiscount=legacyPrice ? source.discount_cents : form.discountCents+discount;
   if(totalDiscount>data.subtotal)return {status:'invalid'};
   const raw=data.subtotal-totalDiscount;
-  const net=source.total+source.rounding_cents===raw && source.discount_cents===totalDiscount ? source.total : raw-raw%100;
+  const net=legacyPrice ? source.total : source.total+source.rounding_cents===raw && source.discount_cents===totalDiscount ? source.total : raw-raw%100;
   if(source.paid>net)return {status:'payment_exceeds'};
   const warnings=await bookingWarnings(db,null,form.checkin,form.checkout,data.dogIds,id);
   if(warnings.token && form.warningToken!==warnings.token)return {status:'warning',warnings:warnings.warnings,token:warnings.token};
   const revision=crypto.randomUUID(),stamp=new Date().toISOString();
   let previousIntake={};try{previousIntake=JSON.parse(source.intake)||{};}catch{}
   for(const group of intakeGroups)for(const [field] of group.fields){delete previousIntake[field];delete previousIntake[field+'_packed'];}
-  const savedIntake=JSON.stringify({...previousIntake,...intake,service_type:form.service});
+  const savedIntake=JSON.stringify({...previousIntake,...intake,service_type:form.service,...(data.pricing ? {arrival_time:data.pricing.checkin_time,pickup_time:data.pricing.checkout_time} : {})});
   const owned=`(SELECT COUNT(*) FROM dogs d JOIN json_each(?) choices ON d.id=choices.value
     WHERE d.customer_id=? AND (d.archived=0 OR EXISTS(SELECT 1 FROM stay_dogs sd WHERE sd.stay_id=? AND sd.dog_id=d.id)))=?`;
   const marker=`EXISTS(SELECT 1 FROM stays WHERE id=? AND cloud_revision=?)`;
@@ -71,6 +75,9 @@ export async function editStay(db,id,form,actor) {
         AND NOT EXISTS(SELECT 1 FROM transactions t WHERE t.stay_id=s.id AND t.kind='income')`)
       .bind(net/100,id,revision),
   ];
+  if(data.pricing)statements.push(db.prepare(`INSERT INTO boarding_charges(stay_id,details)
+    SELECT id,? FROM stays WHERE id=? AND cloud_revision=?
+    ON CONFLICT(stay_id) DO UPDATE SET details=excluded.details`).bind(JSON.stringify(data.pricing),id,revision));
   if(!unchanged){
     statements.push(db.prepare(`DELETE FROM coupon_uses WHERE stay_id=? AND ${marker}`).bind(id,id,revision));
     if(coupon)statements.push(db.prepare(`INSERT INTO coupon_uses(stay_id,coupon_id,discount_cents,used_at)

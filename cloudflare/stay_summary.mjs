@@ -1,3 +1,4 @@
+import {savedBoardingPrice} from "./boarding_pricing.mjs";
 import {refundableBalance,stayBalance} from "./stay_payments.mjs";
 import {stayPaymentSnapshot} from './stay_edits.mjs';
 
@@ -33,6 +34,6 @@ export async function staySummary(db, id) {
   const stay = record.results[0];
   if (!stay) return null;
   try { stay.intake = JSON.parse(stay.intake) || {}; } catch { stay.intake = {}; }
-  return {...stay,dogs:dogs.results,payments:payments.results,payment_deletions:deletions.results,refunds:refunds.results,
+  return {...stay,pricing:await savedBoardingPrice(db,"stay",id),dogs:dogs.results,payments:payments.results,payment_deletions:deletions.results,refunds:refunds.results,
     consent:consent.results[0] || null,timeline_views:links.results};
 }

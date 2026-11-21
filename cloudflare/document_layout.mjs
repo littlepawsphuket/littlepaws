@@ -122,6 +122,21 @@ export function documentHtml(doc) {
     ${!doc.deposit && doc.discount_cents ? cell(t.discount,money(doc.discount_cents)) : ""}
     ${!doc.deposit && settled ? cell(t.paid,money(settled)) : ""}
     ${cell(doc.deposit ? t.balanceAtCheckin : t.due,balance === null ? "—" : money(balance))}</section>`;
+  const pricing=doc.pricing;
+  const priceTime=value=>Math.floor(value/60)+(lang==='en'?'h ':' ชม. ')+(value%60)+(lang==='en'?'m':' นาที');
+  const priceRowClass='class="late-fee-row" style="display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:8px;align-items:center;padding:8px 0;border-top:1px solid #ddd"';
+  const priceRows=pricing?.rows?.map(row=>{
+    const dog=doc.dogs.find(dog=>dog.id===row.dog_id);
+    return `<div ${priceRowClass}><span>${escape(dog?.name || '')}</span><span>${escape(money(row.base_cents))}</span><strong>${escape(money(row.fee_cents))}</strong></div>`;
+  }).join('') || '';
+  const priceBlock=!pricing || pricing.service!=='overnight' ? '' : pricing.grandfathered
+    ? `<section><h2>${lang==='en'?'Agreed price retained':'ใช้ราคาที่ตกลงเดิม'}</h2><p>${lang==='en'?'Existing booking: no additional late check-out charge.':'รายการเดิม: ไม่คิดค่ารับกลับล่าช้าเพิ่ม'}</p></section>`
+    : `<section class="boarding-price-breakdown"><h2>${lang==='en'?'Boarding and late check-out charges':'ค่าฝากเลี้ยงและค่ารับกลับล่าช้า'}</h2>
+      <p>${lang==='en'?'Boarding':'ค่าฝากปกติ'} ${escape(pricing.base_days)} ${lang==='en'?'day(s), 24 hours per day':'วัน รอบละ 24 ชั่วโมง'} · ${escape(money(pricing.base_cents))}</p>
+      <p>${lang==='en'?'Time beyond the booked period':'เวลาส่วนเกินจากจำนวนวันที่ระบุ'}: ${escape(priceTime(pricing.extra_minutes))}</p>
+      <p>${lang==='en'?'Up to 2 hours free; over 2–6 hours +25%; over 6–12 hours +50%; over 12 hours +1 day.':'ผ่อนผันไม่เกิน 2 ชม. ฟรี · เกิน 2–6 ชม. +25% · เกิน 6–12 ชม. +50% · เกิน 12 ชม. เพิ่ม 1 วัน'}</p>
+      <p><strong>${lang==='en'?'Applied late fee':'อัตราที่ใช้'}: ${pricing.percent===100?(lang==='en'?'1 extra day':'เพิ่ม 1 วัน'):pricing.percent+'%'} · ${escape(money(pricing.fee_cents))}</strong></p>
+      <div ${priceRowClass}><strong>${lang==='en'?'Dog':'สุนัข'}</strong><strong>${lang==='en'?'Boarding':'ค่าฝากปกติ'}</strong><strong>${lang==='en'?'Late check-out':'รับกลับล่าช้า'}</strong></div>${priceRows}</section>`;
   const dogRows = doc.dogs.map((dog) => `<li>${picture(dog.image,dog.name,"dog-photo") || dogIcon}
     <div><strong>${escape(dog.name)}</strong><small>${escape(dog.nightly_rate_cents === null ? t.ratePending
       : money(dog.nightly_rate_cents)+" / "+rateUnit)}</small></div></li>`).join("");
@@ -156,13 +171,13 @@ export function documentHtml(doc) {
     ${format === "png" ? customerImageCss : ""}</style></head><body><main><header><div><div class="brand">${picture(doc.logo,"Little Paws","logo")}Little Paws Homestay Phuket</div>
     <h1>${escape(t[kind])}</h1>${state ? `<p class="status">${escape(state)}</p>` : ""}</div><div class="address">
     ${picture(doc.mascot,"","mascot")}<p>${escape(t.address1)}<br>${escape(t.address2)}<br>${escape(t.phone)}</p></div></header>
-    <section class="facts agenda">${linked}${cell(t.checkin,day(doc.checkin))}${cell(t.checkout,day(doc.checkout))}
+    <section class="facts agenda">${linked}${cell(t.checkin,day(doc.checkin)+(pricing?.checkin_time ? " · "+pricing.checkin_time : ""))}${cell(t.checkout,day(doc.checkout)+(pricing?.checkout_time ? " · "+pricing.checkout_time : ""))}
     ${cell(t.service,t[doc.service_type] || doc.service_type)}${cell(lang === "th" && doc.service_type === "monthly" ? "จำนวนเดือน" : t.duration,doc.charged_nights+" "+unit)}
     ${doc.actual_checkin_at ? cell(t.actualIn,stamp(doc.actual_checkin_at)) : ""}${doc.actual_checkout_at ? cell(t.actualOut,stamp(doc.actual_checkout_at)) : ""}
     ${cell(t.customer,doc.customer)}${doc.contact ? cell(t.contact,doc.contact) : ""}</section>
     <section><h2>${escape(t.dogs)}</h2><ul class="dog-list">${dogRows}</ul></section>
     ${doc.note ? `<section><h2>${escape(t.note)}</h2><p class="memo">${escape(doc.note)}</p></section>` : ""}
-    ${totals}${paymentBlock}${kind === "stay" ? intakeSection(doc.intake,t,lang) : ""}
+    ${priceBlock}${totals}${paymentBlock}${kind === "stay" ? intakeSection(doc.intake,t,lang) : ""}
     ${consent}${format === "pdf" ? termsSection(doc.terms) : ""}
     ${doc.qr ? `<section><h2>${escape(t.qr)}</h2>${picture(doc.qr,t.qr,"payment-qr")}</section>` : ""}
     <footer><strong>Little Paws, Big Love.</strong>${escape(t.slogan)}</footer></main></body></html>`;
