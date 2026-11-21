@@ -1006,7 +1006,7 @@ assert.equal((await writeSettings({section:"care",action:"remove",name:"ถ่�
 assert.ok(!("activity:ถ่ายรูป" in (await (await staffCall(staffCarePath,{},context)).json()).options));
 // Templates share admin authorization and optimistic revisions; event text stays untouched.
 settings=await readSettings();
-assert.equal(settings.templates.food.length,5);
+assert.equal(settings.templates.food.length,10);
 const noteBefore=sqlite.prepare("SELECT note FROM care_events WHERE id=1").get()?.note;
 const templateDraft={...settings.templates,food:["Warm test message 🩷"]};
 assert.equal((await writeSettings({section:"templates",templates:templateDraft,revisions:settings.revisions})).status,200);
