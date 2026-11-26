@@ -1,3 +1,4 @@
+import {eventVideos,validVideoKey,validPosterKey} from './care_videos.mjs';
 import {eventInteractions} from "./care_interactions.mjs";
 import {careTemplates} from "./care_templates.mjs";
 import {authorizedStaff} from "./stay_payments.mjs";
@@ -43,8 +44,10 @@ export async function staffTimeline(db, stayId, dogId, day, before, origin, visi
   const items = events.results.slice(0,25).map((event) => ({
     ...event, photos:JSON.parse(event.photos).map(([id,key]) => ({id,key})),
   }));
+  const videos=await eventVideos(db,items.map(event=>event.id));
   const feedback=await eventInteractions(db,items.map(event=>event.id),actor);
   for(const event of items){
+    event.videos=videos.filter(video=>video.event_id===event.id).map(video=>({id:video.id,key:video.object_key,has_poster:Boolean(video.poster_key),duration_ms:video.duration_ms,byte_size:video.byte_size,mime:video.mime,codec:video.codec}));
     event.comments=feedback.comments.filter(comment=>comment.event_id===event.id);
     for(const photo of event.photos)photo.hearted=feedback.hearts.some(heart=>heart.photo_id===photo.id);
   }
@@ -130,6 +133,7 @@ export async function writeCareEvent(db,media,stayId,dogId,form,actor) {
   if (!create && !edit) {
     const params = [id,stayId,dogId,form.revision,stayId,dogId,...auth];
     const where = `id=? AND stay_id=? AND dog_id=? AND cloud_revision IS ? AND ${activeDog} AND ${authorizedStaff}`;
+    const videos=await eventVideos(db,[id]);
     const [photos,remove] = await db.batch([
       db.prepare(`SELECT p.id,p.object_key FROM care_photos p WHERE p.event_id IN (
         SELECT id FROM care_events WHERE ${where})`).bind(...params),
@@ -140,6 +144,9 @@ export async function writeCareEvent(db,media,stayId,dogId,form,actor) {
       if (validCarePhotoKey(photo.object_key,photo.id)) {
         try { await media.delete(photo.object_key); } catch {}
       }
+    }
+    if(media)for(const video of videos)for(const key of [video.object_key,video.poster_key]){
+      if(validVideoKey(key)||validPosterKey(key)){try{await media.delete(key);}catch{}}
     }
     return "saved";
   }

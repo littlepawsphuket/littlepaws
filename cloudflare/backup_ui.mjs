@@ -1,8 +1,8 @@
 export function backupScreen({node,results,message,storedArchive,back}) {
   function render(){
-    const panel=Object.assign(node('article'),{className:'card backup-workspace'}),save=Object.assign(node('button','ดาวน์โหลดข้อมูลและรูปทั้งหมด'),{type:'button'});
+    const panel=Object.assign(node('article'),{className:'card backup-workspace'}),save=Object.assign(node('button','ดาวน์โหลดข้อมูลและไฟล์ทั้งหมด'),{type:'button'});
     const status=node('p');status.setAttribute('role','status');
-    panel.append(node('h2','สำรองข้อมูล Cloudflare'),node('p','ไฟล์ ZIP รวมข้อมูล รูปน้อง กิจกรรม ลายเซ็น และ QR ชำระเงิน เก็บไฟล์ไว้ในที่ส่วนตัว เพราะมีข้อมูลลูกค้าและข้อมูลผู้ใช้'),save,status);
+    panel.append(node('h2','สำรองข้อมูล Cloudflare'),node('p','ไฟล์ ZIP รวมข้อมูล รูปน้อง วิดีโอ กิจกรรม ลายเซ็น และ QR ชำระเงิน เก็บไฟล์ไว้ในที่ส่วนตัว เพราะมีข้อมูลลูกค้าและข้อมูลผู้ใช้'),save,status);
     const manual=node('a','คู่มือสำรองและกู้คืน');manual.href='/api/manual/backup.html';manual.target='_blank';manual.rel='noopener';panel.append(manual);
     const previous=Object.assign(node('button','กลับไปตั้งค่า'),{type:'button'});previous.onclick=back;panel.append(previous);
     save.onclick=async()=>{
@@ -19,7 +19,7 @@ export function backupScreen({node,results,message,storedArchive,back}) {
           if(response.status===404 && snapshot.optional_media.includes(key))continue;
           if(!response.ok)throw Error('ไฟล์เปลี่ยนระหว่างสำรอง กรุณากดสำรองใหม่');
           const bytes=new Uint8Array(await response.arrayBuffer());total+=bytes.length;
-          if(total>64*1024*1024)throw Error('รูปมีขนาดมากเกิน 64 MB กรุณาใช้ขั้นตอนสำรองขนาดใหญ่ในคู่มือ');
+          if(total>64*1024*1024)throw Error('ไฟล์แนบรวมเกิน 64 MB กรุณาใช้ขั้นตอนสำรองขนาดใหญ่ในคู่มือ รวมถึงไฟล์วิดีโอ');
           const digest=new Uint8Array(await crypto.subtle.digest('SHA-256',bytes));
           files['objects/'+key]=bytes;manifest.push({key,bytes:bytes.length,sha256:[...digest].map(v=>v.toString(16).padStart(2,'0')).join('')});
         }

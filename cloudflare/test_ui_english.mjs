@@ -20,7 +20,7 @@ export async function testUiEnglish(){
   }
   assert.match(englishFunctions.main,/Edit stay/);
   assert.match(englishFunctions.accountScreen,/Current password/);
-  assert.match(englishFunctions.backupScreen,/Download all data and photos/);
+  assert.match(englishFunctions.backupScreen,/Download all data and attachments/);
   assert.match(englishFunctions.reportScreen,/lang === "en" \? "en-GB" : "th-TH"/); // Document language remains independently selectable.
   assert.ok(englishFunctions.dashboardScreen.includes('"ค่าฝากเลี้ยง":"#24796b"')); // Data category keys must not change.
   const english=uiValues(intakeGroups,'en');

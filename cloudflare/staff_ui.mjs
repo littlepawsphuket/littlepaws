@@ -1,3 +1,5 @@
+import {videoCss} from './care_videos.mjs';
+import {prepareActivityVideo,uploadActivityFile} from './care_video_ui.mjs';
 import {overnightPricing} from "./boarding_pricing.mjs";
 import {interactionCss,notificationCss} from "./care_interactions.mjs";
 import {couponScreen} from "./coupon_ui.mjs";
@@ -96,7 +98,7 @@ const css = `
   #stays>article>button{margin-top:1rem}
 `;
 
-function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScreen,reportScreen,applyTheme,themeLabels,ledgerKinds,ledgerCategories,canExport,installCarePhotoViewer,accountScreen,backupScreen,storedArchive,uiLabels,overnightPricing) {
+function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScreen,reportScreen,applyTheme,themeLabels,ledgerKinds,ledgerCategories,canExport,installCarePhotoViewer,accountScreen,backupScreen,storedArchive,uiLabels,overnightPricing,prepareActivityVideo,uploadActivityFile) {
   installCarePhotoViewer();
   const translateLabel=value=>Object.hasOwn(uiLabels,value) ? uiLabels[value] : value;
   for(const link of document.querySelectorAll('[data-ui-language]'))link.addEventListener('click',()=>{
@@ -1977,7 +1979,7 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
       }
       form.append(dateGrid);
       for (const [caption,input] of [["ประเภทกิจกรรม",activity],["รายละเอียดเพิ่มเติม",note],
-        ["แสดงข้อความและรูปกิจกรรมนี้ให้ลูกค้าเห็น",visible]]) {
+        ["แสดงกิจกรรม รูปภาพ และวิดีโอให้ลูกค้าเห็น",visible]]) {
         const label = node("label",caption);
         if(input === visible) {label.className="care-share-opt-in";label.prepend(input);} else label.append(input);
         form.append(label);
@@ -2053,6 +2055,23 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
         attachments.append(input,choose,selected);
       }
       form.append(attachments);
+      const videoAttachments=node("fieldset");videoAttachments.className="intake-details";
+      videoAttachments.append(node("legend","วิดีโอกิจกรรม · สูงสุด 2 คลิป"),node("p","MP4 / MOV · ไม่เกิน 30 วินาที และ 50 MB ต่อคลิป · ไม่ย่อวิดีโออัตโนมัติ"));
+      const videoRemovals=new Map();
+      for(const video of event?.videos || []){
+        const item=node("div"),player=Object.assign(node("video"),{controls:true,preload:"none"});player.setAttribute("playsinline","");
+        player.src=endpoint+"/videos/"+video.id;if(video.has_poster)player.poster=player.src+"/poster.jpg";
+        player.style.cssText="width:100%;max-height:16rem;border-radius:12px";
+        const check=Object.assign(node("input"),{type:"checkbox"}),label=node("label","นำวิดีโอนี้ออก");label.prepend(check);item.append(player,label);videoAttachments.append(item);videoRemovals.set(check,video);
+      }
+      const videoGallery=Object.assign(node("input"),{type:"file",accept:"video/mp4,video/quicktime,.mp4,.mov,.m4v",multiple:true});
+      const videoCamera=Object.assign(node("input"),{type:"file",accept:"video/*"});videoCamera.setAttribute("capture","environment");
+      for(const [caption,input] of [["▶ เลือกวิดีโอ",videoGallery],["🎥 ถ่ายวิดีโอ",videoCamera]]){
+        input.hidden=true;const choose=Object.assign(node("button",caption),{type:"button",className:"secondary care-file-action"});choose.onclick=()=>input.click();
+        const selected=node("small");selected.setAttribute("role","status");input.onchange=()=>{selected.textContent=[...input.files].map(file=>file.name+" · "+(file.size/1000000).toFixed(1)+" MB").join(", ");};videoAttachments.append(input,choose,selected);
+      }
+      form.append(videoAttachments);
+
       const submit = node("button","บันทึกกิจกรรม");
       const cancel = Object.assign(node("button","ยกเลิก"),{type:"button",className:"secondary"});
       cancel.onclick = () => editor.close();
@@ -2068,6 +2087,7 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
       const createKey = key();
       let savedEvent;
       let photoWork;
+      let videoWork;
       async function savePhotos() {
         const url = endpoint+"/events/"+savedEvent.eventId+"/photos";
         for (const photo of photoWork.remove) {
@@ -2081,14 +2101,28 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
           if (!response.ok) throw Error();
         }
       }
+      async function saveVideos(){
+        const url=endpoint+"/events/"+savedEvent.eventId+"/videos";
+        for(const video of videoWork.remove){if(video.done)continue;const response=await fetch(url+"/"+video.id,{method:"DELETE",headers:{"Content-Type":"application/json"},body:JSON.stringify({key:video.key,revision:savedEvent.revision})});if(!response.ok)throw Error();video.done=true;}
+        for(let i=0;i<videoWork.add.length;i++){
+          const video=videoWork.add[i];
+          if(!video.videoId){const result=await uploadActivityFile(url,video.file,{"Content-Type":video.file.type==="video/quicktime"?"video/quicktime":"video/mp4","X-Event-Revision":savedEvent.revision,"X-Upload-Key":video.key,"X-Video-Size":String(video.file.size)},percent=>{outcome.textContent="กำลังอัปโหลดวิดีโอ "+(i+1)+"/"+videoWork.add.length+" · "+percent+"%";});video.videoId=result.videoId;}
+          if(!video.posterSaved){const response=await fetch(url+"/"+video.videoId+"/poster",{method:"POST",headers:{"Content-Type":"image/jpeg","X-Event-Revision":savedEvent.revision},body:video.poster});if(!response.ok)throw Error();video.posterSaved=true;}
+        }
+      }
       form.onsubmit = async (action) => {
         action.preventDefault();
-        submit.disabled = true;
+        submit.disabled = true;cancel.disabled=true;
         try {
           if (!savedEvent) {
             const files = [...gallery.files,...camera.files];
             const removed = [...removals].filter(([control]) => control.checked).map(([,photo]) => photo);
             if (files.length + removals.size - removed.length > 4) throw Error("แนบได้สูงสุด 4 รูปต่อกิจกรรม");
+            const videoFiles=[...videoGallery.files,...videoCamera.files],removedVideos=[...videoRemovals].filter(([control])=>control.checked).map(([,video])=>({...video}));
+            if(videoFiles.length+videoRemovals.size-removedVideos.length>2)throw Error("แนบได้สูงสุด 2 วิดีโอต่อกิจกรรม");
+            const preparedVideos=[];
+            for(const file of videoFiles){outcome.textContent="กำลังตรวจวิดีโอและเตรียมภาพปก…";preparedVideos.push(await prepareActivityVideo(file,key()));}
+            videoWork={add:preparedVideos,remove:removedVideos};
             const add = [];
             for (const file of files) add.push({image:await resizedPhoto(file),key:key()});
             photoWork = {add,remove:removed};
@@ -2098,6 +2132,7 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
             for (const field of form.querySelectorAll("input,textarea,select")) field.disabled = true;
           }
           await savePhotos();
+          await saveVideos();
           if (form.isConnected && !controller.signal.aborted) {
             editor.close();
             editor.replaceChildren();
@@ -2111,9 +2146,10 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
             status.textContent = "บันทึกกิจกรรมแล้ว";
           }
         } catch (error) {
-          outcome.textContent = savedEvent ? "บันทึกกิจกรรมแล้ว แต่รูปบางรูปยังไม่สำเร็จ ลองส่งรูปอีกครั้ง" : error.message;
-          if (savedEvent) submit.textContent = "ลองส่งรูปอีกครั้ง";
-        } finally { submit.disabled = false; }
+          const videoErrors={invalid_size:"วิดีโอต้องไม่เกิน 50 MB",too_long:"วิดีโอต้องไม่เกิน 30 วินาที",invalid_video:"รูปแบบวิดีโอไม่รองรับ กรุณาลองใช้ MP4 (H.264)"};
+          outcome.textContent = (savedEvent ? "บันทึกกิจกรรมแล้ว แต่ไฟล์บางรายการยังไม่สำเร็จ กรุณาลองส่งไฟล์อีกครั้ง" : error.message)+(videoErrors[error.status] ? " · "+videoErrors[error.status] : "");
+          if (savedEvent) submit.textContent = "ลองส่งไฟล์อีกครั้ง";
+        } finally { submit.disabled = false;cancel.disabled=false; }
       };
     }
     async function loadTimeline(reset) {
@@ -2174,6 +2210,16 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
               gallery.append(tile);
             }
             card.append(gallery);
+          }
+          if(event.videos?.length){
+            const gallery=Object.assign(node("div"),{className:"care-video-gallery"});
+            for(const video of event.videos){const tile=Object.assign(node("div"),{className:"care-video-tile"});
+              const player=Object.assign(node("video"),{controls:true,preload:"none"});player.setAttribute("playsinline","");player.setAttribute("aria-label","วิดีโอกิจกรรม");
+              const url=endpoint+"/videos/"+video.id;if(video.has_poster)player.poster=url+"/poster.jpg";
+              const source=Object.assign(node("source"),{src:url,type:video.mime});player.append(source);
+              const link=Object.assign(node("a","เปิดวิดีโอ หากอุปกรณ์นี้เล่นไม่ได้"),{href:url,target:"_blank",rel:"noopener noreferrer"});
+              tile.append(player,node("p","▶ "+Math.ceil(video.duration_ms/1000)+" วินาที · "+(video.byte_size/1000000).toFixed(1)+" MB"),link);gallery.append(tile);
+            }card.append(gallery);
           }
           card.append(careDiscussion(event,stayId,dog.id,showingPublic));
           if (!showingPublic && data.status === "checked_in") {
@@ -2942,7 +2988,7 @@ export function outstandingPage(isAdmin = false,canExport = false,theme = "class
     <link rel="icon" href="/static/little-paws-icon.png">
     <style nonce="${nonce}">${css}${careParityCss}${boardingBookingCss}${workspaceCss}</style>
     <link rel="stylesheet" href="/static/style.css?v=80">
-    <style nonce="${nonce}">${macStyleBridge}\n${careGalleryCss}\n${compactBoardingCss}\n${interactionCss}\n${notificationCss}\n${checkinTouchCss}</style>
+    <style nonce="${nonce}">${macStyleBridge}\n${careGalleryCss}\n${videoCss}\n${compactBoardingCss}\n${interactionCss}\n${notificationCss}\n${checkinTouchCss}</style>
     <body class="staff-app" data-theme="${themeName(theme)}">
     ${staffHeader(theme,isAdmin,displayName,language)}
     <main>
@@ -3028,11 +3074,11 @@ export function outstandingPage(isAdmin = false,canExport = false,theme = "class
       <div id="ledger-content" aria-live="polite"></div>
     </dialog>
     ${staffFooter}
-    <script nonce="${nonce}">(${uiFunction("main",main,language)})(${JSON.stringify(uiValues(intakeGroups,language))},${uiFunction("couponScreen",couponScreen,language)},${uiFunction("settingsScreen",settingsScreen,language)},${uiFunction("ledgerScreen",ledgerScreen,language)},${uiFunction("dashboardScreen",dashboardScreen,language)},${uiFunction("reportScreen",reportScreen,language)},${applyStaffTheme.toString()},${JSON.stringify(uiValues(themes,language))},${JSON.stringify(uiValues(ledgerKinds,language))},${JSON.stringify(ledgerCategories)},${canExport},${installCarePhotoViewer.toString()},${uiFunction("accountScreen",accountScreen,language)},${uiFunction("backupScreen",backupScreen,language)},${storedArchive.toString()},${JSON.stringify(language==="en" ? fixedUiLabels : {})},${overnightPricing.toString()})</script></body></html>`,language), {
+    <script nonce="${nonce}">(${uiFunction("main",main,language)})(${JSON.stringify(uiValues(intakeGroups,language))},${uiFunction("couponScreen",couponScreen,language)},${uiFunction("settingsScreen",settingsScreen,language)},${uiFunction("ledgerScreen",ledgerScreen,language)},${uiFunction("dashboardScreen",dashboardScreen,language)},${uiFunction("reportScreen",reportScreen,language)},${applyStaffTheme.toString()},${JSON.stringify(uiValues(themes,language))},${JSON.stringify(uiValues(ledgerKinds,language))},${JSON.stringify(ledgerCategories)},${canExport},${installCarePhotoViewer.toString()},${uiFunction("accountScreen",accountScreen,language)},${uiFunction("backupScreen",backupScreen,language)},${storedArchive.toString()},${JSON.stringify(language==="en" ? fixedUiLabels : {})},${overnightPricing.toString()},${prepareActivityVideo.toString()},${uploadActivityFile.toString()})</script></body></html>`,language), {
     headers: {
       "Content-Type":"text/html; charset=utf-8", "Cache-Control":"private, no-store",
       "X-Content-Type-Options":"nosniff",
-      "Content-Security-Policy":`default-src 'none'; script-src 'nonce-${nonce}'; style-src 'self' 'nonce-${nonce}'; style-src-attr 'unsafe-inline'; connect-src 'self'; img-src 'self' blob: data:; font-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'`,
+      "Content-Security-Policy":`default-src 'none'; script-src 'nonce-${nonce}'; style-src 'self' 'nonce-${nonce}'; style-src-attr 'unsafe-inline'; connect-src 'self'; media-src 'self' blob:; img-src 'self' blob: data:; font-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'`,
     },
   });
 }

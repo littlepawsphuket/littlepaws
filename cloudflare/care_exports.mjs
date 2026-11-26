@@ -1,3 +1,5 @@
+import {videoQr} from './care_video_documents.mjs';
+import {eventVideos,validPosterKey} from './care_videos.mjs';
 import {careImageCss,customerImageViewport} from "./customer_image_styles.mjs";
 import {documentAssets} from "./document_data.mjs";
 import {dogIcon,escape,palette,picture} from "./document_layout.mjs";
@@ -25,7 +27,7 @@ export async function exportCare(env,stayId,dogId,{lang,day,format}) {
       FROM stay_dogs sd JOIN dogs d ON d.id=sd.dog_id JOIN stays s ON s.id=sd.stay_id
       JOIN customers c ON c.id=s.customer_id LEFT JOIN dog_photos p ON p.dog_id=d.id
       WHERE sd.stay_id=? AND sd.dog_id=?`).bind(stayId,dogId),
-    env.DB.prepare(`SELECT e.kind,e.activity_label,e.recorded_at,e.note,
+    env.DB.prepare(`SELECT e.id,e.kind,e.activity_label,e.recorded_at,e.note,
       (SELECT json_group_array(json_array(p.id,p.object_key)) FROM care_photos p WHERE p.event_id=e.id) AS photos
       FROM care_events e WHERE e.stay_id=? AND e.dog_id=? AND e.customer_visible=1
         AND (?='all' OR substr(e.recorded_at,1,10)=?)
@@ -37,6 +39,12 @@ export async function exportCare(env,stayId,dogId,{lang,day,format}) {
   if (format !== "html" && !env.BROWSER) return new Response(null,{status:503,headers:privateDocumentHeaders});
   const {theme,logo,font,mascot,asset} = await documentAssets(env);
   const profileImage = validDogPhotoKey(dog.object_key,dogId) ? await asset(dog.object_key,"image/jpeg",512*1024) : null;
+  const videoRows=await eventVideos(env.DB,events.results.map(event=>event.id));
+  let customerLink=null;
+  if(videoRows.length){
+    const link=await env.DB.prepare('SELECT token FROM care_share_links WHERE stay_id=? AND dog_id=?').bind(stayId,dogId).first();
+    try{const origin=new URL(env.TIMELINE_ORIGIN);if(origin.protocol==='https:' && /^[A-Za-z0-9_-]{43}$/.test(link?.token || ''))customerLink=origin.origin+'/updates/'+link.token;}catch{}
+  }
   const recorded = [];
   for (const event of events.results) {
     const photos = [];
@@ -47,7 +55,13 @@ export async function exportCare(env,stayId,dogId,{lang,day,format}) {
       if (!source) return exportLimit(lang);
       photos.push(source);
     }
-    recorded.push({...event,photos});
+    const videos=[];
+    for(const video of videoRows.filter(video=>video.event_id===event.id)){
+      const poster=validPosterKey(video.poster_key) ? (format==='html' ? `/api/stays/${stayId}/dogs/${dogId}/timeline/videos/${video.id}/poster.jpg` : await asset(video.poster_key,'image/jpeg',2*1024*1024)) : null;
+      if(video.poster_key && !poster)return exportLimit(lang);
+      videos.push({poster,duration_ms:video.duration_ms,href:customerLink?customerLink+'?day=all&lang='+lang+'#event-'+event.id:null});
+    }
+    recorded.push({...event,photos,videos});
   }
   const html = careDocumentHtml({dog,profileImage,events:recorded,theme,logo,font,mascot,lang,day,format});
   return renderExport(env,{html,lang,format,imageViewport:customerImageViewport,filename:`little-paws-care-${stayId}-${dogId}-${day}-${lang}.${format}`});
@@ -87,7 +101,7 @@ export function careDocumentHtml({dog,profileImage,events,theme,logo,font,mascot
       <h3>${escape(careActivityName(item,lang))}</h3></header>
       ${item.note ? `<p>${escape(item.note)}</p>` : ""}
       ${item.photos.length ? `<div class="photos" data-count="${item.photos.length}">
-        ${item.photos.map((photo) => picture(photo,en ? "Activity photo" : "รูปกิจกรรม")).join("")}</div>` : ""}
+        ${item.photos.map((photo) => picture(photo,en ? "Activity photo" : "รูปกิจกรรม")).join("")}</div>` : ""}${(item.videos || []).map(video=>`<div style="margin-top:10px;padding:10px;border:1px solid #dae5df;border-radius:14px;break-inside:avoid">${video.poster?`<img src="${escape(video.poster)}" alt="${en?'Video cover':'ภาพปกวิดีโอ'}" style="display:block;max-width:100%;max-height:260px;border-radius:12px;object-fit:contain">`:''}<p>▶ ${en?'Activity video':'วิดีโอกิจกรรม'} · ${Math.ceil(video.duration_ms/1000)} ${en?'seconds':'วินาที'}</p>${video.href?`<a href="${escape(video.href)}" style="display:inline-block">${videoQr(video.href)}${en?'Open timeline to watch':'เปิดไทม์ไลน์เพื่อดูวิดีโอ'}</a>`:`<small>${en?'Watch this video in the activity timeline.':'ดูวิดีโอนี้ได้ในหน้าไทม์ไลน์กิจกรรม'}</small>`}</div>`).join('')}
       </article>`).join("")}</div></section>`).join("");
   return `<!doctype html><html lang="${lang}"><head><meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1"><title>${escape(title)} · Little Paws</title>

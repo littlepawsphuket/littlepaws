@@ -1,3 +1,5 @@
+import {videoQr} from './care_video_documents.mjs';
+import {eventVideos,videoResponse,videoCss} from './care_videos.mjs';
 import {customerTheme,customerThemeCss,customerThemeBanner,customerThemeAsset} from "./customer_theme.mjs";
 import {eventInteractions,guardianInteraction} from "./care_interactions.mjs";
 import {discussionMarkup,guardianInteractions} from "./guardian_interactions_ui.mjs";
@@ -16,7 +18,7 @@ const headers = {
   "Referrer-Policy": "no-referrer",
   "X-Robots-Tag": "noindex, nofollow, noarchive",
   "X-Content-Type-Options": "nosniff",
-  "Content-Security-Policy": "default-src 'none'; script-src 'self'; connect-src 'self'; img-src 'self'; font-src 'self'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'",
+  "Content-Security-Policy": "default-src 'none'; script-src 'self'; connect-src 'self'; media-src 'self'; img-src 'self'; font-src 'self'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'",
 };
 
 function respond(body, status, moreHeaders = {}) {
@@ -92,19 +94,25 @@ async function timeline(env, token, url, printable = false) {
   const availableDays = [...new Set([today, ...visibleDays])].sort().reverse();
   let lastDay = "";
   const feedback=printable ? {comments:[],hearts:[]} : await eventInteractions(env.DB,activities.results.map(event=>event.id));
+  const videos=await eventVideos(env.DB,activities.results.map(event=>event.id));
   const cards = activities.results.map((event) => {
     const eventDay = event.recorded_at.slice(0, 10);
     const heading = eventDay !== lastDay ? `<h2>${escape(dateLabel(eventDay))}</h2>` : "";
     lastDay = eventDay;
     const label = careActivityName(event,lang);
     const photos = (event.photos || "").split(",").filter((id) => /^\d+$/.test(id));
-    return `${heading}<article><h3><time>${escape(event.recorded_at.slice(11, 16))}</time>
+    return `${heading}<article id="event-${event.id}"><h3><time>${escape(event.recorded_at.slice(11, 16))}</time>
       ${escape(label)}</h3><p>${escape(event.note)}</p>
       <div class="photos${printable ? "" : " care-media-gallery"}">${photos.map((id) => {
         const image = `<img loading="${printable ? "eager" : "lazy"}" src="${photoPath}/photos/${id}" alt="${en ? "Activity photo" : "รูปกิจกรรม"}">`;
         const liked=feedback.hearts.some(heart=>heart.photo_id===Number(id));
         return printable ? image : `<div class="care-photo-tile"><a href="${photoPath}/photos/${id}" data-care-photo aria-haspopup="dialog">${image}</a><button type="button" class="care-heart" data-photo="${id}" aria-pressed="${liked}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8Z"/></svg><span>${liked?(en?'Loved · 1':'ส่งหัวใจแล้ว · 1'):(en?'Send love':'ส่งหัวใจ')}</span></button></div>`;
-      }).join("")}</div>${printable ? "" : discussionMarkup(feedback.comments.filter(comment=>comment.event_id===event.id),event.id,route,lang)}</article>`;
+      }).join("")}</div>${videos.filter(video=>video.event_id===event.id).length ? `<div class="care-video-gallery">${videos.filter(video=>video.event_id===event.id).map(video=>{
+        const videoUrl=photoPath+'/videos/'+video.id,poster=video.poster_key?videoUrl+'/poster.jpg':null;
+        const label=(en?'Activity video':'วิดีโอกิจกรรม')+' · '+Math.ceil(video.duration_ms/1000)+(en?' sec':' วินาที');
+        return printable ? `<div class="care-video-tile">${poster?`<img src="${poster}" alt="${label}" style="max-width:100%;max-height:65mm;border-radius:12px">`:''}<p>▶ ${label}</p><a href="${url.origin+route}?day=all&amp;lang=${lang}#event-${event.id}">${videoQr(url.origin+route+'?day=all&lang='+lang+'#event-'+event.id)}${en?'Open timeline to watch':'เปิดไทม์ไลน์เพื่อดูวิดีโอ'}</a></div>`
+          : `<div class="care-video-tile"><video controls playsinline preload="none" aria-label="${label}" ${poster?`poster="${poster}"`:''}><source src="${videoUrl}" type="${video.mime}"></video><p>▶ ${label}</p><a href="${videoUrl}" target="_blank" rel="noopener noreferrer">${en?'Open video if it does not play':'เปิดวิดีโอ หากอุปกรณ์นี้เล่นไม่ได้'}</a></div>`;
+      }).join('')}</div>`:''}${printable ? "" : discussionMarkup(feedback.comments.filter(comment=>comment.event_id===event.id),event.id,route,lang)}</article>`;
   }).join("");
   const expiryHours = link.expiry_hours === null ? 48 : Number(link.expiry_hours);
   const hours = Number.isInteger(expiryHours) ? expiryHours : 48;
@@ -122,6 +130,7 @@ async function timeline(env, token, url, printable = false) {
     <meta name="viewport" content="width=device-width,initial-scale=1"><title>${title} · Little Paws</title>
     <style>
     @font-face{font-family:"Little Paws Sukhumvit";src:url("${photoPath}/font.woff2") format("woff2");font-display:swap}
+    ${videoCss}
     body{margin:0;background:#f2f7f3;color:#203c30;font:1rem/1.5 "Little Paws Sukhumvit","Sukhumvit Set",system-ui,sans-serif}
     main{max-width:52rem;margin:auto;padding:1.15rem}header,article{background:#fff;border:1px solid #c9ded2;border-radius:1rem;padding:1rem}
     .profile-heading{display:flex;align-items:center;gap:.85rem;margin-top:.65rem}
@@ -243,6 +252,14 @@ export default {
         if(!form || typeof form!=="object" || Array.isArray(form))return json({status:"invalid"},400);
         const result=await guardianInteraction(env.DB,token,form,shareActive);
         return json(result,{saved:200,invalid:400,not_found:404,rate_limited:429}[result.status] || 400);
+      }
+      if((path.length===5 || path.length===6) && path[3]==='videos' && /^\d+$/.test(path[4]) && (path.length===5 || path[5]==='poster.jpg')){
+        if(!['GET','HEAD'].includes(request.method))return respond('Method not allowed',405);
+        const id=Number(path[4]);if(!Number.isSafeInteger(id)||id<1)return missing();
+        const row=await env.DB.prepare(`SELECT v.* ${activeLink}
+          JOIN care_events e ON e.stay_id=l.stay_id AND e.dog_id=l.dog_id JOIN care_videos v ON v.event_id=e.id
+          WHERE ${activeCondition} AND e.customer_visible=1 AND v.id=?`).bind(token,id).first();
+        return row && env.MEDIA ? videoResponse(env.MEDIA,row,request,path.length===6) : missing();
       }
       if (request.method !== "GET") return respond("Method not allowed", 405, {Allow:"GET"});
       if (path.length === 3) {

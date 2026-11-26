@@ -119,3 +119,13 @@ The manually managed ledger in settings supports filters, CSV, shared add/edit f
 - Production boarding PDFs were downloaded and visually checked in Thai and English, including dog photo, terms and customer signature. A real scoped timeline was checked in both languages, including its photo modal, view counter and PDF with profile photo. Test visits count toward the displayed views.
 - GitHub contains source only. Keep database exports, customer photos, signatures, receipts, payment QR, credentials and backups private in D1/R2 or protected local storage.
 - Current deployment is manual. GitHub source updates do not automatically publish the Workers. Use the matching production Wrangler config with an authorized deployment identity, and retain Access and private bucket settings. No broad CI credential was created.
+
+
+### Activity video attachments
+Apply `care_videos.sql` to each D1 database before deploying the staff and customer timeline Workers. Video and poster bytes stay in the existing private R2 binding; the table stores pointers, byte size, duration, codec and the retry key. No public bucket or new credentials are required.
+
+Each activity accepts up to two MP4/MOV clips, 50,000,000 bytes and 30 seconds each. H.264 and HEVC sample entries are accepted; unsupported codecs require conversion before upload. The app does not transcode or compress the original clip. Browser preparation creates a JPEG cover; private playback streams only after the user presses play. Workers enforce exact upload size with FixedLengthStream, inspect bounded container metadata from R2 ranges, and enforce the actual container duration independently of the browser. Byte-range playback and HEAD are supported. All parent requests retain dog/event visibility, revoked-link and checkout expiry checks.
+
+PDF/image activity summaries include video covers and a QR/link to an existing scoped customer timeline where available. Videos and covers are included in portable backup manifests. The existing 64 MB web-backup limit still applies to aggregate attachments; larger collections must use the documented D1/R2 backup procedure.
+
+Run `node cloudflare/test_care_videos.mjs` plus the existing integration suite after changing upload, playback, sharing or export behavior.

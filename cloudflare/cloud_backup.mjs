@@ -1,6 +1,6 @@
 const tableNames=['customers','dogs','stays','stay_dogs','transactions','appointments','appointment_dogs',
   'dog_photos','stay_consents','system_settings','shop_holidays','coupons','coupon_uses','stay_payment_deletions',
-  'boarding_charges','care_comment_state','care_comment_likes','care_comment_reads','care_comments','care_photo_hearts','care_events','care_photos','app_users','app_user_photos','care_share_links','staff_access_identities',
+  'care_videos','boarding_charges','care_comment_state','care_comment_likes','care_comment_reads','care_comments','care_photo_hearts','care_events','care_photos','app_users','app_user_photos','care_share_links','staff_access_identities',
   'booking_deposit_deletions','staff_credential_attempts','staff_security_events'];
 export const backupBrandKeys=[...['little-paws-logo.png','balen-gucci-relax.webp','sukhumvit-set.woff2',
   ...['christmas','valentine','halloween','songkran','buddhist','japan'].map(theme=>'mascot-'+theme+'.webp')].map(name=>'brand/'+name),
@@ -17,6 +17,7 @@ export async function cloudSnapshot(db) {
   const rows=Object.fromEntries(tables.map((table,index)=>[table,result[index].results]));
   const media=new Set();
   for(const table of ['dog_photos','care_photos','app_user_photos'])for(const row of rows[table] || [])if(row.object_key)media.add(row.object_key);
+  for(const row of rows.care_videos || []){media.add(row.object_key);if(row.poster_key)media.add(row.poster_key);}
   for(const row of rows.transactions || [])if(row.receipt)media.add('receipts/'+row.receipt);
   const payload={format:'little-paws-cloud-backup',version:1,created_at:new Date().toISOString(),schema,rows,
     required_media:[...media].sort(),optional_media:['payment/payment-qr.jpg',...backupBrandKeys]};
@@ -30,8 +31,9 @@ export async function backupMedia(env,key) {
     const record=await env.DB.prepare(`SELECT 1 FROM dog_photos WHERE object_key=?
       UNION ALL SELECT 1 FROM care_photos WHERE object_key=?
       UNION ALL SELECT 1 FROM app_user_photos WHERE object_key=?
+      UNION ALL SELECT 1 FROM care_videos WHERE object_key=? OR poster_key=?
       UNION ALL SELECT 1 FROM transactions WHERE receipt!='' AND 'receipts/'||receipt=? LIMIT 1`)
-      .bind(key,key,key,key).first();
+      .bind(key,key,key,key,key,key).first();
     if(!record)return null;
   }
   return env.MEDIA.get(key);

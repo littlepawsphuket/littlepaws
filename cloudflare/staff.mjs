@@ -1,3 +1,4 @@
+import {videoLimit,addCareVideo,saveVideoPoster,removeCareVideo,staffVideo,videoResponse} from './care_videos.mjs';
 import {staffCommentMutation,staffReply,careNotifications,markCareCommentsRead} from "./care_interactions.mjs";
 import {stayCardDogs} from "./card_dogs.mjs";
 import { receiveStayPayment, stayBalance, authorizedStaff } from "./stay_payments.mjs";
@@ -146,6 +147,8 @@ export default {
     const dogMatch = /^\/api\/customers\/(\d+)\/dogs(?:\/(\d+))?$/.exec(url.pathname);
     const customerMatch = /^\/api\/customers\/(\d+)(?:\/dogs\/(\d+)\/photo)?$/.exec(url.pathname);
     const careExportMatch = /^\/api\/stays\/(\d+)\/dogs\/(\d+)\/timeline\/export\.(html|pdf|png)$/.exec(url.pathname);
+    const videoReadMatch=/^\/api\/stays\/(\d+)\/dogs\/(\d+)\/timeline\/videos\/(\d+)(\/poster\.jpg)?$/.exec(url.pathname);
+    const videoWriteMatch=/^\/api\/stays\/(\d+)\/dogs\/(\d+)\/timeline\/events\/(\d+)\/videos(?:\/(\d+)(\/poster)?)?$/.exec(url.pathname);
     const careMediaMatch = /^\/api\/stays\/(\d+)\/dogs\/(\d+)\/timeline\/events\/(\d+)\/photos(?:\/(\d+))?$/.exec(url.pathname);
     const careNotificationRoute = url.pathname === "/api/care/notifications";
     const timelineMatch = /^\/api\/stays\/(\d+)\/dogs\/(\d+)\/timeline(?:\/photos\/(\d+))?$/.exec(url.pathname);
@@ -172,7 +175,7 @@ export default {
     const reopenMatch = /^\/api\/stays\/(\d+)\/recheck-in$/.exec(url.pathname);
     const backupRoute=['/api/backup/snapshot','/api/backup/media'].includes(url.pathname);
     const manualMatch=/^\/api\/manual\/(?:(usage|backup)\.html|images\/([a-z]+)\.webp)$/.exec(url.pathname);
-    if (!careNotificationRoute && !backupRoute && !manualMatch && !userMatch && !accountMatch && !reopenMatch && !match && !stayChangeMatch && !depositMatch && !dogMatch && !customerMatch && !bookingMatch && !checkInMatch && !couponMatch && !documentMatch && !directCheckIn && !directPreview && !couponPreview && !staySummaryMatch && !timelineMatch && !careMediaMatch && !careExportMatch && !isFile && !settings && !holidayMatch && !history && !ledgerMatch && !assetMatch && !overview && !reportMatch && !["/", "/api/account", "/api/dashboard/finance", "/api/customers", "/api/bookings", "/api/bookings/rates", "/api/bookings/calendar", "/api/bookings/pending", "/api/stays/outstanding", "/api/stays/current"].includes(url.pathname)) return json({error: "not_found"}, 404);
+    if (!videoReadMatch && !videoWriteMatch && !careNotificationRoute && !backupRoute && !manualMatch && !userMatch && !accountMatch && !reopenMatch && !match && !stayChangeMatch && !depositMatch && !dogMatch && !customerMatch && !bookingMatch && !checkInMatch && !couponMatch && !documentMatch && !directCheckIn && !directPreview && !couponPreview && !staySummaryMatch && !timelineMatch && !careMediaMatch && !careExportMatch && !isFile && !settings && !holidayMatch && !history && !ledgerMatch && !assetMatch && !overview && !reportMatch && !["/", "/api/account", "/api/dashboard/finance", "/api/customers", "/api/bookings", "/api/bookings/rates", "/api/bookings/calendar", "/api/bookings/pending", "/api/stays/outstanding", "/api/stays/current"].includes(url.pathname)) return json({error: "not_found"}, 404);
     try {
       const user = await authorizedUser(env, ctx, request);
       if (!user) return json({error: "access_required"}, 403);
@@ -347,6 +350,33 @@ export default {
             (kind === "deposit") !== (paymentId !== null)) return json({error:"not_found"},404);
         const lang = url.searchParams.get("lang") === "en" ? "en" : "th";
         return await exportDocument(env,{kind,id,paymentId,format,lang});
+      }
+      if(videoReadMatch){
+        if(!['GET','HEAD'].includes(request.method))return json({error:'method_not_allowed'},405);
+        const [stayId,dogId,videoId]=videoReadMatch.slice(1,4).map(Number);
+        if(![stayId,dogId,videoId].every(id=>Number.isSafeInteger(id)&&id>0))return json({error:'not_found'},404);
+        const row=await staffVideo(env.DB,{stayId,dogId,videoId});
+        return row && env.MEDIA ? videoResponse(env.MEDIA,row,request,Boolean(videoReadMatch[4])) : json({error:'not_found'},404);
+      }
+      if(videoWriteMatch){
+        if(request.headers.get('Origin')!==url.origin)return json({error:'invalid_origin'},403);
+        if(!env.MEDIA)return json({error:'temporarily_unavailable'},503);
+        const [stayId,dogId,eventId,videoId]=videoWriteMatch.slice(1,5).map(v=>v===undefined?null:Number(v));
+        if(![stayId,dogId,eventId,videoId??1].every(id=>Number.isSafeInteger(id)&&id>0))return json({error:'not_found'},404);
+        const scope={stayId,dogId,eventId,videoId};let result;
+        if(videoId===null && request.method==='POST'){
+          if(!['video/mp4','video/quicktime','application/octet-stream'].includes(request.headers.get('Content-Type')))return json({status:'invalid_video'},415);
+          result=await addCareVideo(env.DB,env.MEDIA,scope,user,request);
+        }else if(videoWriteMatch[5] && request.method==='POST'){
+          if(request.headers.get('Content-Type')!=='image/jpeg')return json({status:'invalid'},415);
+          const bytes=await boundedBody(request,photoLimit);if(!bytes)return json({status:'invalid_size'},413);
+          result={status:await saveVideoPoster(env.DB,env.MEDIA,scope,user,bytes,request.headers.get('X-Event-Revision'))};
+        }else if(videoId!==null && !videoWriteMatch[5] && request.method==='DELETE'){
+          if(request.headers.get('Content-Type')?.split(';',1)[0]!=='application/json')return json({status:'invalid'},415);
+          const form=await smallJson(request);if(!form)return json({status:'invalid'},400);
+          result={status:await removeCareVideo(env.DB,env.MEDIA,scope,user,form)};
+        }else return json({error:'method_not_allowed'},405);
+        return json(result,{saved:200,invalid:400,invalid_video:415,invalid_size:413,too_long:422,conflict:409,upload_failed:503}[result.status]||400);
       }
       if (careMediaMatch) {
         const [stayId,dogId,eventId,photoId] = careMediaMatch.slice(1).map((value) => value === undefined ? null : Number(value));
