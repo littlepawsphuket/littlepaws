@@ -22,7 +22,7 @@ function box(bytes,offset,end){
 // Parse container metadata only. Never decode or buffer the video payload in a Worker.
 export function parseMovieMetadata(bytes){
  let duration=null,codec=null,videoTracks=0,boxes=0;
- function walk(start,end,depth){
+ function walk(start,end,depth,container){
   if(depth>8)throw Error('invalid_video');let handler=null,localCodec=null;
   for(let at=start;at<end;){if(++boxes>5000)throw Error('invalid_video');const b=box(bytes,at,end);at=b.end;
    const data=new DataView(bytes.buffer,bytes.byteOffset+b.start,b.end-b.start);
@@ -33,12 +33,13 @@ export function parseMovieMetadata(bytes){
     const scale=data.getUint32(scaleOffset),ticks=version===1?Number(data.getBigUint64(durationOffset)):data.getUint32(durationOffset);
     if(!scale||!Number.isSafeInteger(ticks)||ticks<=0)throw Error('invalid_video');duration=Math.ceil(ticks*1000/scale);
    }
-   if(b.type==='hdlr'){if(data.byteLength<12)throw Error('invalid_video');handler=four(bytes,b.start+8);}
+   // QuickTime also has a data-reference hdlr (alis) inside minf; it is not the media handler.
+   if(b.type==='hdlr'&&container==='mdia'){if(data.byteLength<12)throw Error('invalid_video');handler=four(bytes,b.start+8);}
    if(b.type==='stsd'){
     if(data.byteLength<8||data.getUint32(4)!==1)throw Error('invalid_video');const sample=box(bytes,b.start+8,b.end);localCodec=sample.type;
    }
    if(['moov','trak','mdia','minf','stbl'].includes(b.type)){
-    const child=walk(b.start,b.end,depth+1);if(child.handler)handler=child.handler;if(child.codec)localCodec=child.codec;
+    const child=walk(b.start,b.end,depth+1,b.type);if(child.handler)handler=child.handler;if(child.codec)localCodec=child.codec;
    }
   }
   if(handler==='vide'&&depth===2){videoTracks++;codec=localCodec;}

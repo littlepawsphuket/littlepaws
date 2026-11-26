@@ -19,6 +19,24 @@ function movie(seconds=10,codec='avc1',brand='isom'){
 for(const [seconds,expected] of [[1,1000],[10,10000],[30,30000]])assert.equal(parseMovieMetadata(movie(seconds).moov).duration_ms,expected);
 assert.throws(()=>parseMovieMetadata(movie(31).moov),/too_long/);assert.throws(()=>parseMovieMetadata(movie(10,'vp09').moov),/invalid_video/);
 assert.throws(()=>parseMovieMetadata(Buffer.from('<html>not video</html>')),/invalid_video/);
+// iPhone/QuickTime MOV includes minf/hdlr=alis for each track. Never let that
+// data-reference handler replace mdia/hdlr=vide (or count the audio as video).
+function quickTimeMovie(codec='avc1',seconds=29){
+ const handler=type=>{const data=Buffer.alloc(12);data.write(type,8);return atom('hdlr',data);};
+ const track=(type,codec)=>{const stsd=Buffer.alloc(8);stsd.writeUInt32BE(1,4);return atom('trak',atom('mdia',handler(type),atom('minf',handler('alis'),atom('stbl',atom('stsd',stsd,atom(codec,Buffer.alloc(8)))))));};
+ const mvhd=Buffer.alloc(20);mvhd.writeUInt32BE(15360,12);mvhd.writeUInt32BE(seconds*15360,16);
+ const moov=atom('moov',atom('mvhd',mvhd),track('vide',codec),track('soun','mp4a'));
+ return Buffer.concat([atom('ftyp',Buffer.from('qt  0000')),atom('wide'),atom('mdat',Buffer.alloc(16)),moov]);
+}
+for(const codec of ['avc1','hvc1']){
+ const bytes=quickTimeMovie(codec),media={async get(key,{range}){return {arrayBuffer:async()=>Uint8Array.from(bytes.subarray(range.offset,range.offset+range.length)).buffer};}};
+ assert.deepEqual(await inspectStoredVideo(media,'local',bytes.length),{duration_ms:29000,codec,mime:'video/quicktime'});
+}
+{
+ const bytes=quickTimeMovie('avc1',31),media={async get(key,{range}){return {arrayBuffer:async()=>Uint8Array.from(bytes.subarray(range.offset,range.offset+range.length)).buffer};}};
+ await assert.rejects(()=>inspectStoredVideo(media,'local',bytes.length),/too_long/);
+}
+
 const sqlite=new DatabaseSync(':memory:');sqlite.exec(`PRAGMA foreign_keys=ON;
  CREATE TABLE app_users(id INTEGER PRIMARY KEY,active,is_admin);INSERT INTO app_users VALUES(1,1,1),(2,0,0);
  CREATE TABLE staff_access_identities(user_id,email);INSERT INTO staff_access_identities VALUES(1,'staff@example.test'),(2,'off@example.test');
