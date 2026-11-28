@@ -6,6 +6,7 @@ const sql=new DatabaseSync(':memory:');
 sql.exec(`CREATE TABLE appointments(id INTEGER PRIMARY KEY,booking_number,customer_id,checkin,checkout,charged_nights,agreed_total,status,stay_id);
 CREATE TABLE customers(id INTEGER PRIMARY KEY,name);CREATE TABLE dogs(id INTEGER PRIMARY KEY,name,customer_id,archived);
 CREATE TABLE dog_photos(dog_id);CREATE TABLE appointment_dogs(appointment_id,dog_id,nightly_rate_cents);
+CREATE TABLE boarding_charges(appointment_id,stay_id,details);
 CREATE TABLE transactions(deposit_appointment_id,payment_type,amount);CREATE TABLE shop_holidays(id,name,starts_on,ends_on);
 INSERT INTO customers VALUES(1,'Test');INSERT INTO dogs VALUES(1,'Dog',1,0);`);
 for(let i=1;i<=30;i++){

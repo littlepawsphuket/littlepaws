@@ -1,3 +1,6 @@
+import {passExtensionUi} from './stay_pass/extension_ui.mjs';
+import {staffCheckoutAction,staffCheckoutCss} from './stay_pass/staff_checkout_ui.mjs';
+import {passCheckoutUi} from './stay_pass/checkout_ui.mjs';
 import {videoCss} from './care_videos.mjs';
 import {prepareActivityVideo,uploadActivityFile} from './care_video_ui.mjs';
 import {overnightPricing} from "./boarding_pricing.mjs";
@@ -13,7 +16,7 @@ import {reportScreen} from "./report_ui.mjs";
 import {applyStaffTheme,staffHeader,staffFooter,macStyleBridge} from "./staff_shell.mjs";
 import {installCarePhotoViewer} from "../app/static/care-gallery.js";
 import {workspaceCss} from "./workspace_styles.mjs";
-import {boardingBookingCss,compactBoardingCss} from "./boarding_booking_styles.mjs";
+import {boardingBookingCss,compactBoardingCss,extensionLayoutCss} from "./boarding_booking_styles.mjs";
 import {careParityCss,checkinTouchCss} from "./care_parity_styles.mjs";
 import {careGalleryCss} from "./care_gallery_styles.mjs";
 import {accountScreen} from './account_ui.mjs';
@@ -98,7 +101,7 @@ const css = `
   #stays>article>button{margin-top:1rem}
 `;
 
-function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScreen,reportScreen,applyTheme,themeLabels,ledgerKinds,ledgerCategories,canExport,installCarePhotoViewer,accountScreen,backupScreen,storedArchive,uiLabels,overnightPricing,prepareActivityVideo,uploadActivityFile) {
+function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScreen,reportScreen,applyTheme,themeLabels,ledgerKinds,ledgerCategories,canExport,installCarePhotoViewer,accountScreen,backupScreen,storedArchive,uiLabels,overnightPricing,prepareActivityVideo,uploadActivityFile,checkoutAction,checkoutView,passCheckoutWrites,extensionView,passExtensionWrites) {
   installCarePhotoViewer();
   const translateLabel=value=>Object.hasOwn(uiLabels,value) ? uiLabels[value] : value;
   for(const link of document.querySelectorAll('[data-ui-language]'))link.addEventListener('click',()=>{
@@ -220,7 +223,7 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
       }
       for (const booking of data.bookings) {
         if (date < booking.checkin || date > booking.checkout) continue;
-        const label = (booking.dogs || booking.customer) + (booking.stay_id ? " · เช็กอินแล้ว" : "");
+        const label = (booking.dogs || booking.customer) + (booking.stay_pass_badge ? " · ★ Stay Pass" : "") + (booking.stay_id ? " · เช็กอินแล้ว" : "");
         const open = Object.assign(node("button",label),{type:"button",title:booking.booking_number || label});
         open.className = "calendar-booking";
         open.dataset.state = booking.stay_id ? "checked_in" : "pending";
@@ -1271,6 +1274,7 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
     checkIn.disabled = booking.balance_cents === null;
     if (checkIn.disabled) checkIn.title = "กรุณาระบุราคาของสุนัขทุกตัวก่อนเช็กอิน";
     checkIn.addEventListener("click", () => bookingCheckIn(booking));
+    if(booking.stay_pass){edit.disabled=remove.disabled=true;edit.title=remove.title=document.documentElement.lang==='en'?'Review the Stay Pass allocation before editing or cancelling.':'กรุณาจัดการรายการใช้สิทธิ์ Stay Pass ก่อนแก้ไขหรือยกเลิก';checkIn.disabled=checkIn.disabled||booking.stay_pass.status!=='ready';}
     actions.append(checkIn,edit,remove);
     return actions;
   }
@@ -1416,6 +1420,9 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
     const returnTime = field("เวลานัดรับกลับ","time",booking.pricing?.checkout_time || draft?.checkoutTime || now);
     const chargeQuantity=field("จำนวนวัน / เดือน","number",draft ? draft.quantity100/100 : booking.charged_nights);
     chargeQuantity.min="0";chargeQuantity.step=(draft?.service || booking.service_type)==="monthly" ? "0.01" : "1";
+    const passContract=booking.stay_pass;
+    const passText=(th,en)=>document.documentElement.lang==='en'?en:th;
+    if(passContract)for(const input of [arrival,arrivalTime,pickupDate,returnTime,chargeQuantity])input.disabled=true;
     const originalPrice={total:booking.total_cents,balance:booking.balance_cents,discount:booking.discount_cents ?? draft?.discountCents ?? 0,
       rounding:booking.rounding_cents || 0};
     const legacyPrice=!draft && (!booking.pricing || booking.pricing.grandfathered);
@@ -1464,10 +1471,19 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
     const couponRow=Object.assign(node("div"),{className:"checkin-coupon-row"});couponRow.append(couponInput,applyCoupon);couponLabel.append(couponRow);
     couponPanel.classList.add("checkin-coupon-panel");couponPanel.append(couponLabel,resetCoupon,couponStatus);
     form.append(couponPanel);
+    if(passContract)couponPanel.remove();
     const totalLine = node("p");
     const signingBill=Object.assign(node("section"),{className:"checkin-signing-bill"});signingBill.setAttribute("aria-live","polite");
     const money = (cents) => baht.format(cents/100);
     function renderSigningBill(){
+      if(passContract){
+       const received=Math.max(0,Math.round(Number(amount.value||0)*100));
+       signingBill.replaceChildren(node('h4',passText('ตรวจสอบค่าใช้จ่ายก่อนลงนาม','Review charges before signing')),node('p','Stay Pass '+passContract.pass_number+' · '+(passContract.credit_units/4)+' '+passText('วัน','days')),
+        recordAmounts([[passText('ค่าบริการส่วนที่ชำระเป็นเงิน','Cash-covered service total'),booking.total_cents],[passText('รับมัดจำแล้ว','Deposits received'),booking.paid_cents||0],[passText('รับชำระครั้งนี้','Payment now'),received],[passText('ยอดค้างชำระหลังเช็กอิน','Balance after check-in'),Math.max(0,booking.balance_cents-received)]]));
+       if(passContract.cancellation_cash_fees_cents)signingBill.append(node('p',passText('ค่าบริการยกเลิกที่รวมมาจากการจอง: ','Cancellation fees carried from the booking: ')+money(passContract.cancellation_cash_fees_cents)));
+       if(passContract.settlement?.late_units>0)signingBill.append(node('p',passText('รับกลับล่าช้ารวม: ','Total late pickup: ')+(passContract.settlement.late_units/4)+' '+passText('วัน · หัก Pass: ','days · Covered by Pass: ')+(passContract.settlement.rows.reduce((n,r)=>n+(r.late_covered_units||0),0)/4)+' '+passText('วัน','days')+(Number.isSafeInteger(passContract.settlement.late_cash_cents)?' · '+passText('ค่ารับกลับช้าส่วนที่เป็นเงิน: ','Late pickup cash: ')+money(passContract.settlement.late_cash_cents):'')));
+       signingBill.append(node('p',passText('ใช้โควตาแทนค่าฝากตามรายละเอียดการจอง วันและเวลายึดตามที่ยืนยันไว้ หากต้องปรับ กรุณาตรวจรายการใช้สิทธิ์ก่อน','Boarding is covered by the confirmed pass allocation. To change dates or times, review the credit allocation first.')));return;
+      }
       const total=coupon?.total_cents ?? booking.total_cents;
       const balance=coupon?.balance_cents ?? booking.balance_cents;
       const received=Math.max(0,Math.round(Number(amount.value || 0)*100));
@@ -1497,6 +1513,11 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
     function timingData(){return {pricingVersion:1,arrivalDay:arrival.value,arrivalTime:arrivalTime.value,pickupDay:pickupDate.value,pickupTime:returnTime.value,
       quantity100:Math.round(Number(chargeQuantity.value)*100)};}
     function refreshPrice(){
+      if(passContract){const previous=booking.balance_cents;priceValid=passContract.status==='ready';
+       if(priceValid){booking.total_cents=passContract.cash_cents;booking.balance_cents=passContract.balance_cents;booking.paid_cents=passContract.deposit_cents;if(Math.round(Number(amount.value)*100)===previous)amount.value=(booking.balance_cents/100).toFixed(2);}
+       else status.textContent=passText('กรุณาตรวจสถานะ Stay Pass และโหลดการจองล่าสุดก่อนเช็กอิน','Review Stay Pass status and reload the booking before check-in.');
+       updateBill(null);return;
+      }
       const previous=coupon?.balance_cents ?? booking.balance_cents;
       const source={...(draft || {}),pricingVersion:1,checkin:arrival.value,checkout:pickupDate.value,checkinTime:arrivalTime.value,checkoutTime:returnTime.value,
         service:draft?.service || booking.service_type,quantity100:Math.round(Number(chargeQuantity.value)*100),
@@ -1678,7 +1699,7 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
           details.append(node("h4",section.heading),list);
         }
         termsContent.replaceChildren(details);
-        submit.disabled = false;
+        submit.disabled = Boolean(passContract&&passContract.status!=="ready");
       } catch {
         if (!controller.signal.aborted && request === termsRequest) {
           const retry = Object.assign(node("button","โหลดเงื่อนไขอีกครั้ง"),{type:"button"});
@@ -1705,7 +1726,7 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
       saving = true;
       submit.disabled = true;
       const body = {language:picker.value,version:termsVersion,accepted:accept.checked,signature:strokes,
-        revision:booking.cloud_revision,...timingData(),
+        revision:booking.cloud_revision,passQuoteHash:passContract?.quote_hash,...timingData(),
         expectedBalance:coupon?.balance_cents ?? booking.balance_cents,couponCode:coupon?.code,amountCents:Math.round(Number(amount.value)*100),
         paymentDate:paymentDay.value,receivedTime:paymentTime.value,key:paymentKey,intake:intakeForm.values(),draft,warningToken};
       try {
@@ -1722,7 +1743,7 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
           return;
         }
         if (!response.ok) {
-          status.textContent = couponErrors[result.status] || (result.status === "conflict" ? "ราคา คูปอง หรือยอดมัดจำเปลี่ยนแล้ว กรุณาตรวจรายละเอียดล่าสุด"
+          status.textContent = (result.status==='pass_timing_review_required'?passText('เวลาเปลี่ยนจากการจอง กรุณาตรวจรายการใช้สิทธิ์ก่อน','Times differ from the confirmed pass booking. Review the allocation first.'):null) || couponErrors[result.status] || (result.status === "conflict" ? "ราคา คูปอง หรือยอดมัดจำเปลี่ยนแล้ว กรุณาตรวจรายละเอียดล่าสุด"
             : result.status === "consent_required" ? "กรุณาตรวจการยอมรับเงื่อนไขและลายเซ็น"
             : "เช็กอินไม่ได้ กรุณาตรวจวัน เวลา และยอดรับชำระ");
           return;
@@ -2404,7 +2425,7 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
       const text = node("p",[day(payment.occurred_on),payment.received_time,
         paymentLabels[payment.payment_type] || payment.payment_type,money(payment.amount_cents)].filter(Boolean).join(" · "));
       const label = "ลบรายการชำระเงิน " + money(payment.amount_cents);
-      const remove = Object.assign(node("button"),{type:"button",disabled:locked,title:label,
+      const remove = Object.assign(node("button"),{type:"button",disabled:locked||Boolean(stay.pricing?.stay_pass?.precheckin_cash_history?.length&&payment.payment_type==='deposit'),title:label,
         className:"delete-deposit payment-remove"});
       remove.setAttribute("aria-label",label);
       const ns = "http://www.w3.org/2000/svg";
@@ -2431,6 +2452,10 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
       view.append(row,form);
     }
 
+    if(stay.pricing?.stay_pass?.precheckin_cash_history?.length){
+      view.append(node('h4',document.documentElement.lang==='en'?'Refunds before check-in':'เงินคืนก่อนเช็กอิน'));
+      for(const entry of stay.pricing.stay_pass.precheckin_cash_history)view.append(node('p',day(entry.occurred_on)+' · '+entry.received_time+' · '+money(entry.amount_cents)));
+    }
     if (stay.payment_deletions.length) {
       const audit = Object.assign(node("details"),{className:"payment-correction"});
       audit.append(node("summary","ประวัติรายการชำระที่ลบแล้ว · " + stay.payment_deletions.length));
@@ -2477,7 +2502,7 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
         };
         view.append(node("strong","ยอดที่คืนได้ " + money(stay.refundable_cents)),form);
       }
-    } else if (locked) {
+    } else if (locked || stay.pricing?.stay_pass) {
       view.append(Object.assign(node("button","ยกเลิกรายการเข้าพัก"),{type:"button",disabled:true}));
     } else {
       const section = Object.assign(node("details"),{className:"payment-correction"});
@@ -2503,10 +2528,16 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
     heading.append(copy,badge);return heading;
   }
   function pricingBreakdown(record) {
+    const pass=record.stay_pass||record.pricing?.stay_pass;
+    if(pass){const section=Object.assign(node('section'),{className:'record-pricing'});const en=document.documentElement.lang==='en',label=(th,eng)=>en?eng:th;
+     section.append(node('h4','Little Paws Stay Pass'),node('p',pass.pass_number+' · '+(pass.credit_units/4)+' '+label('วัน','days')),node('p',label('รับกลับล่าช้ารวม: ','Total late-pickup units: ')+(pass.settlement.late_units/4)+' '+label('วัน','days')+' · '+label('หัก Pass: ','Covered by Pass: ')+(pass.settlement.rows.reduce((n,r)=>n+(r.late_covered_units||0),0)/4)+' '+label('วัน','days')),
+      node('p',label('ส่วนเกินที่ชำระเป็นเงิน: ','Cash-covered portion: ')+(pass.settlement.cash_units/4)+' '+label('วัน','days')+' · '+baht.format(pass.settlement.cash_cents/100)));if(Number.isSafeInteger(pass.settlement.late_cash_cents))section.append(node('p',label('ค่ารับกลับช้าส่วนที่เป็นเงิน: ','Late pickup cash: ')+baht.format(pass.settlement.late_cash_cents/100)));if(pass.cancellation_cash_fees_cents)section.append(node('p',label('ค่าบริการยกเลิกที่รวมมาจากการจอง: ','Cancellation fees carried from the booking: ')+baht.format(pass.cancellation_cash_fees_cents/100)));return section;}
+
     const p=record.pricing;const panel=Object.assign(node("section"),{className:"boarding-price-breakdown"});
     if(!p)return panel;
     if(p.service && p.service!=="overnight" && !p.grandfathered){panel.hidden=true;return panel;}
     panel.append(node("h4","รายละเอียดค่าบริการ"));
+    if(p.extensions?.length){const latest=p.extensions.at(-1);panel.append(recordAmounts([[document.documentElement.lang==='en'?'Previous agreed total':'ยอดที่ตกลงก่อนต่อวันพัก',latest.before.total_cents],[document.documentElement.lang==='en'?'Added this time':'เพิ่มครั้งนี้',latest.added_cents],[document.documentElement.lang==='en'?'New agreed total':'ยอดที่ตกลงใหม่',latest.after.total_cents]]));return panel;}
     if(p.grandfathered){panel.append(node("p","รายการเดิม: ใช้ยอดที่ตกลงไว้ ไม่คิดค่ารับกลับล่าช้าเพิ่ม"));return panel;}
     panel.append(node("p","จำนวนวัน "+p.base_days+" · รอบละ 24 ชั่วโมง"));
     if(p.service === "overnight" || record.service_type === "overnight" || p.percent || p.extra_minutes){
@@ -2539,14 +2570,68 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
     for(const dog of record.dogs){
       const item=node("li");const photo=Object.assign(node("img"),{alt:dog.name,loading:"lazy",src:"/api/customers/"+record.customer_id+"/dogs/"+dog.id+"/photo"});
       photo.onerror=()=>{photo.onerror=null;photo.src="/static/little-paws-icon.png";};
-      const copy=node("div");copy.append(node("strong",dog.name),node("small",dog.nightly_rate_cents === null ? "รอระบุราคา" : baht.format(dog.nightly_rate_cents/100)+" / "+unit));
+      const copy=node("div");copy.append(node("strong",dog.name),node("small",dog.nightly_rate_cents === null ? "รอระบุราคา" : ((record.stay_pass||record.pricing?.stay_pass)?(document.documentElement.lang==="en"?"Regular reference: ":"ราคาอ้างอิง: "): "")+baht.format(dog.nightly_rate_cents/100)+" / "+unit));
       item.append(photo,copy);
       if(timeline){const button=Object.assign(node("button","จัดการไทม์ไลน์"),{type:"button",className:"secondary"});button.onclick=()=>showCareTimeline(record.id,dog);item.append(button);}
       list.append(item);
     }return list;
   }
 
-  async function showStay(id) {
+  function stayExtensionEditor(stay) {
+    const tx=(th,en)=>document.documentElement.lang==='en'?en:th;
+    const form=Object.assign(node('form'),{className:'stay-extension-form'});
+    const status=node('p');status.setAttribute('role','status');
+    form.append(node('h3',tx('ต่อวันเข้าพัก','Extend stay')),node('p',tx('คงยอดเดิมและคิดเฉพาะส่วนต่าง โดยใช้ราคาของน้องในรายการนี้','Keep the agreed total and add only the difference at the saved dog rates.')));
+    const fields=Object.assign(node('section'),{className:'extension-fields'});
+    const input=(label,type,value)=>{const wrap=node('label',label),field=type==='textarea'?Object.assign(node('textarea'),{value,required:true,rows:2}):Object.assign(node('input'),{type,value,required:true});wrap.append(field);fields.append(wrap);return field;};
+    const date=input(tx('วันรับกลับใหม่','New pickup date'),'date',stay.checkout);date.min=stay.checkout;
+    const time=input(tx('เวลารับกลับใหม่','New pickup time'),'time',stay.pricing?.checkout_time||stay.intake?.pickup_time||'');
+    const reason=input(tx('เหตุผลการต่อวันพัก','Reason for extension'),'textarea','');reason.maxLength=500;reason.parentElement.className='extension-wide';
+    const preview=node('section');preview.className='extension-wide';preview.setAttribute('aria-live','polite');
+    const amount=input(tx('รับชำระเพิ่มครั้งนี้ (บาท)','Payment now (THB)'),'number','0');amount.min='0';amount.step='0.01';amount.parentElement.className='extension-wide';
+    const day=input(tx('วันที่ชำระ','Payment date'),'date',parts.format(new Date()));day.max=parts.format(new Date());
+    const clock=input(tx('เวลาชำระ','Payment time'),'time',bangkokTime.format(new Date()));
+    fields.insertBefore(preview,amount.parentElement);
+    const actions=Object.assign(node('div'),{className:'record-actions extension-wide'});
+    const save=Object.assign(node('button',tx('ยืนยันต่อวันพักและบันทึก','Confirm extension')),{type:'submit',disabled:true});
+    const back=Object.assign(node('button',tx('กลับไปหน้าสรุป','Back to summary')),{type:'button',className:'secondary'});back.onclick=()=>showStay(stay.id);
+    actions.append(save,back);form.append(fields,actions,status);bookingContent.replaceChildren(form);
+    const messages={invalid:tx('กรุณาระบุวันและเวลาที่ช้ากว่ากำหนดเดิม','Choose a pickup time later than the current one.'),
+      conflict:tx('ข้อมูลเปลี่ยนแล้ว กรุณาเปิดสรุปล่าสุด','The record changed. Reload the latest summary.'),
+      missing_original_time:tx('รายการเดิมไม่มีเวลาครบ กรุณาตรวจเวลาเข้าพักและรับกลับก่อน','Original check-in/pickup times are missing. Review them first.'),
+      capacity_review_required:tx('ช่วงต่อวันพักมีวันหยุดหรือที่ว่างต้องตรวจสอบ กรุณาตรวจปฏิทินก่อน','Review capacity, overlapping stays or shop holidays in the calendar first.'),
+      payment_exceeds:tx('จำนวนเงินรับมากกว่ายอดค้าง','Payment exceeds the outstanding balance.'),
+      pass_review_required:tx('รายการ Stay Pass ต้องตรวจโควตาเพิ่มเติมก่อน ยังไม่เปิดการต่อวันพักในชุดนี้','Stay Pass extensions require quota reconciliation and are not enabled in this build.'),
+      service_review_required:tx('ส่วนนี้รองรับฝากค้างคืน บริการอื่นให้ตรวจรายละเอียดก่อน','This extension flow supports overnight stays. Review other services separately.'),
+      payment_review_required:tx('รายการเก่ายังไม่แยกยอดรับชำระ กรุณาตรวจประวัติเงินก่อน','Review historical payments before extending this legacy record.'),
+      missing_rate:tx('กรุณาตรวจราคาของสุนัขทุกตัวก่อน','Review every dog’s saved rate first.')};
+    let quote=null,serial=0,key=crypto.randomUUID().replaceAll('-',''),attempt=null;
+    async function calculate(){const seq=++serial;quote=null;save.disabled=true;preview.replaceChildren(node('p',tx('กำลังคำนวณ…','Calculating…')));
+      try{const response=await fetch('/api/stays/'+stay.id+'/extension/quote',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({checkout:date.value,checkoutTime:time.value})}),data=await response.json();
+        if(seq!==serial||!form.isConnected)return;
+        if(data.status!=='ready'){preview.replaceChildren(node('p',messages[data.status]||tx('ยังคำนวณไม่ได้ กรุณาตรวจข้อมูล','Unable to quote. Review the details.')));return;}
+        quote=data;preview.replaceChildren(recordAmounts([[tx('ยอดเดิม','Previous total'),data.old_total_cents],[tx('ค่าใช้จ่ายเพิ่ม','Additional charge'),data.added_cents],[tx('ยอดสุทธิใหม่','New total'),data.total_cents]]),node('p',tx('รับชำระแล้ว','Received')+' '+baht.format(data.paid_cents/100)+' · '+tx('ยอดค้างชำระ','Outstanding')+' '+baht.format(data.due_cents/100)));
+        if(data.late_delta_cents<0)preview.append(node('p',tx('นำค่ารับกลับช้าเดิมมาหักจากส่วนต่างแล้ว','The previous late fee has been offset against the increase.')));
+        if(data.warnings.length)preview.append(node('p',messages.capacity_review_required));
+        if(!amount.dataset.edited)amount.value=(data.due_cents/100).toFixed(2);
+        save.disabled=data.warnings.length>0;
+      }catch{if(seq===serial)preview.replaceChildren(node('p',tx('เชื่อมต่อไม่สำเร็จ กรุณาลองอีกครั้ง','Connection failed. Try again.')));}}
+    for(const field of [date,time])field.onchange=()=>{if(!attempt)calculate();};amount.oninput=()=>{amount.dataset.edited='1';};
+    form.onsubmit=async event=>{event.preventDefault();if(save.disabled||!quote)return;
+      const cents=Math.round(Number(amount.value)*100);if(!Number.isSafeInteger(cents)||cents<0||cents>quote.due_cents){status.textContent=messages.payment_exceeds;return;}
+      if(!attempt){if(!confirm(tx('ยืนยันวันรับกลับใหม่และยอดค่าใช้จ่ายข้างต้น?','Confirm the new pickup time and charges shown?')))return;
+        attempt={checkout:date.value,checkoutTime:time.value,reason:reason.value,quoteHash:quote.quote_hash,key,payment:cents?{amountCents:cents,paymentDate:day.value,receivedTime:clock.value}:null};}
+      for(const field of fields.querySelectorAll('input,textarea'))field.disabled=true;save.disabled=true;back.disabled=true;
+      try{const response=await fetch('/api/stays/'+stay.id+'/extension',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(attempt)}),result=await response.json();
+        if(result.status!=='saved'){status.textContent=messages[result.status]||tx('บันทึกไม่สำเร็จ กรุณาตรวจข้อมูลล่าสุด','Unable to save. Review the latest record.');
+          if(response.status<500){attempt=null;back.disabled=false;for(const field of fields.querySelectorAll('input,textarea'))field.disabled=false;await calculate();}return;}
+        await showStay(stay.id);await load(true);document.getElementById('booking-status').textContent=tx('บันทึกต่อวันเข้าพักและยอดรับชำระแล้ว','Stay extension and payment saved.');
+      }catch{status.textContent=tx('ยังยืนยันผลไม่ได้ กดยืนยันซ้ำเพื่อตรวจรายการเดิม','Result not confirmed. Retry to check the same request.');}
+      finally{if(form.isConnected)save.disabled=attempt?false:!quote||quote.warnings.length>0;}};
+    calculate();
+  }
+
+  async function showStay(id,focusCheckout=false) {
     bookingDialog.classList.remove("care-workspace","record-workspace");
     bookingDialog.classList.toggle("checkin-workspace",false);
     bookingDialog.classList.add("record-workspace");
@@ -2564,9 +2649,36 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
       const money = (cents) => baht.format(cents / 100);
       bookingContent.replaceChildren(recordHeading("สรุปการเข้าพัก",stay.customer,statuses[stay.status],stay.status),
         recordFacts(stay,service,unit),
-        recordAmounts([["ยอดสุทธิ",stay.total_cents],["รับชำระแล้ว",stay.payments.reduce((sum,payment)=>sum+payment.amount_cents,0)],
-          ["ยอดคงเหลือ",stay.status === "cancelled" ? null : stay.due_cents]]));
+        recordAmounts([["ยอดสุทธิ",stay.total_cents],["รับชำระแล้ว",stay.paid_cents ?? stay.payments.reduce((sum,payment)=>sum+payment.amount_cents,0)],
+          ["ยอดคงเหลือ",stay.status === "cancelled" ? null : Math.max(0,stay.due_cents)]]));
       if(stay.pricing)bookingContent.append(pricingBreakdown(stay));
+      const reconciled=stay.pricing?.stay_pass?.checkout_reconciliation;
+      if(reconciled){
+        const section=Object.assign(node('section'),{className:'staff-pass-checkout'});
+        section.append(node('h4',translateLabel('สรุปสิทธิ์ ณ เช็กเอาต์')));
+        const entries=[['โควตาก่อนปรับ',reconciled.remaining_before_units],['คืนโควตาครั้งนี้',reconciled.restored_units],['ใช้โควตาเพิ่มครั้งนี้',reconciled.extra_covered_units],['คงเหลือหลังปรับ',reconciled.remaining_after_units],['กันไว้รายการอื่น',reconciled.reserved_units],['จองเพิ่มได้ ณ เช็กเอาต์',reconciled.available_after_units]];
+        const metrics=Object.assign(node('dl'),{className:'sp-read-metrics'});
+        for(const [label,value] of entries)if(Number.isSafeInteger(value))metrics.append(node('dt',translateLabel(label)),node('dd',(value/4).toLocaleString(document.documentElement.lang==='en'?'en-GB':'th-TH')+' '+translateLabel('วัน')));
+        section.append(metrics);
+        if(reconciled.refund_review_cents)section.append(node('p',translateLabel('เงินรับเกิน ณ เช็กเอาต์ที่ต้องตรวจคืน: ')+money(reconciled.refund_review_cents)),node('p',translateLabel('ยังไม่ได้คืนเงินอัตโนมัติ กรุณาตรวจรายการคืนเงินแยกต่างหาก')));
+        if(checkoutView)section.append(Object.assign(node('a',translateLabel('เปิด Stay Pass เพื่อสร้างภาพอัปเดตสิทธิ์')),{href:'/stay-pass?lang='+document.documentElement.lang}));
+        bookingContent.append(section);
+      }
+      if(stay.pricing?.stay_pass && stay.status==='checked_in'){
+        if(checkoutView){
+          const review=node('section');review.className='staff-pass-checkout';
+          review.setAttribute('aria-label',document.documentElement.lang==='en'?'Stay Pass checkout':'ตรวจยอดเช็กเอาต์ Stay Pass');
+          bookingContent.append(review);
+          checkoutView({root:review,node,money,en:document.documentElement.lang==='en',stayId:stay.id,writes:passCheckoutWrites,
+            api:async(path,input)=>{const response=await fetch('/api/stay-pass'+path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(input)});const data=await response.json();if(!response.ok)throw Object.assign(Error(data.error||data.status||'Unable to load checkout'),{code:data.error||data.status,httpStatus:response.status});return data;},
+            onChanged:async()=>{await load(true);await showStay(stay.id);document.getElementById('booking-status').textContent=translateLabel('เช็กเอาต์แล้ว');}});
+          if(focusCheckout){review.querySelector('details').open=true;review.scrollIntoView({block:'start',behavior:'smooth'});review.querySelector('input')?.focus({preventScroll:true});}
+        }else bookingContent.append(node('p',document.documentElement.lang==='en'?'Stay Pass checkout is available to an administrator in the test environment.':'ตรวจยอดเช็กเอาต์ Stay Pass ได้โดยแอดมินในระบบทดสอบครับ'));
+      }
+      if(stay.pricing?.extensions?.length){const history=Object.assign(node('details'),{className:'extension-history'});history.append(node('summary',document.documentElement.lang==='en'?'Stay extension history':'ประวัติการต่อวันพัก'));
+        for(const entry of stay.pricing.extensions)history.append(node('p',entry.before.checkout+' '+entry.before.time+' → '+entry.after.checkout+' '+entry.after.time+' · '+baht.format(entry.added_cents/100)));
+        bookingContent.append(history);}
+
       if (stay.coupon_code) bookingContent.append(node("p","คูปอง " + stay.coupon_code +
         " · ส่วนลด " + money(stay.coupon_discount_cents)));
       for (const [label,value] of [["เช็กอินจริง",stay.actual_checkin_at],["เช็กเอาต์จริง",stay.actual_checkout_at]]) {
@@ -2610,9 +2722,19 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
       }
       bookingContent.append(documentActions("stay",stay.id,controller));
       const edit=Object.assign(node('button','แก้ไขการเข้าพัก'),{type:'button'});
-      edit.disabled=stay.status!=='checked_in' || !!stay.cancelled_at;
+      edit.disabled=stay.status!=='checked_in' || !!stay.cancelled_at || Boolean(stay.pricing?.stay_pass);
+      if(stay.pricing?.stay_pass)edit.title=document.documentElement.lang==='en'?'Review the Stay Pass allocation before changing dates or prices.':'กรุณาตรวจรายการใช้สิทธิ์ Stay Pass ก่อนแก้ไขวันและราคา';
       edit.onclick=()=>bookingEditor(stay,false,null,true);
-      bookingContent.append(edit);
+      const extend=Object.assign(node('button',document.documentElement.lang==='en'?'Extend stay':'ต่อวันเข้าพัก'),{type:'button'});
+      extend.disabled=!!stay.pricing?.stay_pass&&!passExtensionWrites||stay.status!=='checked_in'||!!stay.cancelled_at;
+      extend.onclick=()=>{
+        if(!stay.pricing?.stay_pass){stayExtensionEditor(stay);return;}
+        if(!extensionView||!passExtensionWrites)return;
+        extensionView({root:bookingContent,node,stay,money,en:document.documentElement.lang==='en',writes:passExtensionWrites,onBack:()=>showStay(stay.id),
+          api:async(path,input)=>{const response=await fetch('/api/stay-pass'+path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(input)});const data=await response.json();if(!response.ok)throw Object.assign(Error(data.error||data.status||'Unable to extend stay'),{code:data.error||data.status,httpStatus:response.status});return data;},
+          onSaved:async()=>{await load(true);await showStay(stay.id);document.getElementById('booking-status').textContent=document.documentElement.lang==='en'?'Stay extension and payment saved.':'บันทึกต่อวันเข้าพักและยอดรับชำระแล้ว';}});
+      };
+      const changes=Object.assign(node('div'),{className:'record-actions'});changes.append(extend,edit);bookingContent.insertBefore(changes,bookingContent.children[3]||null);
       const reopen=Object.assign(node('button','เช็กอินอีกครั้ง'),{type:'button'});
       reopen.disabled=stay.status!=='completed' || !!stay.cancelled_at;
       reopen.onclick=()=>{
@@ -2666,7 +2788,7 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
       bookingContent.replaceChildren(recordHeading("รายละเอียดการจอง",data.customer,state,data.stay_id ? "checked_in" : data.status),
         recordFacts(data,service,unit),recordAmounts([["ยอดรวม",data.total_cents],["รับชำระแล้ว",data.paid_cents],["ยอดคงเหลือ",data.balance_cents]]));
       if(data.contact)bookingContent.append(Object.assign(node("p",data.contact),{className:"record-contact"}));
-      if(data.pricing)bookingContent.append(pricingBreakdown(data));
+      if(data.pricing||data.stay_pass)bookingContent.append(pricingBreakdown(data));
       if (!data.stay_id && data.status === "pending") bookingContent.append(bookingActions(data));
       if (data.stay_id) {
         const stay = Object.assign(node("button","ดูสรุปการเข้าพัก"),{type:"button"});
@@ -2683,12 +2805,13 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
         const row = node("p", [date, payment.received_time, paymentLabels[payment.payment_type] || payment.payment_type,
           money(payment.amount_cents)].filter(Boolean).join(" · "));
         row.className="payment-entry";
-        if (!data.stay_id && payment.payment_type === "deposit" && payment.payment_key) {
+        if (!data.stay_id && payment.payment_type === "deposit" && payment.payment_key && !data.refunds?.length) {
           row.append(depositDeleteButton(data.id, payment));
         }
         bookingContent.append(row);
         if (payment.payment_type === "deposit") bookingContent.append(documentActions("deposit",data.id,controller,payment.id));
       }
+      if(data.refunds?.length){bookingContent.append(node('h4',document.documentElement.lang==='en'?'Refunds before check-in':'เงินคืนก่อนเช็กอิน'));for(const refund of data.refunds)bookingContent.append(node('p',refund.date+' · '+refund.received_time+' · '+money(Math.round(refund.amount*100))));}
       if (pendingDeposits.has(data.id) || (!data.stay_id && data.status === "pending" && data.balance_cents !== 0)) {
         bookingContent.append(depositForm(data));
       }
@@ -2721,12 +2844,22 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
     const article = Object.assign(node("article"),{className:"card reservation-card"});
     article.append(compactCardHeader(booking,"pending","รอเช็กอิน",booking.booking_number),
       Object.assign(node("p",[booking.checkin,booking.checkout].map(day=>bookingDate.format(new Date(day))).join(" – ")),{className:"reservation-period"}));
+    if(booking.stay_pass_badge)article.append(Object.assign(node("p","★ Stay Pass · "+booking.stay_pass_badge),{className:"reservation-reference"}));
     article.append(recordAmounts([["ยอดรวม",booking.quote_pending ? null : booking.total_cents],
       ["รับมัดจำ",booking.deposit_cents],["ยอดคงเหลือ",booking.quote_pending ? null : Math.max(0,booking.total_cents-booking.deposit_cents)]]));
     const details=Object.assign(node("button","ดูการจอง"),{type:"button"});
     details.onclick=()=>showBooking(booking.id);
     const actions=Object.assign(node("div"),{className:"record-actions"});actions.append(details);article.append(actions);
     return article;
+  }
+
+  async function checkoutStay(id,button){
+    const en=document.documentElement.lang==='en';
+    await checkoutAction({id,button,en,openReview:()=>showStay(id,true),
+      api:async(path,options)=>{const response=await fetch(path,options);if(!response.ok)throw Error('checkout_failed');return response.json();},
+      confirm:()=>confirm(translateLabel('ยืนยันเช็กเอาต์สุนัขทุกตัวในรายการนี้หรือไม่?')),
+      onSaved:async()=>{await load(true);message.textContent=translateLabel('เช็กเอาต์แล้ว');},
+      onError:()=>{message.textContent=translateLabel('เช็กเอาต์ไม่สำเร็จ กรุณาตรวจสถานะแล้วลองใหม่');}});
   }
 
   function card(stay) {
@@ -2745,20 +2878,7 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
     if (stay.status === "checked_in") {
       const checkout = node("button", "เช็กเอาต์");
       checkout.type = "button";
-      checkout.addEventListener("click", async () => {
-        if (!confirm("ยืนยันเช็กเอาต์สุนัขทุกตัวในรายการนี้หรือไม่?")) return;
-        checkout.disabled = true;
-        try {
-          const response = await fetch("/api/stays/" + stay.id + "/check-out", {method:"POST"});
-          if (!response.ok) throw Error();
-          message.textContent = "เช็กเอาต์แล้ว";
-          await load(true);
-        } catch {
-          message.textContent = "เช็กเอาต์ไม่สำเร็จ กรุณาตรวจสถานะแล้วลองใหม่";
-        } finally {
-          checkout.disabled = false;
-        }
-      });
+      checkout.addEventListener("click",()=>checkoutStay(stay.id,checkout));
       checkout.className="secondary";
       actions.append(checkout);
     }
@@ -2855,16 +2975,11 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
         bookingCheckIn(booking);
       } catch { message.textContent = "โหลดข้อมูลการจองไม่ได้ กรุณาลองใหม่"; }
     },
-    checkout:async (id,button) => {
-      if (!confirm("ยืนยันเช็กเอาต์สุนัขทุกตัวในรายการนี้หรือไม่?")) return;
-      button.disabled = true;
-      try {
-        const response = await fetch("/api/stays/"+id+"/check-out",{method:"POST"});
-        if (!response.ok) throw Error();
-        if (selected === "dashboard") await load(true);
-        message.textContent = "เช็กเอาต์แล้ว";
-      } catch { message.textContent = "เช็กเอาต์ไม่สำเร็จ กรุณาตรวจสถานะแล้วลองใหม่"; }
-      finally { button.disabled = false; }
+    checkout:checkoutStay,
+    onRendered:async()=>{
+      const navLink=document.querySelector('nav a[href^="/stay-pass"]');if(!navLink)return;
+      const en=document.documentElement.lang==='en',card=Object.assign(node('section'),{className:'card'}),label=node('p',en?'Loading membership follow-ups…':'กำลังตรวจรายการ Stay Pass ที่ต้องติดตาม…');card.append(node('h2','Little Paws Stay Pass'),label);results.prepend(card);
+      try{const response=await fetch('/api/stay-pass/dashboard');if(!response.ok)throw Error();const data=await response.json();if(!card.isConnected)return;const count=data.alerts.length;label.textContent=count?(en?count+' membership items need attention': 'มี '+count+' รายการที่ต้องติดตาม'):(en?'No membership follow-up required':'ไม่มีรายการ Stay Pass ที่ต้องติดตาม');navLink.textContent='Stay Pass'+(count?' ● '+count:'');navLink.setAttribute('aria-label','Stay Pass · '+count+' '+(en?'items need attention':'รายการต้องติดตาม'));const link=node('a',en?'View membership overview and reports':'ดูภาพรวม สิทธิ์คงเหลือ และรายการที่ต้องติดตาม');link.href='/stay-pass?'+new URLSearchParams({workspace:'reports',lang:en?'en':'th'});card.append(link);}catch{if(card.isConnected)label.textContent=en?'Unable to load membership updates. Please refresh.':'โหลดข้อมูล Stay Pass ไม่ได้ กรุณาโหลดใหม่';}
     },
   });
   const screenTitles = {dashboard:["ภาพรวมธุรกิจ","รายรับ รายจ่าย และการเข้าพักของ Little Paws"],
@@ -2980,17 +3095,17 @@ function main(intakeGroups,couponScreen,settingsScreen,ledgerScreen,dashboardScr
   if (selected === "dashboard") load();
 }
 
-export function outstandingPage(isAdmin = false,canExport = false,theme = "classic",displayName = "",language="th") {
+export function outstandingPage(isAdmin = false,canExport = false,theme = "classic",displayName = "",language="th",stayPassPreview=false,passCheckoutWrites=false,passExtensionWrites=false) {
   const nonce = crypto.randomUUID().replaceAll("-", "");
   return new Response(uiMarkup(`<!doctype html><html lang="${language}" data-theme="${themeName(theme)}"><meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <title>ภาพรวมธุรกิจ · Little Paws Homestay Phuket</title>
     <link rel="icon" href="/static/little-paws-icon.png">
-    <style nonce="${nonce}">${css}${careParityCss}${boardingBookingCss}${workspaceCss}</style>
+    <style nonce="${nonce}">${css}${careParityCss}${boardingBookingCss}${workspaceCss}${staffCheckoutCss}</style>
     <link rel="stylesheet" href="/static/style.css?v=80">
-    <style nonce="${nonce}">${macStyleBridge}\n${careGalleryCss}\n${videoCss}\n${compactBoardingCss}\n${interactionCss}\n${notificationCss}\n${checkinTouchCss}</style>
+    <style nonce="${nonce}">${macStyleBridge}\n${careGalleryCss}\n${videoCss}\n${compactBoardingCss}${extensionLayoutCss}\n${interactionCss}\n${notificationCss}\n${checkinTouchCss}</style>
     <body class="staff-app" data-theme="${themeName(theme)}">
-    ${staffHeader(theme,isAdmin,displayName,language)}
+    ${stayPassPreview && isAdmin ? staffHeader(theme,isAdmin,displayName,language).replace('</nav>','<a href="/stay-pass?lang='+language+'">Stay Pass</a></nav>') : staffHeader(theme,isAdmin,displayName,language)}
     <main>
     <div id="stay-actions" class="staff-subnav" hidden>
       <button type="button" data-mode="current" aria-pressed="false">กำลังเข้าพัก</button>
@@ -3074,7 +3189,7 @@ export function outstandingPage(isAdmin = false,canExport = false,theme = "class
       <div id="ledger-content" aria-live="polite"></div>
     </dialog>
     ${staffFooter}
-    <script nonce="${nonce}">(${uiFunction("main",main,language)})(${JSON.stringify(uiValues(intakeGroups,language))},${uiFunction("couponScreen",couponScreen,language)},${uiFunction("settingsScreen",settingsScreen,language)},${uiFunction("ledgerScreen",ledgerScreen,language)},${uiFunction("dashboardScreen",dashboardScreen,language)},${uiFunction("reportScreen",reportScreen,language)},${applyStaffTheme.toString()},${JSON.stringify(uiValues(themes,language))},${JSON.stringify(uiValues(ledgerKinds,language))},${JSON.stringify(ledgerCategories)},${canExport},${installCarePhotoViewer.toString()},${uiFunction("accountScreen",accountScreen,language)},${uiFunction("backupScreen",backupScreen,language)},${storedArchive.toString()},${JSON.stringify(language==="en" ? fixedUiLabels : {})},${overnightPricing.toString()},${prepareActivityVideo.toString()},${uploadActivityFile.toString()})</script></body></html>`,language), {
+    <script nonce="${nonce}">(${uiFunction("main",main,language)})(${JSON.stringify(uiValues(intakeGroups,language))},${uiFunction("couponScreen",couponScreen,language)},${uiFunction("settingsScreen",settingsScreen,language)},${uiFunction("ledgerScreen",ledgerScreen,language)},${uiFunction("dashboardScreen",dashboardScreen,language)},${uiFunction("reportScreen",reportScreen,language)},${applyStaffTheme.toString()},${JSON.stringify(uiValues(themes,language))},${JSON.stringify(uiValues(ledgerKinds,language))},${JSON.stringify(ledgerCategories)},${canExport},${installCarePhotoViewer.toString()},${uiFunction("accountScreen",accountScreen,language)},${uiFunction("backupScreen",backupScreen,language)},${storedArchive.toString()},${JSON.stringify(language==="en" ? fixedUiLabels : {})},${overnightPricing.toString()},${prepareActivityVideo.toString()},${uploadActivityFile.toString()},${staffCheckoutAction.toString()},${stayPassPreview && isAdmin ? passCheckoutUi.toString() : "null"},${stayPassPreview && isAdmin && passCheckoutWrites},${stayPassPreview && isAdmin ? passExtensionUi.toString() : "null"},${stayPassPreview && isAdmin && passExtensionWrites})</script></body></html>`,language), {
     headers: {
       "Content-Type":"text/html; charset=utf-8", "Cache-Control":"private, no-store",
       "X-Content-Type-Options":"nosniff",

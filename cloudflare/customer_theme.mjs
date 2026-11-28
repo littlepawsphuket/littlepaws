@@ -1,3 +1,4 @@
+import {storedUiAssetBytes} from './ui_asset_storage.mjs';
 import {uiAssets} from './ui_assets.mjs';
 const palettes={
   classic:['#155747','#f2f7f3','#e7f2e9','#c8ded4'],christmas:['#185040','#f4f8f5','#e5f1e9','#bed8ca'],
@@ -26,7 +27,8 @@ export function customerThemeBanner(theme,route){
  <div class="customer-brand"><img src="${asset('little-paws-logo.png')}" alt=""><strong>Little Paws<br>Homestay Phuket</strong></div>
  <img class="customer-mascot" src="${asset(theme==='classic'?'balen-gucci-relax.webp':'mascot-'+theme+'.webp')}" alt=""></section>`;
 }
-export function customerThemeAsset(name){
+export function customerThemeAsset(name,env){
  if(!/^(?:theme-(?:christmas|valentine|halloween|songkran|buddhist|japan)\.webp|mascot-(?:christmas|valentine|halloween|songkran|buddhist|japan)\.webp|balen-gucci-relax\.webp|little-paws-logo\.png)$/.test(name))return null;
+ if(typeof LITTLE_PAWS_EMBED_UI_ASSETS!=='undefined'&&!LITTLE_PAWS_EMBED_UI_ASSETS)return storedUiAssetBytes(name,env);
  const asset=uiAssets[name];return asset ? {bytes:Uint8Array.from(atob(asset[1]),c=>c.charCodeAt(0)),type:name.endsWith('.png')?'image/png':'image/webp'} : null;
 }

@@ -1,4 +1,7 @@
-const tableNames=['customers','dogs','stays','stay_dogs','transactions','appointments','appointment_dogs',
+import {imageFontManifest,imageFontKey} from './stay_pass/image_assets.mjs';
+import {uiAssetManifest} from './ui_asset_manifest.mjs';
+import {uiAssetKey} from './ui_asset_storage.mjs';
+const tableNames=['stay_pass_policy_approvals','stay_pass_sale_draft_events','stay_pass_sale_drafts','stay_pass_pet_changes','stay_pass_sale_windows','stay_pass_transfers','stay_pass_image_template_versions','stay_pass_lifecycle_events','stay_pass_stay_cash_sources','stay_pass_stay_cash_records','stay_pass_precheckin_cash','stay_pass_booking_cash_refund_sources','stay_pass_booking_cash_records','stay_pass_stay_extensions','stay_pass_cancellation_lines','stay_pass_booking_cancellations','stay_pass_generated_image_pages','stay_pass_generated_images','stay_pass_renewals','stay_pass_refunds','stay_pass_checkin_commits','stay_pass_checkout_commits','stay_pass_booking_links','stay_pass_booking_settlements','stay_pass_booking_credit_events','stay_pass_booking_allocations','stay_pass_sales','stay_pass_policy_acceptances','stay_pass_schema_versions', 'stay_pass_plans', 'stay_pass_plan_versions', 'stay_pass_price_versions', 'stay_pass_policy_versions', 'stay_passes', 'stay_pass_pets', 'stay_pass_payment_links', 'stay_pass_credit_lots', 'stay_pass_operations', 'stay_pass_credit_transactions', 'stay_pass_audit_logs','customers','dogs','stays','stay_dogs','transactions','appointments','appointment_dogs',
   'dog_photos','stay_consents','system_settings','shop_holidays','coupons','coupon_uses','stay_payment_deletions',
   'care_videos','boarding_charges','care_comment_state','care_comment_likes','care_comment_reads','care_comments','care_photo_hearts','care_events','care_photos','app_users','app_user_photos','care_share_links','staff_access_identities',
   'booking_deposit_deletions','staff_credential_attempts','staff_security_events'];
@@ -18,16 +21,18 @@ export async function cloudSnapshot(db) {
   const media=new Set();
   for(const table of ['dog_photos','care_photos','app_user_photos'])for(const row of rows[table] || [])if(row.object_key)media.add(row.object_key);
   for(const row of rows.care_videos || []){media.add(row.object_key);if(row.poster_key)media.add(row.poster_key);}
+  for(const row of rows.stay_pass_generated_image_pages || []){media.add(row.html_key);media.add(row.file_key);}
   for(const row of rows.transactions || [])if(row.receipt)media.add('receipts/'+row.receipt);
   const payload={format:'little-paws-cloud-backup',version:1,created_at:new Date().toISOString(),schema,rows,
-    required_media:[...media].sort(),optional_media:['payment/payment-qr.jpg',...backupBrandKeys]};
+    required_media:[...media].sort(),optional_media:['payment/payment-qr.jpg',...backupBrandKeys,...Object.keys(uiAssetManifest).map(uiAssetKey),...imageFontManifest.map(imageFontKey)]};
   if(new TextEncoder().encode(JSON.stringify(payload)).length>5*1024*1024)return {error:'backup_too_large'};
   return payload;
 }
 
 export async function backupMedia(env,key) {
   if(typeof key!=='string' || key.length>240 || /[\\\u0000-\u001f]/.test(key) || key.split('/').some(part=>!part || part==='.' || part==='..'))return null;
-  if(!['payment/payment-qr.jpg',...backupBrandKeys].includes(key)){
+  if(key.startsWith('stay-pass-images/')){try{const found=await env.DB.prepare('SELECT 1 FROM stay_pass_generated_image_pages WHERE html_key=? OR file_key=? LIMIT 1').bind(key,key).first();return found?env.MEDIA.get(key):null;}catch(error){if(/no such table.*stay_pass/i.test(String(error)))return null;throw error;}}
+  if(!['payment/payment-qr.jpg',...backupBrandKeys,...Object.keys(uiAssetManifest).map(uiAssetKey),...imageFontManifest.map(imageFontKey)].includes(key)){
     const record=await env.DB.prepare(`SELECT 1 FROM dog_photos WHERE object_key=?
       UNION ALL SELECT 1 FROM care_photos WHERE object_key=?
       UNION ALL SELECT 1 FROM app_user_photos WHERE object_key=?

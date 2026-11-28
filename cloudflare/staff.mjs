@@ -1,3 +1,6 @@
+import {processExpirations} from './stay_pass/lifecycle.mjs';
+import {linkedPassBooking,quotePassCheckin,checkInPassBooking} from './stay_pass/checkin.mjs';
+import {isStayPassRoute,stayPassRoute,stayPassEnabled,bookingWritesEnabled,checkoutWritesEnabled,extensionWritesEnabled} from './stay_pass/routes.mjs';
 import {videoLimit,addCareVideo,saveVideoPoster,removeCareVideo,staffVideo,videoResponse} from './care_videos.mjs';
 import {staffCommentMutation,staffReply,careNotifications,markCareCommentsRead} from "./care_interactions.mjs";
 import {stayCardDogs} from "./card_dogs.mjs";
@@ -25,6 +28,7 @@ import { saveDog, archiveDog } from "./dogs.mjs";
 import {selectedTheme,systemSettings,saveSystemSetting,writeHoliday} from "./system_settings.mjs";
 import { outstandingPage } from "./staff_ui.mjs";
 import {accountDetails,userDirectory,saveUser,saveProfile,changePassword,userPhoto,saveUserPhoto,recheckIn} from './staff_users.mjs';
+import {quoteStayExtension,extendStay} from './stay_extensions.mjs';
 import {editStay} from './stay_edits.mjs';
 import {cloudSnapshot,backupMedia} from './cloud_backup.mjs';
 import {manualPage,guideImages} from './manual.mjs';
@@ -140,6 +144,12 @@ async function privateFile(request, env, receiptMatch) {
 }
 
 export default {
+  async scheduled(event,env){
+    if(!stayPassEnabled(env)||env.STAY_PASS_LIFECYCLE_WRITES!=='1'||env.STAY_PASS_AUTO_EXPIRY!=='1')return;
+    const id=Number(env.STAY_PASS_EXPIRY_ACTOR_ID);if(!Number.isSafeInteger(id)||id<1)return;
+    const actor=await env.DB.prepare('SELECT u.id,a.email FROM app_users u JOIN staff_access_identities a ON a.user_id=u.id WHERE u.id=? AND u.active=1 AND u.is_admin=1 ORDER BY a.email LIMIT 1').bind(id).first();
+    if(actor)await processExpirations(env.DB,actor,new Date(event.scheduledTime));
+  },
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const match = /^\/api\/stays\/(\d+)\/(payments|check-out)$/.exec(url.pathname);
@@ -152,6 +162,7 @@ export default {
     const careMediaMatch = /^\/api\/stays\/(\d+)\/dogs\/(\d+)\/timeline\/events\/(\d+)\/photos(?:\/(\d+))?$/.exec(url.pathname);
     const careNotificationRoute = url.pathname === "/api/care/notifications";
     const timelineMatch = /^\/api\/stays\/(\d+)\/dogs\/(\d+)\/timeline(?:\/photos\/(\d+))?$/.exec(url.pathname);
+    const extensionMatch = /^\/api\/stays\/(\d+)\/extension(?:\/(quote))?$/.exec(url.pathname);
     const staySummaryMatch = /^\/api\/stays\/(\d+)$/.exec(url.pathname);
     const documentMatch = /^\/api\/documents\/(booking|deposit|stay)\/(\d+)(?:\/(\d+))?\.(html|pdf|png)$/.exec(url.pathname);
     const couponMatch = /^\/api\/coupons(?:\/(\d+))?$/.exec(url.pathname);
@@ -175,11 +186,12 @@ export default {
     const reopenMatch = /^\/api\/stays\/(\d+)\/recheck-in$/.exec(url.pathname);
     const backupRoute=['/api/backup/snapshot','/api/backup/media'].includes(url.pathname);
     const manualMatch=/^\/api\/manual\/(?:(usage|backup)\.html|images\/([a-z]+)\.webp)$/.exec(url.pathname);
-    if (!videoReadMatch && !videoWriteMatch && !careNotificationRoute && !backupRoute && !manualMatch && !userMatch && !accountMatch && !reopenMatch && !match && !stayChangeMatch && !depositMatch && !dogMatch && !customerMatch && !bookingMatch && !checkInMatch && !couponMatch && !documentMatch && !directCheckIn && !directPreview && !couponPreview && !staySummaryMatch && !timelineMatch && !careMediaMatch && !careExportMatch && !isFile && !settings && !holidayMatch && !history && !ledgerMatch && !assetMatch && !overview && !reportMatch && !["/", "/api/account", "/api/dashboard/finance", "/api/customers", "/api/bookings", "/api/bookings/rates", "/api/bookings/calendar", "/api/bookings/pending", "/api/stays/outstanding", "/api/stays/current"].includes(url.pathname)) return json({error: "not_found"}, 404);
+    if (!isStayPassRoute(url.pathname) && !videoReadMatch && !videoWriteMatch && !careNotificationRoute && !backupRoute && !manualMatch && !userMatch && !accountMatch && !reopenMatch && !match && !stayChangeMatch && !depositMatch && !dogMatch && !customerMatch && !bookingMatch && !checkInMatch && !couponMatch && !documentMatch && !directCheckIn && !directPreview && !couponPreview && !extensionMatch && !staySummaryMatch && !timelineMatch && !careMediaMatch && !careExportMatch && !isFile && !settings && !holidayMatch && !history && !ledgerMatch && !assetMatch && !overview && !reportMatch && !["/", "/api/account", "/api/dashboard/finance", "/api/customers", "/api/bookings", "/api/bookings/rates", "/api/bookings/calendar", "/api/bookings/pending", "/api/stays/outstanding", "/api/stays/current"].includes(url.pathname)) return json({error: "not_found"}, 404);
     try {
       const user = await authorizedUser(env, ctx, request);
       if (!user) return json({error: "access_required"}, 403);
       if (user.needs_password && !accountMatch && !assetMatch && url.pathname!=='/') return json({error:'password_change_required'},403);
+      if(isStayPassRoute(url.pathname))return stayPassRoute(request,env,user,{theme:await selectedTheme(env.DB),lang:uiLanguage(url)});
       if(backupRoute){
         if(!user.is_admin)return json({error:'admin_required'},403);
         if(url.pathname.endsWith('/media')){
@@ -236,6 +248,14 @@ export default {
         return json(result,{saved:200,invalid:400,invalid_credentials:401,forbidden:403,not_found:404,
           conflict:409,duplicate:409,last_admin:409,rate_limited:429}[result.status] || 400);
       }
+      if(extensionMatch){
+        if(request.method!=='POST')return json({status:'method_not_allowed'},405);
+        if(request.headers.get('Origin')!==url.origin)return json({status:'invalid_origin'},403);
+        if(request.headers.get('Content-Type')?.split(';')[0]!=='application/json')return json({status:'invalid_content_type'},415);
+        const form=await smallJson(request,8192);if(!form)return json({status:'invalid'},400);
+        const result=await (extensionMatch[2] ? quoteStayExtension : extendStay)(env.DB,Number(extensionMatch[1]),form,user);
+        return json(result,{ready:200,saved:200,not_found:404,invalid:400}[result.status]||409);
+      }
       if(staySummaryMatch && request.method==='PUT'){
         const id=Number(staySummaryMatch[1]);
         if(!Number.isSafeInteger(id)||id<1)return json({status:'not_found'},404);
@@ -255,7 +275,7 @@ export default {
         if (report.error) return json(reportMatch[2] ? {error:report.error} : {report,choices:await reportChoices(env.DB)},422);
         return reportMatch[2] ? await exportReport(env,report,reportMatch[2]) : json({report,choices:await reportChoices(env.DB)});
       }
-      if (assetMatch) return staffAsset(request,assetMatch[1]);
+      if (assetMatch) return staffAsset(request,assetMatch[1],env);
       if (ledgerMatch) {
         const raw = ledgerMatch[1];
         const id = raw && raw !== "new" ? Number(raw) : null;
@@ -492,10 +512,15 @@ export default {
         }
         const form = await smallJson(request, 65536);
         if (!form) return json({error:"invalid"},400);
-        const result = couponPreview ? await previewCheckInCoupon(env.DB,form,user) : directPreview ? await previewDirectStay(env.DB,form,user)
-          : directCheckIn ? await checkInDirect(env.DB,form,user) : await checkInBooking(env.DB,id,form,user);
+        let passLinked=null;
+        if(checkInMatch&&bookingWritesEnabled(env)&&await env.DB.prepare('SELECT 1 FROM stay_pass_booking_links WHERE booking_id=?').bind(id).first()){
+          try{passLinked=await linkedPassBooking(env.DB,id,user);}catch(error){if(error.code)return json({status:error.code},403);throw error;}
+        }
+        const passResult=passLinked?await checkInPassBooking(env.DB,id,form,user).catch(error=>{if(error.code)return {status:error.code};throw error;}):null;
+        const result = passResult || (couponPreview ? await previewCheckInCoupon(env.DB,form,user) : directPreview ? await previewDirectStay(env.DB,form,user)
+          : directCheckIn ? await checkInDirect(env.DB,form,user) : await checkInBooking(env.DB,id,form,user));
         return json(result, {ready:200,created:201,saved:200,invalid:400,consent_required:422,not_found:404,conflict:409,warning:409,coupon_invalid:400,
-          coupon_unavailable:409,coupon_minimum:422,coupon_exceeds:422,payment_exceeds:422}[result.status]);
+          coupon_unavailable:409,coupon_minimum:422,coupon_exceeds:422,payment_exceeds:422,already_checked_in:200,pass_timing_review_required:409,pass_not_active:409,booking_confirmation_required:409,deposit_excess_review_required:409,idempotency_conflict:409,forbidden:403}[result.status]||409);
       }
       if (request.method !== "GET" && (bookingMatch || url.pathname === "/api/bookings")) {
         const id = bookingMatch ? Number(bookingMatch[1]) : null;
@@ -567,7 +592,7 @@ export default {
       }
       if (!match && !depositMatch) {
         if (request.method !== "GET") return json({error: "method_not_allowed"}, 405);
-        if (url.pathname === "/") return outstandingPage(Boolean(user.is_admin),Boolean(env.BROWSER),await selectedTheme(env.DB),user.display_name,uiLanguage(url));
+        if (url.pathname === "/") return outstandingPage(Boolean(user.is_admin),Boolean(env.BROWSER),await selectedTheme(env.DB),user.display_name,uiLanguage(url),stayPassEnabled(env),checkoutWritesEnabled(env),extensionWritesEnabled(env));
         if (url.pathname === "/api/account") {
           return json({id: user.id, displayName: user.display_name, isAdmin: !!user.is_admin});
         }
@@ -615,6 +640,7 @@ export default {
           const id = Number(bookingMatch[1]);
           if (!Number.isSafeInteger(id) || id < 1) return json({error: "not_found"}, 404);
           const details = await bookingDetails(env.DB, id);
+          if(details&&bookingWritesEnabled(env)&&user.is_admin){const link=await linkedPassBooking(env.DB,id,user);if(link){const q=await quotePassCheckin(env.DB,id,user).catch(error=>({status:error.code||'temporarily_unavailable'}));details.stay_pass={pass_number:link.pass_number,cash_cents:link.cash_cents,credit_units:link.snapshot.settlement.covered_units,settlement:link.snapshot.settlement,...q};}}
           return details ? json(details) : json({error: "not_found"}, 404);
         }
         if (["/api/customers", "/api/bookings/pending"].includes(url.pathname)) {

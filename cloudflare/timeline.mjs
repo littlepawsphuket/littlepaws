@@ -274,7 +274,7 @@ export default {
       }
       if(path.length===5 && path[3]==="theme"){
         const active=await env.DB.prepare(`SELECT 1 ${activeLink} WHERE ${activeCondition}`).bind(token).first();
-        if(!active)return missing();const asset=customerThemeAsset(path[4]);
+        if(!active)return missing();const asset=await customerThemeAsset(path[4],env);
         return asset ? respond(asset.bytes,200,{"Content-Type":asset.type}) : missing();
       }
       if (path.length === 4 && path[3] === "timeline.pdf") return await timelinePdf(env, token, url);

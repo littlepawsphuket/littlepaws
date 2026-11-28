@@ -1,5 +1,5 @@
 export function dashboardScreen({translateLabel,node,results,baht,dateLabel,monthLabel,today,openStay,openCustomer,openTimeline,
-  checkInBooking,viewBooking,checkout,discussionView,markDiscussionRead,setMode,activityIcon,onCareChange}) {
+  checkInBooking,viewBooking,checkout,discussionView,markDiscussionRead,setMode,activityIcon,onCareChange,onRendered}) {
   const colors = {"ค่าฝากเลี้ยง":"#24796b","อาหารและขนม":"#a54a4b","อุปกรณ์":"#3b6dab",
     "ทำความสะอาด":"#43804a","ค่าน้ำไฟ":"#a86818","การตลาด":"#8255a0","ค่ารักษาพยาบาล":"#a94d7b","เอกสาร":"#546779","อื่นๆ":"#846343"};
   const button = (label,action,secondary = false) => {
@@ -216,6 +216,7 @@ export function dashboardScreen({translateLabel,node,results,baht,dateLabel,mont
     results.replaceChildren(currentDogs(data.current),upcomingDogs(data.upcoming),summary);
     summary.prepend(period);
     period.hidden = false;
+    onRendered?.();
   }
   return {render};
 }

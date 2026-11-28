@@ -1,3 +1,5 @@
+import {addPassBadges} from './stay_pass/booking_badges.mjs';
+import {bookingCashRefunds} from './stay_pass/precheckin_cash.mjs';
 import {savedBoardingPrice} from "./boarding_pricing.mjs";
 import {bookingCardDogs} from "./card_dogs.mjs";
 import {authorizedStaff, normalizePayment} from "./stay_payments.mjs";
@@ -5,8 +7,8 @@ import {authorizedStaff, normalizePayment} from "./stay_payments.mjs";
 const quotePending = `(NOT EXISTS (SELECT 1 FROM appointment_dogs ad WHERE ad.appointment_id=a.id)
   OR EXISTS (SELECT 1 FROM appointment_dogs ad
              WHERE ad.appointment_id=a.id AND ad.nightly_rate_cents IS NULL))`;
-const deposited = `COALESCE((SELECT SUM(ROUND(t.amount * 100)) FROM transactions t
-  WHERE t.deposit_appointment_id=a.id AND t.payment_type='deposit'), 0)`;
+const deposited = `(COALESCE((SELECT SUM(ROUND(t.amount * 100)) FROM transactions t
+  WHERE t.deposit_appointment_id=a.id AND t.payment_type='deposit'), 0) + COALESCE((SELECT CASE WHEN json_valid(details) THEN json_extract(details,'$.booking_cash_adjustment_cents') ELSE 0 END FROM boarding_charges WHERE appointment_id=a.id),0))`;
 
 // Aggregate the full waiting queue, independently of page size and calendar cells.
 export async function bookingForecast(db) {
@@ -36,7 +38,7 @@ export async function pendingBookings(db, after, search) {
                    WHERE ad.appointment_id=a.id AND instr(lower(d.name),?)>0))
     ORDER BY a.id LIMIT 26
   `).bind(after, search, search, search, search).all();
-  const bookings = results.slice(0, 25);
+  const bookings = await addPassBadges(db,results.slice(0, 25));
   return {bookings, forecast:await bookingForecast(db), nextAfter: results.length > bookings.length ? bookings.at(-1).id : null};
 }
 
@@ -61,9 +63,11 @@ export async function bookingDetails(db, id) {
   const booking = details.results[0];
   if (!booking) return null;
   const quotePending = !dogs.results.length || dogs.results.some((dog) => dog.nightly_rate_cents === null);
-  const paidCents = payments.results.reduce((sum, payment) => sum + payment.amount_cents, 0);
+  const pricing=await savedBoardingPrice(db,booking.stay_id ? "stay" : "booking",booking.stay_id || id);
+  const paidCents = payments.results.reduce((sum, payment) => sum + payment.amount_cents, 0)+(booking.stay_id?pricing?.stay_pass?.precheckin_cash_adjustment_cents||0:pricing?.booking_cash_adjustment_cents||0);
+  const cashHistory=booking.stay_id?pricing?.stay_pass?.precheckin_cash_history||[]:pricing?.booking_cash_adjustment_cents?(await bookingCashRefunds(db,id)).history:[];
   return {
-    ...booking, pricing:await savedBoardingPrice(db,booking.stay_id ? "stay" : "booking",booking.stay_id || id), dogs: dogs.results, payments: payments.results, paid_cents: paidCents,
+    ...booking, refunds:cashHistory.map(row=>({date:row.occurred_on,received_time:row.received_time,amount:row.amount_cents/100,note:''})),pricing, dogs: dogs.results, payments: payments.results, paid_cents: paidCents,
     balance_cents: quotePending ? null : Math.max(0, booking.total_cents - paidCents),
   };
 }
@@ -157,5 +161,5 @@ export async function bookingCalendar(db, start, end) {
     db.prepare(`SELECT id,name,starts_on,ends_on FROM shop_holidays
       WHERE starts_on<=? AND ends_on>=? ORDER BY starts_on,id`).bind(end,start),
   ]);
-  return {bookings:bookings.results,holidays:holidays.results,forecast:await bookingForecast(db)};
+  return {bookings:await addPassBadges(db,bookings.results),holidays:holidays.results,forecast:await bookingForecast(db)};
 }

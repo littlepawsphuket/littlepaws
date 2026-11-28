@@ -53,8 +53,7 @@ export function checkInTerms(language) {
   return {language:lang, terms:terms[lang], version:terms.versions[lang]};
 }
 
-function checkInValues(form) {
-  const now = new Date();
+export function checkInValues(form, now = new Date()) {
   const signedAt = new Date(now.valueOf()+7*3600000).toISOString().replace("Z","+07:00");
   const {language,version,signature,accepted,revision,arrivalDay,arrivalTime,pickupTime,
     amountCents,expectedBalance,paymentDate,receivedTime,key} = form;
@@ -75,14 +74,14 @@ function checkInValues(form) {
     paidAt:payment.paidAt,signedAt,language,signature,intake};
 }
 
-function consentInsert(db, marker, checkIn) {
+export function consentInsert(db, marker, checkIn) {
   return db.prepare(`INSERT INTO stay_consents(stay_id,customer_id,customer_name,signed_at,terms,signature,signed_language,terms_en)
     SELECT s.id,s.customer_id,c.name,?,?,?,?,? FROM stays s JOIN customers c ON c.id=s.customer_id
     WHERE s.create_key=?`).bind(checkIn.signedAt,JSON.stringify(terms.th),JSON.stringify(checkIn.signature),
     checkIn.language,JSON.stringify(terms.en),marker);
 }
 
-function paymentInsert(db, marker, checkIn) {
+export function paymentInsert(db, marker, checkIn) {
   return db.prepare(`INSERT INTO transactions(occurred_on,kind,category,description,amount,customer_id,stay_id,
     payment_method,payment_type,payment_key,received_time)
     SELECT ?,'income','ค่าฝากเลี้ยง','ชำระวันเข้าพัก',?/100.0,s.customer_id,s.id,'','checkin',?,?

@@ -9,6 +9,25 @@ workers_dev = true
 preview_urls = false
 
 [vars]
+STAY_PASS_ENVIRONMENT = "production"
+STAY_PASS_ENABLED = "1"
+STAY_PASS_RELEASE = "v1.9"
+STAY_PASS_SALES_WRITES = "1"
+STAY_PASS_BOOKING_WRITES = "1"
+STAY_PASS_REFUND_WRITES = "1"
+STAY_PASS_RENEWAL_WRITES = "1"
+STAY_PASS_IMAGE_WRITES = "1"
+STAY_PASS_CHECKOUT_WRITES = "1"
+STAY_PASS_CANCELLATION_WRITES = "1"
+STAY_PASS_EXTENSION_WRITES = "1"
+STAY_PASS_BOOKING_CASH_WRITES = "1"
+STAY_PASS_STAY_CASH_WRITES = "1"
+STAY_PASS_LIFECYCLE_WRITES = "1"
+STAY_PASS_TEMPLATE_WRITES = "1"
+STAY_PASS_TRANSFER_WRITES = "1"
+STAY_PASS_PET_WRITES = "1"
+STAY_PASS_AUTO_EXPIRY = "1"
+STAY_PASS_EXPIRY_ACTOR_ID = "1"
 ACCESS_TEAM_DOMAIN = "https://small-butterfly-9075.cloudflareaccess.com"
 TIMELINE_ORIGIN = "https://little-paws-timeline.jaturong.workers.dev"
 # Set ACCESS_AUDIENCE in the Cloudflare dashboard after creating its Access app.
@@ -25,3 +44,7 @@ database_id = "65ede23b-d671-4f7f-8eda-ecacfd9e050e"
 [[r2_buckets]]
 binding = "MEDIA"
 bucket_name = "little-paws-production-media"
+
+# Hourly expiry processing rechecks the active administrator and open commitments.
+[triggers]
+crons = ["15 * * * *"]

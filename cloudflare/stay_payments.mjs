@@ -17,9 +17,10 @@ export const refundableBalance = `MAX(0,COALESCE((
     WHEN t.kind='refund' THEN -ROUND(t.amount*100) ELSE 0 END)
   FROM transactions t WHERE t.stay_id=s.id AND t.auto_stay=0),0))`;
 
+export const stayCashAdjustment = `COALESCE((SELECT CASE WHEN json_valid(b.details) THEN CASE WHEN json_type(b.details,'$.stay_pass')='object' THEN -COALESCE((SELECT SUM(ROUND(r.amount*100)) FROM transactions r WHERE r.stay_id=s.id AND r.kind='refund'),0) ELSE 0 END ELSE 0 END FROM boarding_charges b WHERE b.stay_id=s.id),0)`;
 export const stayBalance = `MAX(0, ROUND(s.agreed_total*100) - COALESCE((
   SELECT SUM(ROUND(t.amount*100)) FROM transactions t WHERE t.stay_id=s.id AND t.payment_type!=''
-),0))`;
+),0) - ${stayCashAdjustment})`;
 
 export const authorizedStaff = `EXISTS (SELECT 1 FROM app_users u JOIN staff_access_identities a ON a.user_id=u.id
   WHERE u.id=? AND u.active=1 AND a.email=?)`;

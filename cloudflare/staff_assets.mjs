@@ -1,6 +1,8 @@
+import {storedUiAsset} from './ui_asset_storage.mjs';
 import {uiAssets} from "./ui_assets.mjs";
 
-export function staffAsset(request,name) {
+export function staffAsset(request,name,env) {
+  if(typeof LITTLE_PAWS_EMBED_UI_ASSETS!=='undefined'&&!LITTLE_PAWS_EMBED_UI_ASSETS)return storedUiAsset(request,name,env);
   if (!Object.hasOwn(uiAssets,name)) return new Response(null,{status:404});
   if (!["GET","HEAD"].includes(request.method)) return new Response(null,{status:405,headers:{Allow:"GET, HEAD"}});
   const [version,base64] = uiAssets[name];

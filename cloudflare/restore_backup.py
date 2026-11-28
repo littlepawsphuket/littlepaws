@@ -99,6 +99,12 @@ def restore(archive, destination):
             for table in ('dog_photos', 'care_photos', 'app_user_photos'):
                 expected.update(row['object_key'] for row in snapshot['rows'].get(table, []) if row['object_key'])
             expected.update('receipts/' + row['receipt'] for row in snapshot['rows'].get('transactions', []) if row['receipt'])
+            object_hashes = {record['key']: record['sha256'] for record in manifest}
+            for row in snapshot['rows'].get('stay_pass_generated_image_pages', []):
+                expected.update((row['html_key'], row['file_key']))
+                if (object_hashes.get(row['html_key']) != row['html_hash'] or
+                        object_hashes.get(row['file_key']) != row['file_hash']):
+                    raise ValueError('A Stay Pass image checksum is missing or inconsistent')
             if not expected <= keys:
                 raise ValueError('A database media reference is missing')
         database.chmod(0o600)

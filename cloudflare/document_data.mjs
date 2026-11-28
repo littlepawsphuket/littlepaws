@@ -1,3 +1,5 @@
+import {bookingAmendment} from './stay_pass/effective_booking.mjs';
+import {storedUiAssetBytes} from './ui_asset_storage.mjs';
 import {bookingDetails} from "./bookings.mjs";
 import {staySummary} from "./stay_summary.mjs";
 import {validDogPhotoKey} from "./timeline.mjs";
@@ -29,9 +31,13 @@ export async function documentAssets(env) {
   async function asset(key,type,limit) {
     if (budget < 64) return null;
     let value = await inlineAsset(env.MEDIA,key,type,Math.min(limit,Math.floor((budget-64)*3/4)));
-    const bundled = key.startsWith("brand/") ? uiAssets[key.slice(6)] : null;
+    const bundled = (typeof LITTLE_PAWS_EMBED_UI_ASSETS==='undefined'||LITTLE_PAWS_EMBED_UI_ASSETS) && key.startsWith("brand/") ? uiAssets[key.slice(6)] : null;
     if (!value && bundled && bundled[1].length*3/4<=limit && bundled[1].length+64<=budget) {
       value = "data:"+type+";base64,"+bundled[1];
+    }
+    if(!value && typeof LITTLE_PAWS_EMBED_UI_ASSETS!=='undefined'&&!LITTLE_PAWS_EMBED_UI_ASSETS && key.startsWith('brand/')){
+      const stored=await storedUiAssetBytes(key.slice(6),env);
+      if(stored&&stored.bytes.length<=limit&&stored.bytes.length*4/3+64<=budget)value='data:'+type+';base64,'+base64(stored.bytes);
     }
     if (value) budget -= value.length;
     return value;
@@ -46,6 +52,11 @@ export async function documentData(env, kind, id, paymentId, format, lang) {
   const db = env.DB;
   const record = kind === "stay" ? await staySummary(db,id) : await bookingDetails(db,id);
   if (!record) return null;
+  try{
+    const pass=await db.prepare(`SELECT l.booking_id,p.pass_number,s.snapshot FROM stay_pass_booking_links l JOIN stay_passes p ON p.id=l.pass_id JOIN stay_pass_booking_settlements s ON s.id=l.hold_operation_id
+     WHERE l.booking_id=${kind==='stay'?'(SELECT booking_id FROM stay_pass_checkin_commits WHERE stay_id=?)':'?'}`).bind(id).first();
+    if(pass){const amendment=kind==='booking'?await bookingAmendment(db,pass.booking_id):null;const snap=JSON.parse(amendment?.remaining_snapshot||pass.snapshot);record.stay_pass=kind!=='deposit'&&record.pricing?.stay_pass ? record.pricing.stay_pass : {pass_number:pass.pass_number,credit_units:snap.settlement.covered_units,cancellation_cash_fees_cents:snap.cancellation_cash_fees_cents||0,settlement:snap.settlement};}
+  }catch(error){if(!/no such table.*stay_pass_/i.test(String(error)))throw error;}
   let deposit;
   if (kind === "deposit") {
     deposit = record.payments.find((payment) => payment.id === paymentId && payment.payment_type === "deposit");
@@ -73,7 +84,7 @@ export async function documentData(env, kind, id, paymentId, format, lang) {
   }
   return {
     ...record, kind, format, lang, theme, dogs, logo, mascot, font, qr, deposit,
-    terms:format === "pdf" ? parse(extras.terms,null) : null, refunds:record.refunds || [],
+    terms:format === "pdf" ? parse(extras.terms,null) : null, refunds:kind==='deposit'?[]:record.refunds || [],
     contact:record.contact || [extras.owner_phone,extras.line_id].filter(Boolean).join(" / "),
   };
 }

@@ -149,3 +149,28 @@ export const compactBoardingCss = `
 .staff-app .current-dog-pickup{flex-wrap:nowrap!important}
 }
 `;
+
+// Date/time pairs stay together; payment amount and explanations get a full row.
+export const extensionLayoutCss = `
+.staff-app .header-controls .language-switch{width:auto;order:0;flex:none}
+.staff-app .stay-extension-form{display:block!important}
+.staff-app .extension-fields{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:14px;align-items:end}
+.staff-app .extension-fields label{display:flex;flex-direction:column;gap:6px;min-width:0}
+.staff-app .extension-fields :is(input,textarea){width:100%;min-width:0;box-sizing:border-box;min-height:48px;font-size:16px}
+.staff-app .extension-fields textarea{min-height:82px;resize:vertical}
+.staff-app .extension-wide{grid-column:1/-1;min-width:0}
+.staff-app .stay-extension-form .record-amounts{margin:8px 0;gap:8px}
+.staff-app .stay-extension-form :is(h3,p){overflow-wrap:anywhere}
+.staff-app .record-actions button{min-height:46px}
+@media(max-width:360px){.staff-app .record-amounts{grid-template-columns:repeat(2,minmax(0,1fr))}.staff-app .record-amounts>div:last-child:nth-child(3){grid-column:1/-1;border-left:0;border-top:1px solid var(--season-border,#c8ded4);padding:8px 0 0}}
+@media(max-width:600px){
+.staff-app .checkin-timing-grid{grid-template-columns:minmax(0,1.35fr) minmax(0,1fr)}
+.staff-app .checkin-payment-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+.staff-app .checkin-payment-grid>label:first-of-type{grid-column:1/-1}
+.staff-app .record-facts{gap:8px}.staff-app .record-facts>div{padding:10px}
+.staff-app .record-facts dd{font-size:15px}
+.staff-app .stay-extension-form .record-amounts{padding:10px}
+.staff-app .stay-extension-form .record-amounts strong{font-size:18px}
+.staff-app .stay-extension-form .record-amounts>div+div{padding-left:8px}
+}
+`;

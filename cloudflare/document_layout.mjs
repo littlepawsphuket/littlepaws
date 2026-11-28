@@ -106,19 +106,20 @@ export function documentHtml(doc) {
   ].join("");
   const paymentRows = (doc.deposit ? [doc.deposit] : doc.payments).map((payment) => ({
     left:[day(payment.occurred_on),payment.received_time].filter(Boolean).join(" · "),
-    label:{deposit:t.depositReceived,checkin:t.checkinPayment,additional:t.addPayment}[payment.payment_type],
+    label:payment.description?.startsWith('กลับรายการเงินหลังเช็กเอาต์ Stay Pass')?(doc.lang==='en'?'Cash entry correction':'กลับรายการบันทึกเงิน'):{deposit:t.depositReceived,checkin:t.checkinPayment,additional:t.addPayment}[payment.payment_type],
     amount:money(payment.amount_cents),
   }));
-  for (const refund of doc.refunds) paymentRows.push({left:day(refund.date),label:t.refund,amount:money(Math.round(refund.amount*100))});
+  for (const refund of doc.refunds) paymentRows.push({left:day(refund.date),label:refund.description?.startsWith('กลับรายการเงินหลังเช็กเอาต์ Stay Pass')?(doc.lang==='en'?'Cash entry correction':'กลับรายการบันทึกเงิน'):t.refund,amount:money(Math.round(refund.amount*100))});
   const balance = kind === "stay" ? (doc.status === "cancelled" ? null : doc.due_cents) : doc.balance_cents;
-  const settled = doc.payments.reduce((sum,payment) => sum+payment.amount_cents,0);
+  const settled = doc.paid_cents ?? doc.payments.reduce((sum,payment) => sum+payment.amount_cents,0);
   const paymentBlock = paymentRows.length ? `<section class="payments"><h2>${escape(doc.deposit ? t.depositReceived : t.items)}</h2>
     <div class="payrows">${paymentRows.map((row) => `<div class="payment"><span>${escape(row.left)}</span>
     <span>${escape(row.label)}</span><strong>${escape(row.amount)}</strong></div>`).join("")}</div></section>` : "";
   const signed = doc.consent && signatureImage(doc.consent.signature);
   const consent = kind === "stay" ? `<section><h2>${escape(t.consent)}</h2><p>${escape(signed
     ? [t.agreed,doc.consent.customer_name,stamp(doc.consent.signed_at)].join(" · ") : t.noConsent)}</p>${signed || ""}</section>` : "";
-  const totals = `<section class="facts amounts">${!doc.deposit ? cell(t.total,balance === null && kind !== "stay" ? t.ratePending : money(doc.total_cents)) : ""}
+  const pass=doc.stay_pass||doc.pricing?.stay_pass;
+  const totals = `<section class="facts amounts">${!doc.deposit ? cell(pass?(lang==='en'?'Cash-covered service total':'ค่าบริการส่วนที่ชำระเป็นเงิน'):t.total,balance === null && kind !== "stay" ? t.ratePending : money(doc.total_cents)) : ""}
     ${!doc.deposit && doc.discount_cents ? cell(t.discount,money(doc.discount_cents)) : ""}
     ${!doc.deposit && settled ? cell(t.paid,money(settled)) : ""}
     ${cell(doc.deposit ? t.balanceAtCheckin : t.due,balance === null ? "—" : money(balance))}</section>`;
@@ -129,7 +130,8 @@ export function documentHtml(doc) {
     const dog=doc.dogs.find(dog=>dog.id===row.dog_id);
     return `<div ${priceRowClass}><span>${escape(dog?.name || '')}</span><span>${escape(money(row.base_cents))}</span><strong>${escape(money(row.fee_cents))}</strong></div>`;
   }).join('') || '';
-  const priceBlock=!pricing || pricing.service!=='overnight' ? '' : pricing.grandfathered
+  const extensionBlock=pricing?.extensions?.length ? `<section><h2>${lang==='en'?'Stay extension':'การต่อวันเข้าพัก'}</h2>${pricing.extensions.map(row=>`<p>${escape(day(row.before.checkout))} ${escape(row.before.time)} → ${escape(day(row.after.checkout))} ${escape(row.after.time)}<br>${lang==='en'?'Additional charge':'ค่าใช้จ่ายเพิ่ม'} ${escape(money(row.added_cents))}</p>`).join('')}</section>` : '';
+  const priceBlock=pass || !pricing || pricing.service!=='overnight' || pricing.extensions?.length ? '' : pricing.grandfathered
     ? `<section><h2>${lang==='en'?'Agreed price retained':'ใช้ราคาที่ตกลงเดิม'}</h2><p>${lang==='en'?'Existing booking: no additional late check-out charge.':'รายการเดิม: ไม่คิดค่ารับกลับล่าช้าเพิ่ม'}</p></section>`
     : `<section class="boarding-price-breakdown"><h2>${lang==='en'?'Boarding and late check-out charges':'ค่าฝากเลี้ยงและค่ารับกลับล่าช้า'}</h2>
       <p>${lang==='en'?'Boarding':'ค่าฝากปกติ'} ${escape(pricing.base_days)} ${lang==='en'?'day(s), 24 hours per day':'วัน รอบละ 24 ชั่วโมง'} · ${escape(money(pricing.base_cents))}</p>
@@ -137,8 +139,21 @@ export function documentHtml(doc) {
       <p>${lang==='en'?'Up to 2 hours free; over 2–6 hours +25%; over 6–12 hours +50%; over 12 hours +1 day.':'ผ่อนผันไม่เกิน 2 ชม. ฟรี · เกิน 2–6 ชม. +25% · เกิน 6–12 ชม. +50% · เกิน 12 ชม. เพิ่ม 1 วัน'}</p>
       <p><strong>${lang==='en'?'Applied late fee':'อัตราที่ใช้'}: ${pricing.percent===100?(lang==='en'?'1 extra day':'เพิ่ม 1 วัน'):pricing.percent+'%'} · ${escape(money(pricing.fee_cents))}</strong></p>
       <div ${priceRowClass}><strong>${lang==='en'?'Dog':'สุนัข'}</strong><strong>${lang==='en'?'Boarding':'ค่าฝากปกติ'}</strong><strong>${lang==='en'?'Late check-out':'รับกลับล่าช้า'}</strong></div>${priceRows}</section>`;
+  const daycare=pass?.checkout_reconciliation?.daycare||pass?.daycare;
+  const passBlock=pass?`<section class="stay-pass-breakdown" style="overflow-wrap:anywhere"><h2>Little Paws Stay Pass</h2>${daycare?`<p>${lang==='en'?'Day Care: up to 12 hours = 0.5 day; over 12 hours = 1 day. Duration: ':'Day Care: ไม่เกิน 12 ชั่วโมง = 0.5 วัน; เกิน 12 ชั่วโมง = 1 วัน · ระยะเวลา: '}${escape((daycare.elapsed_minutes/60).toLocaleString(lang==='en'?'en-GB':'th-TH',{maximumFractionDigits:2}))} ${lang==='en'?'hours':'ชั่วโมง'}</p>`:''}<p>${escape(pass.pass_number)} · ${lang==='en'?'Credits used':'ใช้โควตา'} ${escape(pass.credit_units/4)} ${lang==='en'?'days':'วัน'}</p>
+    ${pass.cancellation_cash_fees_cents?`<p>${lang==='en'?'Cancellation fees carried from the booking':'ค่าบริการยกเลิกที่รวมมาจากการจอง'}: ${escape(money(pass.cancellation_cash_fees_cents))}</p>`:''}
+    <p>${lang==='en'?'Late pickup allowance':'โควตารับกลับล่าช้า'}: ${escape(pass.settlement.late_units/4)} ${lang==='en'?'days':'วัน'} · ${lang==='en'?'Covered by Pass':'หัก Pass'} ${escape(pass.settlement.rows.reduce((n,r)=>n+(r.late_covered_units||0),0)/4)} ${lang==='en'?'days':'วัน'}${Number.isSafeInteger(pass.settlement.late_cash_cents)?' · '+(lang==='en'?'Late pickup cash: ':'รับกลับล่าช้าชำระเป็นเงิน: ')+escape(money(pass.settlement.late_cash_cents)):''}</p>
+    <p>${lang==='en'?'Cash-covered portion':'ส่วนเกินที่ชำระเป็นเงิน'}: ${escape(pass.settlement.cash_units/4)} ${lang==='en'?'days':'วัน'} · ${escape(money(pass.settlement.cash_cents))}</p>
+    ${pass.settlement.rows.map(row=>`<p>${escape(row.name)} · ${lang==='en'?'Pass':'โควตา'} ${escape(row.covered_units/4)} ${lang==='en'?'days':'วัน'} · ${lang==='en'?'Cash':'เงิน'} ${escape(money(row.cash_cents))}</p>`).join('')}</section>`:'';
+  const reconciliation=pass?.checkout_reconciliation;
+  const checkoutBlock=reconciliation?`<section class="stay-pass-checkout-summary"><h2>${lang==='en'?'Checkout credit update':'สรุปปรับสิทธิ์เมื่อรับกลับ'}</h2>
+    <p>${lang==='en'?'Original pickup':'กำหนดรับกลับเดิม'}: ${escape(stamp(reconciliation.original_agreement.checkout_at))} · ${escape(reconciliation.original_agreement.quantity100/100)} ${daycare?(lang==='en'?'visit':'ครั้ง'):(lang==='en'?'days':'วัน')}</p>
+    <p>${lang==='en'?'Actual pickup':'รับกลับจริง'}: ${escape(stamp(reconciliation.actual_checkout_at))}</p>
+    <p>${lang==='en'?'Credits restored':'คืนโควตา'} ${escape(reconciliation.restored_units/4)} ${lang==='en'?'days':'วัน'} · ${lang==='en'?'Extra credits used':'ใช้โควตาเพิ่ม'} ${escape(reconciliation.extra_covered_units/4)} ${lang==='en'?'days':'วัน'}</p>
+    ${reconciliation.refund_review_cents?`<p>${lang==='en'?'Overpayment at checkout':'เงินรับเกิน ณ วันรับกลับ'} ${escape(money(reconciliation.refund_review_cents))} · ${lang==='en'?'Refund handled separately; this document does not confirm a refund.':'ดำเนินการคืนเงินแยกต่างหาก เอกสารนี้ไม่ใช่หลักฐานว่าได้คืนเงินแล้ว'}</p>`:''}
+    </section>`:'';
   const dogRows = doc.dogs.map((dog) => `<li>${picture(dog.image,dog.name,"dog-photo") || dogIcon}
-    <div><strong>${escape(dog.name)}</strong><small>${escape(dog.nightly_rate_cents === null ? t.ratePending
+    <div><strong>${escape(dog.name)}</strong><small>${escape(pass ? (lang==='en'?'Regular reference: ':'ราคาอ้างอิง: ')+money(dog.nightly_rate_cents) : dog.nightly_rate_cents === null ? t.ratePending
       : money(dog.nightly_rate_cents)+" / "+rateUnit)}</small></div></li>`).join("");
   return `<!doctype html><html lang="${lang}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
     <title>${escape(t[kind])} · Little Paws</title><style>
@@ -177,7 +192,7 @@ export function documentHtml(doc) {
     ${cell(t.customer,doc.customer)}${doc.contact ? cell(t.contact,doc.contact) : ""}</section>
     <section><h2>${escape(t.dogs)}</h2><ul class="dog-list">${dogRows}</ul></section>
     ${doc.note ? `<section><h2>${escape(t.note)}</h2><p class="memo">${escape(doc.note)}</p></section>` : ""}
-    ${priceBlock}${totals}${paymentBlock}${kind === "stay" ? intakeSection(doc.intake,t,lang) : ""}
+    ${passBlock}${checkoutBlock}${priceBlock}${extensionBlock}${totals}${paymentBlock}${kind === "stay" ? intakeSection(doc.intake,t,lang) : ""}
     ${consent}${format === "pdf" ? termsSection(doc.terms) : ""}
     ${doc.qr ? `<section><h2>${escape(t.qr)}</h2>${picture(doc.qr,t.qr,"payment-qr")}</section>` : ""}
     <footer><strong>Little Paws, Big Love.</strong>${escape(t.slogan)}</footer></main></body></html>`;

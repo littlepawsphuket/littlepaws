@@ -77,7 +77,7 @@ export async function editStay(db,id,form,actor) {
   ];
   if(data.pricing)statements.push(db.prepare(`INSERT INTO boarding_charges(stay_id,details)
     SELECT id,? FROM stays WHERE id=? AND cloud_revision=?
-    ON CONFLICT(stay_id) DO UPDATE SET details=excluded.details`).bind(JSON.stringify(data.pricing),id,revision));
+    ON CONFLICT(stay_id) DO UPDATE SET details=excluded.details`).bind(JSON.stringify({...data.pricing,...(previousPrice?.extensions ? {extensions:previousPrice.extensions} : {})}),id,revision));
   if(!unchanged){
     statements.push(db.prepare(`DELETE FROM coupon_uses WHERE stay_id=? AND ${marker}`).bind(id,id,revision));
     if(coupon)statements.push(db.prepare(`INSERT INTO coupon_uses(stay_id,coupon_id,discount_cents,used_at)
