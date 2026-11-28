@@ -14,3 +14,7 @@ node_modules/
 app/static/payment-qr.jpg
 app/static/guide/
 cloudflare/wrangler.staging.toml
+
+# Private release backups and local deployment copies
+.release-backups/
+.release-build/
