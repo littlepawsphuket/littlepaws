@@ -1,0 +1,10 @@
+// Export static design studies only. Does not read customer data or change credits.
+import {readFile,writeFile,mkdir} from 'node:fs/promises';
+import {resolve,join} from 'node:path';
+import {prototypePage,prototypeCases} from '../prototype.mjs';
+if(!process.argv[2])throw Error('Provide an output directory');
+const out=resolve(process.argv[2]);await mkdir(out,{recursive:true});
+const assets={logo:(await readFile(new URL('../../../app/static/little-paws-logo.png',import.meta.url))).toString('base64'),thai:(await readFile(new URL('../prototype_assets/noto-sans-thai.ttf',import.meta.url))).toString('base64'),serif:(await readFile(new URL('../prototype_assets/cormorant-garamond.ttf',import.meta.url))).toString('base64')};
+for(const [id] of prototypeCases)await writeFile(join(out,id+'.html'),prototypePage(new URLSearchParams({case:id,width:'390'}),assets));
+await writeFile(join(out,'index.html'),`<!doctype html><html lang="th"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Stay Pass · Design review</title><style>body{max-width:900px;margin:40px auto;padding:24px;background:#f8f4eb;color:#493a2e;font:18px/1.6 system-ui}a{display:block;padding:18px;margin:12px 0;border:1px solid #c4a36a;border-radius:12px;color:#493a2e;text-decoration:none}small{color:#697b61}</style><h1>Little Paws Stay Pass</h1><h2>ตัวอย่างเพื่ออนุมัติงานออกแบบ</h2><p>ข้อมูลทั้งหมดเป็นข้อมูลจำลอง ยังไม่ใช่บัตรที่ใช้บริการได้ และยังไม่เชื่อมธุรกรรมจริง</p><p>เลือกดูตัวอย่าง แล้วเลือกความกว้าง 320 / 375 / 390 / 430 / Tablet / ขนาดต้นฉบับได้ ตัวหนังสือไม่ถูกลดเพื่อบีบให้จบในภาพเดียว คู่มือเป็นตัวอย่างการแบ่งหน้า ยังไม่ใช่เงื่อนไขฉบับอนุมัติ</p>${prototypeCases.map(([id,label])=>`<a href="${id}.html">${label} →</a>`).join('')}<small>สี Ivory · Champagne Gold · Espresso · Sage<br>ฟอนต์ Noto Sans Thai และ Cormorant Garamond<br>ใช้โลโก้ต้นฉบับ · ไม่มีการสร้างโลโก้ใหม่ · ไม่มี QR Code จำลอง</small></html>`);
+console.log(`Exported ${prototypeCases.length} self-contained design studies to ${out}`);

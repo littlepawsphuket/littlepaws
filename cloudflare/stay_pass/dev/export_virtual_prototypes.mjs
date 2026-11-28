@@ -1,0 +1,10 @@
+import {readFile,writeFile,mkdir} from 'node:fs/promises';
+import {resolve,join} from 'node:path';
+import {virtualCardPage,virtualCases} from '../virtual_prototype.mjs';
+const arg=process.argv[2];if(!arg)throw Error('Provide an explicit output directory for synthetic virtual-card studies.');
+const out=resolve(arg),raw=await Promise.all([readFile(new URL('../../../app/static/little-paws-logo.png',import.meta.url)),readFile(new URL('../prototype_assets/noto-sans-thai.ttf',import.meta.url)),readFile(new URL('../prototype_assets/cormorant-garamond.ttf',import.meta.url))]);
+const assets={logo:raw[0].toString('base64'),thai:raw[1].toString('base64'),serif:raw[2].toString('base64')};
+await mkdir(out,{recursive:true});const results=await Promise.allSettled(virtualCases.map(([id])=>writeFile(join(out,'virtual-'+id+'.html'),virtualCardPage(new URLSearchParams({case:id,width:'390'}),assets))));
+if(results.some(row=>row.status==='rejected'))throw Error('Some prototype files could not be written.');
+await writeFile(join(out,'index.html'),'<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Little Paws Virtual Card</title><style>body{font:18px/1.8 system-ui;background:#f8f4eb;color:#493a2e;max-width:820px;margin:30px auto;padding:20px}a{color:#493a2e}li{margin:12px 0}</style><h1>Virtual Stay Pass · บัตรแนวตั้ง</h1><p>ต้นแบบสไตล์บัตรใน Wallet · ข้อมูลจำลอง ไม่ใช้ยืนยันสิทธิ์จริง</p><ul>'+virtualCases.map(([id,name])=>'<li><a href="virtual-'+id+'.html">'+name+'</a></li>').join('')+'</ul>');
+console.log('Exported '+virtualCases.length+' synthetic vertical Wallet studies. Original logo and licensed fonts; no real records or AI-generated text/images.');
