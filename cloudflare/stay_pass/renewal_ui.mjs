@@ -1,0 +1,27 @@
+// Uses the existing full-payment/acceptance form; no separate cash workflow.
+export function passRenewalUi({root,node,api,money,en,pass,plans,writes,salePayment,onChanged,onOpen}){
+ const t=(th,eng)=>en?eng:th,days=u=>String(u/4),section=Object.assign(node('section'),{className:'sp-read-card'});root.append(section);section.append(node('h3',t('การต่ออายุ','Renewal')));
+ const validThrough=value=>new Intl.DateTimeFormat(en?'en-GB':'th-TH',{dateStyle:'long',timeZone:'Asia/Bangkok'}).format(new Date(Date.parse(value)-1));
+ const status=node('p');status.setAttribute('role','status');section.append(status);
+ const errors={already_renewed:t('บัตรเดิมต่ออายุไปแล้ว กรุณาดูบัตรใหม่ในประวัติ','This pass was already renewed. Open the new pass from history.'),renewal_booking_review_required:t('ต้องตรวจรายการจองหรือการเข้าพักที่ยังไม่สิ้นสุดก่อนย้ายโควตา','Review pending bookings or an ongoing stay before moving credits.'),renewal_refund_review_required:t('มีคำขอคืนเงินที่ยังไม่สิ้นสุด','A refund request is still pending.'),renewal_not_eligible:t('บัตรนี้ไม่เข้าเงื่อนไขต่ออายุก่อนหมดอายุ','This pass is not eligible for renewal before expiry.'),cross_size_renewal_review_required:t('ยังไม่เปิดยกยอดข้ามขนาดสุนัข','Carry between dog sizes is not enabled.'),renewal_value_review_required:t('มูลค่าโควตามีเศษสตางค์ ต้องตรวจสอบก่อนย้าย','Fractional-satang credit value requires review.'),renewal_confirmation_required:t('โควตาหรือราคาเปลี่ยนแล้ว กรุณาคำนวณใหม่','Credits or price changed. Request a fresh quote.')};
+ async function load(){try{const data=await api('/renewals?'+new URLSearchParams({pass:pass.id}));if(!section.isConnected)return;
+  if(!data.renewals.length)section.append(node('p',t('ยังไม่มีประวัติการต่ออายุ','No renewal history.')));
+  for(const r of data.renewals){section.append(node('p',r.old_pass_number+' → '+r.new_pass_number+' · '+t('ยกยอด ','Carry ')+days(r.carried_units)+' '+t('วัน · คงในบัตรเดิม ','days · Remain on old pass ')+days(r.old_excess_units)+' '+t('วัน','days')));if(onOpen){const old=pass.id===r.old_pass_id,b=Object.assign(node('button',old?t('ดูบัตรใหม่','Open new pass'):t('ดูบัตรก่อนต่ออายุ','Open previous pass')),{type:'button'});b.onclick=()=>onOpen(old?r.new_pass_id:r.old_pass_id);section.append(b);}}
+  if(!writes||!['active','fully_used'].includes(pass.status)||data.renewals.some(r=>r.old_pass_id===pass.id))return;
+  const box=node('details');box.append(node('summary',t('ต่ออายุแพ็กเกจ','Renew membership')));section.append(box);
+  box.append(node('p',t('บัตรใหม่เริ่มวันที่ซื้อ ยกยอดได้ไม่เกิน 3 วันและใช้ก่อนโควตาใหม่ ส่วนเกินยังใช้บัตรเดิมได้ถึงวันหมดอายุเดิม การต่ออายุนับเป็นยอดขายใหม่','The new pass starts on its purchase date. Carry up to 3 days and use them first. Excess stays on the old pass until its original expiry. Renewal counts as a new sale.')));
+  const select=node('select');for(const p of plans)select.append(new Option(p.code,p.id));select.value=pass.snapshot.plan_id;const label=node('label',t('แพ็กเกจใหม่','New package'));label.append(select);box.append(label);
+  const preview=Object.assign(node('button',t('ตรวจโควตาและราคาใหม่','Review credits and current price')),{type:'button'}),result=node('div');box.append(preview,result);let seq=0;
+  select.onchange=()=>{seq++;result.replaceChildren();};
+  preview.onclick=async()=>{const serial=++seq;preview.disabled=true;result.replaceChildren();status.textContent='';try{
+   const input={oldPassId:pass.id,planId:select.value,customerId:pass.customer_id,size:pass.size,dogIds:pass.pets.map(p=>p.id)},q=await api('/renewals/quote',input);if(serial!==seq||!section.isConnected)return;
+   if(q.status!=='ready')throw Error(t('ยังคำนวณไม่ได้ กรุณาตรวจข้อมูล','Unable to quote. Review the pass.'));
+   result.append(node('p',t('โควตาซื้อใหม่ ','New purchased credits ')+days(q.new_purchased_units)+' · '+t('ยกยอด ','Carry ')+days(q.carried_units)+' · '+t('รวมในบัตรใหม่ ','New total ')+days(q.new_purchased_units+q.carried_units)+' '+t('วัน','days')),
+    node('p',t('คงไว้ในบัตรเดิม ','Remain on old pass ')+days(q.old_excess_units)+' '+t('วัน','days')),node('p',t('ยอดชำระเต็มจำนวน ','Full payment ')+money(q.sale.snapshot.paid_cents)),node('p',t('บัตรใหม่ใช้ได้ถึง ','New pass valid through ')+validThrough(q.new_expiry)),node('p',t('บัตรเดิมใช้ได้ถึง ','Old pass valid through ')+validThrough(q.old_expires_at)));
+   const policy=node('details');policy.append(node('summary',t('เงื่อนไขบัตรใหม่','New pass terms')),node('p',en?q.sale.policy.content_en:q.sale.policy.content_th));result.append(policy);
+   if(q.sale.blockers.some(b=>b!=='sales_release_not_approved')||q.sale.paid_sales_recorded>=q.sale.sales_limit){result.append(node('p',t('ยังขายไม่ได้: ตรวจการอนุมัติเงื่อนไข ราคา และจำนวนเปิดขาย','Cannot sell yet: review policy approval, pricing and the sales limit.')));return;}
+   salePayment({root:result,node,api,money,en,quote:{...q.sale,quote_hash:q.quote_hash},input,endpoint:'/renewals/record',renewal:true,onPending:pending=>{select.disabled=pending;preview.disabled=pending;},onSaved:async saved=>{select.disabled=true;preview.disabled=true;result.replaceChildren(node('p',t('ต่ออายุแล้ว บัตรใหม่ ','Renewed · new pass ')+saved.passNumber));await onChanged(saved);}});
+  }catch(error){status.textContent=errors[error.code]||error.message;}finally{if(section.isConnected)preview.disabled=false;}};
+ }catch(error){status.textContent=error.message;}}
+ load();
+}

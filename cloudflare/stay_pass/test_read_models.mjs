@@ -1,0 +1,25 @@
+import assert from 'node:assert/strict';
+import {db,sqlite,actor,staff,bookingPass,now} from './test_foundation.mjs';
+import {passList,passDetail} from './read_models.mjs';
+import {balances} from './credits.mjs';
+import {stayPassRoute} from './routes.mjs';
+const before=sqlite.prepare('SELECT total_changes() n').get().n;
+const detail=await passDetail(db,bookingPass,actor,now);assert.equal(detail.status,'ready');assert.equal(detail.pass.last_valid_day,detail.pass.snapshot.last_valid_day);assert.equal(detail.ledger_consistent,true);
+const balance=await balances(db,bookingPass);assert.equal(detail.pass.remaining_units,balance.remaining_units);assert.equal(detail.pass.reserved_units,balance.reserved_units);assert.equal(detail.pass.available_units,balance.available_units);
+assert.equal(detail.pass.customer,'Synthetic owner');assert(detail.policy.content_th);assert(detail.history.length);
+const linked=sqlite.prepare('SELECT pass_id FROM stay_pass_booking_allocations WHERE reserved_units>0 OR consumed_units>0 LIMIT 1').get();assert(linked);assert((await passDetail(db,linked.pass_id,actor,now)).bookings.length>0);
+const search=await passList(db,{search:detail.pass.pass_number},actor,now);assert.equal(search.passes.length,1);assert.equal(search.passes[0].id,bookingPass);
+assert.equal((await passList(db,{search:'%'},actor,now)).passes.length,0);assert.equal((await passList(db,{search:"' OR 1=1 --"},actor,now)).passes.length,0);
+assert.equal((await passDetail(db,'missing',actor,now)).status,'not_found');
+await assert.rejects(()=>passList(db,{},staff,now),error=>error.code==='forbidden');
+await assert.rejects(()=>passDetail(db,bookingPass,{...actor,email:'other'},now),error=>error.code==='forbidden');
+await assert.rejects(()=>passList(db,{offset:-1},actor,now),error=>error.code==='invalid_search');
+await assert.rejects(()=>passList(db,{status:'whatever'},actor,now),error=>error.code==='invalid_search');
+const future=new Date(Date.parse(detail.pass.expires_at)+1000),expired=await passDetail(db,bookingPass,actor,future);assert.equal(expired.pass.status,'expired');assert.equal(expired.pass.available_units,0);assert.equal(expired.pass.remaining_units,detail.pass.remaining_units);assert.equal(expired.pass.stored_status,detail.pass.stored_status);
+assert.equal(sqlite.prepare('SELECT total_changes() n').get().n,before); // Reading expiry/history never changes credits or money.
+const env={DB:db,STAY_PASS_PREVIEW:'1',STAY_PASS_ENVIRONMENT:'development'};
+let response=await stayPassRoute(new Request('https://staff.test/api/stay-pass/passes?offset=0'),env,{...actor,is_admin:true});assert.equal(response.status,200);
+response=await stayPassRoute(new Request('https://staff.test/api/stay-pass/passes/'+bookingPass),env,{...actor,is_admin:true});assert.equal(response.status,200);
+response=await stayPassRoute(new Request('https://staff.test/api/stay-pass/passes'),{...env,STAY_PASS_ENVIRONMENT:'production'},{...actor,is_admin:true});assert.equal(response.status,404);
+sqlite.exec('UPDATE app_users SET active=0 WHERE id=1');await assert.rejects(()=>passDetail(db,bookingPass,actor,now),error=>error.code==='forbidden');sqlite.exec('UPDATE app_users SET active=1 WHERE id=1');
+console.log('Pass read models passed: exact balances, net history/reversals, snapshots/terms, literal search, expiry read isolation, active-admin guards and production gate.');

@@ -1,0 +1,13 @@
+import {adminGuard,actorArgs,digest} from './repository.mjs';
+import {fail} from './rules.mjs';
+export async function approvePolicy(db,input,actor,now=new Date()){
+ if(!Number.isSafeInteger(actor?.id)||typeof actor.email!=='string'||!await db.prepare(`SELECT 1 WHERE ${adminGuard}`).bind(...actorArgs(actor)).first())fail('forbidden');
+ if(!input||Object.keys(input).some(k=>!['policyId','contentHash','key','reason','confirmed'].includes(k))||typeof input.policyId!=='string'||!input.policyId||input.policyId.length>100||!/^[a-f0-9]{64}$/.test(input.contentHash||'')||!/^[a-f0-9]{32}$/.test(input.key||'')||input.confirmed!==true||typeof input.reason!=='string'||!input.reason.trim()||input.reason.length>800)fail('invalid_policy_approval');
+ const key=actor.id+':policy-approval:'+input.key,hash=await digest(input);async function replay(){const row=await db.prepare('SELECT request_hash,policy_id FROM stay_pass_policy_approvals WHERE request_key=?').bind(key).first();if(!row)return null;if(row.request_hash!==hash)fail('idempotency_conflict');return {status:'saved',policyId:row.policy_id,replayed:true};}const prior=await replay();if(prior)return prior;
+ const policy=await db.prepare('SELECT * FROM stay_pass_policy_versions WHERE id=?').bind(input.policyId).first();if(!policy||policy.status!=='draft'||policy.content_hash!==input.contentHash)fail('policy_confirmation_required');if(await digest({th:policy.content_th,en:policy.content_en})!==policy.content_hash)fail('policy_hash_mismatch');
+ const id=crypto.randomUUID(),at=now.toISOString(),result=await db.batch([
+  db.prepare(`INSERT INTO stay_pass_policy_approvals(id,policy_id,content_hash,actor_id,created_at,reason,request_key,request_hash) SELECT ?,id,content_hash,?,?,?,?,? FROM stay_pass_policy_versions WHERE id=? AND status='draft' AND content_hash=? AND ${adminGuard} ON CONFLICT DO NOTHING`).bind(id,actor.id,at,input.reason.trim(),key,hash,input.policyId,input.contentHash,...actorArgs(actor)),
+  db.prepare(`UPDATE stay_pass_policy_versions SET status='approved',approved_at=?,approved_by=? WHERE id=? AND status='draft' AND EXISTS(SELECT 1 FROM stay_pass_policy_approvals WHERE id=?)`).bind(at,actor.id,input.policyId,id),
+  db.prepare(`INSERT INTO stay_pass_audit_logs(id,subject_type,subject_id,action,actor_id,recorded_at,reason,before_data,after_data) SELECT ?,'policy',policy_id,'policy_approved',actor_id,created_at,reason,json_object('status','draft'),json_object('status','approved','hash',content_hash) FROM stay_pass_policy_approvals WHERE id=?`).bind(crypto.randomUUID(),id)
+ ]);return result[0].meta.changes===1?{...await replay(),replayed:false}:await replay()||{status:'conflict'};
+}

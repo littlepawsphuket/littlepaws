@@ -1,0 +1,11 @@
+import assert from 'node:assert/strict';
+import {allocatableLots,allocateBookingLots} from './lot_allocation.mjs';
+const at='2026-11-27T02:00:00.000Z',out='2026-12-01T02:00:00.000Z';
+const lot=(id,source,expires,remaining,reserved=0,held=0)=>({id,source_kind:source,expires_at:expires,remaining_units:remaining,reserved_units:reserved,refund_held_units:held});
+const lots=[lot('purchase','purchase','2027-01-01T00:00:00.000Z',60,8,4),lot('carry','carry_forward','2027-02-01T00:00:00.000Z',12),lot('expired','carry_forward',at,20),lot('end-at-checkout','carry_forward',out,20),lot('held','purchase','2027-01-01T00:00:00.000Z',8,0,8)];
+const eligible=allocatableLots(lots,at,out);assert.deepEqual(eligible.map(l=>[l.id,l.available_units]),[['carry',12],['purchase',48]]);
+const lines=allocateBookingLots(eligible,[{dog_id:1,covered_units:10},{dog_id:2,covered_units:8}],5);
+assert.deepEqual(lines.map(l=>[l.lotId,l.units,l.dogUnits]),[['carry',12,[{dog_id:1,units:10},{dog_id:2,units:2}]],['purchase',6,[{dog_id:2,units:6}]]]);
+assert.throws(()=>allocateBookingLots(eligible,[{dog_id:1,covered_units:61}],5),e=>e.code==='insufficient_credits');
+assert.equal(lots[0].remaining_units,60);
+console.log('Lot allocation passed: carry-first across dogs, held/refund-held exclusion, exact expiry/checkout boundary, no mutation and insufficient-credit guard.');

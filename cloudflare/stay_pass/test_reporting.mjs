@@ -1,0 +1,15 @@
+import {readFile} from 'node:fs/promises';
+import assert from 'node:assert/strict';
+import './test_lifecycle.mjs';
+import {db,sqlite,actor,staff} from './test_foundation.mjs';
+import {passDashboard,passReport,reportCsv,reportTypes,reportDisplay} from './reporting.mjs';
+for(const name of ['018_image_template_settings.sql','019_transfers.sql'])sqlite.exec(await readFile(new URL('./migrations/'+name,import.meta.url),'utf8'));
+for(const type of reportTypes){const q=await passReport(db,{type},actor);assert.equal(q.status,'ready');assert.equal(q.truncated,false);assert.ok(reportCsv(q).startsWith('\uFEFF'));}
+await assert.rejects(()=>passDashboard(db,staff),/forbidden/);await assert.rejects(()=>passReport(db,{type:'invalid'},actor),/invalid_report/);await assert.rejects(()=>passReport(db,{from:'2026-02-30'},actor),/invalid/);await assert.rejects(()=>passReport(db,{from:'2027-02-01',to:'2027-01-01'},actor),/invalid_report/);
+const money=sqlite.prepare("SELECT SUM(CASE purpose WHEN 'sale' THEN amount_cents ELSE 0 END) income,SUM(CASE purpose WHEN 'refund' THEN amount_cents ELSE 0 END) refunded FROM stay_pass_payment_links").get();
+const before=sqlite.prepare('SELECT count(*) n FROM stay_pass_operations').get().n,q=await passDashboard(db,actor,new Date('2027-08-11T09:00:00Z'));assert.equal(q.financial.received_cents,money.income);assert.equal(q.financial.refunded_cents,money.refunded);assert.equal(q.financial.net_received_cents,money.income-money.refunded);assert.equal(q.credits.remaining_units,sqlite.prepare('SELECT sum(remaining_units) n FROM stay_pass_credit_lots').get().n);assert.equal(q.credits.reserved_units,sqlite.prepare('SELECT sum(reserved_units) n FROM stay_pass_credit_lots').get().n);assert.equal(sqlite.prepare('SELECT count(*) n FROM stay_pass_operations').get().n,before);
+const csv=reportCsv({truncated:false,rows:[{customer:' =HYPERLINK("bad")',amount_cents:-100,note:'\t+SUM(1,2)',plain:'Mali, Cocoa\nFamily'}]});assert.ok(csv.includes("' =HYPERLINK"));assert.ok(csv.includes("'\t+SUM"));assert.ok(csv.includes('"-100"'));assert.ok(csv.includes('"Mali, Cocoa\nFamily"'));assert.throws(()=>reportCsv({truncated:true,rows:[]}),/narrower_filter/);
+const balance=await passReport(db,{type:'balances'},actor);for(const row of balance.rows){assert.ok(Number.isSafeInteger(row.remaining_value_cents));assert.ok(row.remaining_value_cents>=0);assert.equal(row.available_units,row.remaining_units-row.reserved_units-row.refund_held_units);}
+console.log('Reports/dashboard passed: all private report queries, integer origin-lot values, original cash totals, held credits counted once, read-only behavior, date filters and CSV spreadsheet-formula protection.');
+
+const view=reportDisplay({rows:[{pass_number:'LP-1',paid_cents:510000,purchased_units:60,pass_id:'private-id',size:'small'}]},'th');assert.equal(view.rows[0]['ชำระแล้ว (บาท)'],'5,100.00');assert.equal(view.rows[0]['โควตาที่ซื้อ (วัน)'],'15');assert.equal(view.rows[0]['ขนาด'],'S');assert.ok(!JSON.stringify(view).includes('private-id'));
